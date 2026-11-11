@@ -105,8 +105,22 @@ goto fail
 
 :no_python
 echo Python 3.10 or later not found ^(an older Python or the Microsoft Store alias does not count^).
-echo Run install.bat instead: it installs Python and the C++ tools, then builds.
-goto fail
+echo install.bat installs Python and the C++ tools, then builds.
+goto offer_install
+
+:offer_install
+rem build.bat double-clicked without the tools (GitHub issue #10): offer to run
+rem install.bat right away instead of only naming it. Not when install.bat or
+rem update.bat started this (SR2_NO_PAUSE), nor from a command prompt.
+if defined SR2_NO_PAUSE goto fail
+if not defined PAUSE_AT_END goto fail
+if not exist install.bat goto fail
+echo.
+choice /c YN /m "Run install.bat now"
+if errorlevel 2 goto fail
+echo.
+call install.bat %*
+exit /b %errorlevel%
 
 :try_cmake
 rem Sets CMAKE to the cmake.exe in %1 if it is at least the version
@@ -124,10 +138,10 @@ goto fail
 
 :no_vs
 echo Visual Studio 2022 with the x64 C++ tools and CMake not found.
-echo Run install.bat instead: it installs them, then builds. Or install Build Tools for
+echo install.bat installs them, then builds. Or install Build Tools for
 echo Visual Studio 2022 with the "Desktop development with C++" workload yourself.
-goto fail
+goto offer_install
 :no_sdk
-echo Visual Studio is in "%VSDIR%" but there is no Windows SDK. Run install.bat: it adds
+echo Visual Studio is in "%VSDIR%" but there is no Windows SDK. install.bat adds
 echo it. Or add "Windows 11 SDK" in the Visual Studio Installer ^(Individual components^).
-goto fail
+goto offer_install
