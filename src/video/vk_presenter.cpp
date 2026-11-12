@@ -281,6 +281,19 @@ bool VkPresenter::init(const char* title, int width, int height, bool with_ngx) 
     f12.descriptorBindingPartiallyBound = VK_TRUE;
     f12.descriptorBindingUpdateUnusedWhilePending = VK_TRUE;
     f12.shaderSampledImageArrayNonUniformIndexing = VK_TRUE;
+    {
+        // Its size is set at run time (the GPU's limits, r3d_renderer.cpp), and
+        // with update-after-bind the much higher limits for that kind of binding
+        // apply (Intel drivers allow few textures per shader without it)
+        VkPhysicalDeviceVulkan12Features have{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES};
+        VkPhysicalDeviceFeatures2 query{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2};
+        query.pNext = &have;
+        vkGetPhysicalDeviceFeatures2(gpu_, &query);
+        f12.runtimeDescriptorArray = have.runtimeDescriptorArray;
+        if (!have.runtimeDescriptorArray) fprintf(stderr, "[vulkan] the driver has no runtimeDescriptorArray\n");
+        update_after_bind_ = have.descriptorBindingSampledImageUpdateAfterBind;
+        f12.descriptorBindingSampledImageUpdateAfterBind = have.descriptorBindingSampledImageUpdateAfterBind;
+    }
     if (with_ngx) {   // NGX reads its own buffers through device addresses
         VkPhysicalDeviceVulkan12Features have{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES};
         VkPhysicalDeviceFeatures2 query{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2};

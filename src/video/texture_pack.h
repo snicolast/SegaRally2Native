@@ -26,6 +26,8 @@ public:
     // replaced textures are remembered (empty = not kept between runs)
     void init(const std::string& dir, const std::string& dump_dir, const std::string& clean_dir = "");
     bool active() const { return !available_.empty() || !dump_dir_.empty(); }
+    // Fewer slots than MAX_SLOTS when the GPU cannot hold that many (R3DRenderer::texture_slots)
+    void set_max_slots(uint32_t n) { max_slots_ = n < MAX_SLOTS ? n : MAX_SLOTS; }
 
     // Replacement slot for a polygon texture word (R3DVertex::tex), 0 = none.
     // Bits 16-31: a dirt picture over it (Sega Rally 2 blends mud and snow
@@ -44,6 +46,7 @@ public:
     size_t replaced_count() const { return slots_.size(); }
 
 private:
+    uint32_t max_slots_ = MAX_SLOTS;
     struct Entry {
         uint64_t generation;
         uint32_t slot;

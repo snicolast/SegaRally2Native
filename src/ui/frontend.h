@@ -31,6 +31,7 @@ struct FrontendSettings {
     int rear_boost = 6;  // dB on the rear pair: 0, 3, 6, 9, 12
     bool cubic_samples = true;   // smooth (cubic) sample interpolation instead of the original linear one
     int aa = 0;        // 0 MSAA, 1 DLAA, 2 off, 3 DLSS quality (takes effect on the next launch)
+    bool aa_saved = false;   // load() found it in the file (not there on the first run: chosen then for the GPU and the screen, app.cpp)
     bool haze = true;  // distance haze
     int bloom = 2;     // glow around bright things: 0 off, 1 low, 2 medium, 3 high
     bool ao = true;    // ambient occlusion
@@ -44,6 +45,10 @@ struct FrontendSettings {
     bool dust = true;      // Sega Rally 2: dust and stones as particles (false: the game's own flat fans)
     bool sharpen = true;   // contrast adaptive sharpening
     bool hd_hud = true;    // redrawn HUD and game screens (false: the ROM's own graphics)
+    // The arcade's difficulty, in the game's own numbering (bits 19-21 of the
+    // operator settings word, RAM 0x4A9D18): 0 NORMAL, 1 HARD, 2 VERY HARD,
+    // 3 VERY EASY, 4 EASY. It sets the time at the start and at each checkpoint
+    int difficulty = 0;
     bool smooth = true;     // the 3D drawn between game frames at the monitor's refresh rate
     int saturation = 100;   // colour saturation in % (100 = original, the default)
     int gamma = 100;        // gamma x 100 (100 = original, higher = brighter)
@@ -132,6 +137,7 @@ private:
         DEBUG, DEBUG_COURSE, DEBUG_CAR, DEBUG_GEARS, DEBUG_TIME, DEBUG_GO,
         OPT_QUALITY, OPT_DISPLAY, OPT_VOLUME, OPT_MUSIC, OPT_SPEAKERS, OPT_REAR, OPT_SAMPLES, OPT_AA, OPT_HAZE, OPT_BLOOM, OPT_AO, OPT_SUN, OPT_SHADOWS, OPT_SOFT, OPT_HDR, OPT_SHARPEN, OPT_HUD,
         OPT_SAT, OPT_GAMMA, OPT_MOTION, OPT_VIBRATION, OPT_RT, OPT_MENU_MUSIC, OPT_REFLECT, OPT_GI, OPT_DUST, OPT_UPDATES,
+        OPT_DIFFICULTY,
     };
     struct Item {
         Id id;
@@ -268,7 +274,7 @@ private:
     bool wrap_ = false;
     // Settings tabs (tab_of in frontend.cpp says where each option goes)
     enum { DISPLAY_TAB, LIGHTING_TAB, AUDIO_TAB, CONTROLS_TAB, GAME_TAB };   // LIGHTING_TAB is shown as GRAPHICS
-    static constexpr int TAB_COUNT = 4;   // (GAME_TAB: not shown in Star Wars)
+    static constexpr int TAB_COUNT = 5;
     static const wchar_t* const TAB_NAMES[TAB_COUNT];
     static int tab_of(Id id);
     struct OptionTab { Id id; int tab; };

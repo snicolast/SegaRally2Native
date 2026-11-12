@@ -17,6 +17,11 @@
 
 struct SDL_Gamepad;
 
+// Seconds spent in the calls that drive the motors (a pad's vibration, the
+// wheel's force), added up until the window loop takes them: those calls wait
+// for the device on the thread that shows the picture (out/slow.log)
+extern double g_vibration_seconds;
+
 // What the pads send to the menus (any pad)
 enum class PadKey { Up, Down, Left, Right, Accept, Back, TabPrev, TabNext, Page, Start };   // Page: Y (G, a game's GitHub page)
 

@@ -147,7 +147,7 @@ uint32_t TexturePack::resolve(uint32_t tex, R3DTextureRam& ram, uint64_t& genera
 uint32_t TexturePack::load_slot(uint64_t hash) {
     auto loaded = slots_.find(hash);
     if (loaded != slots_.end()) return loaded->second;
-    if (!available_.count(hash) || slots_.size() + 1 >= MAX_SLOTS) return 0;
+    if (!available_.count(hash) || slots_.size() + 1 >= max_slots_) return 0;
     char name[32];
     snprintf(name, sizeof(name), "/%016llx.png", (unsigned long long)hash);
     RgbaImage img;
@@ -222,7 +222,7 @@ uint32_t TexturePack::dirty_slot(uint32_t tex, int w, int h, uint64_t hash) {
         }
     size_t best_same = size_t(best_score * 100);
     // (0.72: the rivals' number plates, another number on the same plate, came to 0.65 with ours)
-    if (best && best_score >= 0.72f && slots_.size() + 2 < MAX_SLOTS) {
+    if (best && best_score >= 0.72f && slots_.size() + 2 < max_slots_) {
         uint32_t base = load_slot(best->hash);
         if (base) {
             // the dirt's colour: average of the pixels that moved the most

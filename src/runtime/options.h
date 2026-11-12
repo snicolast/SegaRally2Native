@@ -17,6 +17,8 @@ struct Options {
     bool headless = false;           // --headless: no window, full speed, report at the end
     bool menu = true;                // the main menu and save/settings.ini; off in test runs
     bool show_boot = false;          // --boot: the power-on screens before the SEGA logo
+    int difficulty = -1;             // --difficulty: the game's number (0 normal, 1 hard, 2 very hard,
+                                     // 3 very easy, 4 easy) held in the operator settings; -1: as the EEPROM says
     // Picture
     float supersample = 1.0f;        // --scale: internal 3D resolution factor
     int msaa = 4;                    // --msaa: samples per pixel (1 = off)

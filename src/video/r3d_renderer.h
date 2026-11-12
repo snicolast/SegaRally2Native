@@ -40,6 +40,8 @@ public:
     // dlaa: NVIDIA DLAA instead of MSAA (the presenter must have its extensions);
     // dlss_quality: with it, the 3D drawn at two thirds of the size and upscaled (DLSS QUALITY)
     bool init(VkPresenter& vk, float supersample, int msaa, int aniso, bool dlaa = false, bool dlss_quality = false);
+    // Texture pack images the GPU can hold at once (TexturePack::set_max_slots)
+    uint32_t texture_slots() const { return texture_slots_; }
     int msaa_samples() const { return int(samples_); }
     bool dlaa_active() const { return dlaa_.ready(); }
     bool dlss_upscaling() const { return dlaa_.ready() && upscale_ > 1.0f; }
@@ -203,6 +205,7 @@ private:
     float supersample_ = 1.0f;
     VkSampleCountFlagBits samples_ = VK_SAMPLE_COUNT_1_BIT;
     float aniso_ = 0.0f;
+    uint32_t texture_slots_ = 0;   // texture pack images the GPU can hold at once (init)
     const R3DScene* scene_ = nullptr;
 
     Image text_cells_;   // per 8x8 cell of the foreground: high-resolution text slot and colours

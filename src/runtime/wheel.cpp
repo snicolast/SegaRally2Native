@@ -246,14 +246,18 @@ void apply_force(Wheel& w) {
             e.constant.direction.dir[0] = 1;
             e.constant.length = SDL_HAPTIC_INFINITY;
             e.constant.level = level;
+            Uint64 from = SDL_GetTicksNS();
             SDL_UpdateHapticEffect(w.haptic, w.constant, &e);
+            g_vibration_seconds += double(SDL_GetTicksNS() - from) * 1e-9;
             w.level = level;
         }
     }
     float shake = g_shake.exchange(0.0f);
     if (w.rumble && g_focused && shake > 0.08f) {
         uint16_t m = uint16_t(std::min(1.0f, shake * g_cfg.ffb_strength) * 0xFFFF);
+        Uint64 from = SDL_GetTicksNS();
         SDL_RumbleJoystick(w.joy, m, m / 2, 60);
+        g_vibration_seconds += double(SDL_GetTicksNS() - from) * 1e-9;
     }
 }
 
@@ -269,8 +273,22 @@ void wheels_init() {
 
 bool wheel_is_ours(uint32_t id) { return g_wheel.joy && g_wheel.id == id; }
 
+// Every joystick SDL finds, wheel or not, so that a log tells why a wheel
+// was not taken (issue #33)
+static void log_joystick(uint32_t id) {
+    static const char* const TYPES[] = {"unknown", "gamepad", "wheel", "arcade stick", "flight stick",
+                                        "dance pad", "guitar", "drum kit", "arcade pad", "throttle"};
+    SDL_JoystickType t = SDL_GetJoystickTypeForID(id);
+    const char* name = SDL_GetJoystickNameForID(id);
+    printf("[joystick] %s (%04X:%04X, %s%s)\n", name ? name : "?", SDL_GetJoystickVendorForID(id),
+           SDL_GetJoystickProductForID(id), unsigned(t) < 10 ? TYPES[t] : "?",
+           SDL_IsGamepad(id) ? ", mapped as a gamepad" : "");
+}
+
 void wheels_added(uint32_t id) {
-    if (!g_ok || g_wheel.joy || !is_wheel(id)) return;
+    if (!g_ok) return;
+    log_joystick(id);
+    if (g_wheel.joy || !is_wheel(id)) return;
     SDL_Joystick* j = SDL_OpenJoystick(id);
     if (!j) return;
     int axes = SDL_GetNumJoystickAxes(j);

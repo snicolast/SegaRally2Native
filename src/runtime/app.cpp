@@ -36,6 +36,7 @@
 #include "rom_zip.h"
 #include "runtime.h"
 #include "stats.h"
+#include "wheel.h"
 #include "../audio/sound_board.h"
 #include "../ui/achievement_toast.h"
 #include "../ui/frontend.h"
@@ -209,6 +210,35 @@ static void save_settings(const FrontendSettings& s) {
     }
 }
 
+// The first run (no anti-aliasing in save/settings.ini yet) picks it for the
+// GPU and the screen instead of MSAA 4x for everyone: with all the ray tracing
+// on, MSAA 4x does not fit in a 120 Hz refresh at 4K even on an RTX 5090 (the
+// 3D pass alone took 8 to 10 ms there, twice what it takes with DLAA; GitHub
+// issue 14), and that was the game's first impression at that size. On an
+// NVIDIA card DLSS is asked for: DLAA, or DLSS QUALITY on a screen larger than
+// 1440p (the game starts in a window, but full screen is the screen's size).
+// A card or a build without DLSS falls back to MSAA as it always did.
+static bool nvidia_card() {
+    DISPLAY_DEVICEA d{};
+    d.cb = sizeof(d);
+    for (DWORD i = 0; EnumDisplayDevicesA(nullptr, i, &d, 0); i++)
+        if (strstr(d.DeviceString, "NVIDIA")) return true;
+    return false;
+}
+
+// The height in pixels of the screen the window is on (0: not known)
+// (debugging aid: SR2_SCREEN_HEIGHT=2160 stands for a screen of that height)
+static int screen_height(HWND hwnd) {
+    if (const char* e = getenv("SR2_SCREEN_HEIGHT")) return atoi(e);
+    MONITORINFOEXA mi{};
+    mi.cbSize = sizeof(mi);
+    DEVMODEA mode{};
+    mode.dmSize = sizeof(mode);
+    if (!GetMonitorInfoA(MonitorFromWindow(hwnd, MONITOR_DEFAULTTOPRIMARY), &mi)) return 0;
+    if (!EnumDisplaySettingsA(mi.szDevice, ENUM_CURRENT_SETTINGS, &mode)) return 0;   // (real pixels, whatever the scaling)
+    return int(std::min(mode.dmPelsWidth, mode.dmPelsHeight));   // (the shorter side: a screen turned upright too)
+}
+
 // The game is a windowed program (no console window of its own). Started from
 // a terminal, its log goes to that terminal; redirected to a file or a pipe
 // (the tests), it goes there as it always did
@@ -231,13 +261,18 @@ int main(int argc, char** argv) {
     // those always start from the same defaults
     g_opt.menu = !options_disable_menu(argc, argv);
     FrontendSettings ini;
+    bool aa_auto = false;   // the first run: the anti-aliasing chosen for the GPU and the screen (nvidia_card above)
     if (g_opt.menu) {   // save/settings.ini, written by the options menu; command-line options win
         ini.load("save/settings.ini");
+        aa_auto = !ini.aa_saved && nvidia_card();
+        if (aa_auto) ini.aa = 1;   // DLAA; DLSS QUALITY or MSAA once the screen and the GPU are known
         options_from_settings(g_opt, ini);
         g_pad_rumble = ini.vibration;
     }
     int exit_code = 0;
     if (!parse_options(g_opt, argc, argv, nullptr, exit_code)) return exit_code;
+    for (int i = 1; i < argc; i++)   // chosen on the command line instead
+        if (strcmp(argv[i], "--aa") == 0 || strcmp(argv[i], "--msaa") == 0) aa_auto = false;
     // What the options set outside the struct: emulation globals and the controls
     g_data_dir = g_opt.data_dir;
     g_frame_limit = g_opt.frame_limit;
@@ -325,6 +360,7 @@ int main(int argc, char** argv) {
         return 1;
     }
     printf("GPU: %s\n", presenter.device_name().c_str());
+    if (aa_auto) g_opt.dlss = screen_height(presenter.hwnd()) > 1440;
     g_pads.init();
     timeBeginPeriod(1);
     QueryPerformanceFrequency(&g_qpf);
@@ -373,7 +409,9 @@ int main(int argc, char** argv) {
     R3DRenderer renderer;
     if (!renderer.init(presenter, g_opt.supersample, g_opt.msaa, g_opt.aniso, g_opt.dlaa, g_opt.dlss)) {
         fprintf(stderr, "Could not start the 3D renderer\n");
-        MessageBoxA(nullptr, "Could not start the 3D renderer. Update the graphics driver.",
+        MessageBoxA(nullptr,
+                    "Could not start the 3D renderer: the graphics card or its driver lacks something the game needs. "
+                    "Run SegaRally2.exe from a command prompt to see the details.",
                     "Sega Rally 2 Native", MB_OK | MB_ICONERROR);
         return 1;
     }
@@ -394,6 +432,11 @@ int main(int argc, char** argv) {
     r3d_set_sr2_dust(g_opt.dust);
     renderer.set_sharpen(g_opt.sharpen ? 0.5f : 0.0f);
     if (g_opt.haze > 0) printf("[video] distance haze on (strength %.2f)\n", g_opt.haze);
+    if (aa_auto) {   // what the first run got: the menu shows it, and saves it with the first setting changed
+        if (!renderer.dlaa_active()) g_opt.dlaa = g_opt.dlss = false;
+        ini.aa = g_opt.dlss ? 3 : g_opt.dlaa ? 1 : 0;
+        printf("[video] first run: anti-aliasing chosen for this GPU and screen\n");
+    }
     if (g_opt.dlaa && !renderer.dlaa_active()) printf("[video] DLAA not available: using MSAA\n");
     if (renderer.dlaa_active())
         printf("[video] antialiasing NVIDIA %s, anisotropic filtering %dx%s\n",
@@ -412,6 +455,7 @@ int main(int argc, char** argv) {
     // (save/clean_textures: the originals of the replaced textures, seen once and kept, so a car's livery
     // is recognised with the mud or snow the game blends into it; texture_pack.h)
     pack.init("textures", g_opt.dump_textures ? "out/textures" : "", "save/clean_textures");
+    pack.set_max_slots(renderer.texture_slots());
     builder.set_texture_pack(&pack, &g_texture_ram);
     // 2D replacements: the foreground (GPU slots 1-27) and the layers below the
     // 3D image (28-55; the backdrops of SkyPack use 56-63)
@@ -878,7 +922,25 @@ int main(int argc, char** argv) {
     const int queue_depth = getenv("LW_QUEUE") ? atoi(getenv("LW_QUEUE")) : 2;
     int queue_extra = 0;
     double went_out = 0, last_miss = -100;
+    // out/slow.log: what each image's turn of this loop went on, from one
+    // present call to the next, in seconds (the longest of each second is
+    // written there: which part of the loop a stutter came from)
+    struct LoopParts {
+        double total = 0;
+        double wait = 0;        // for an earlier image to reach the screen (limit_queue)
+        double window = 0;      // the window's messages
+        double menu = 0;        // the menus and the achievement notice
+        double input = 0;       // keyboard, pads and wheel...
+        double vibration = 0;   // ...of which, the calls that drive their motors
+        double scene = 0;       // 2D composition, the 3D scene, new pictures to the GPU
+        double textures = 0;    // texture RAM rows to the GPU
+        double gpu_wait = 0, acquire = 0, record = 0, present = 0;   // VkPresenter::LastFrame
+    };
+    LoopParts parts, worst_parts;
+    double parts_from = 0;   // when the previous present call returned
+    int parts_skip = 0;      // turns left out: a refresh skipped on purpose (the queue made shorter)
     for (;;) {
+        double wait_from = qpc_seconds();
         {   // before the inputs are read
             int depth = queue_depth ? queue_depth + queue_extra : 0;
             double out = presenter.limit_queue(depth, 50'000'000);
@@ -892,11 +954,16 @@ int main(int argc, char** argv) {
             if (queue_extra && out - last_miss > 10) {
                 queue_extra = 0;
                 out = 0;   // the next wait skips a refresh: not a miss
+                parts_skip = 2;
             }
             went_out = out;
         }
+        double window_from = qpc_seconds();
         if (!presenter.pump()) break;
         double loop_from = qpc_seconds();
+        parts = LoopParts{};
+        parts.wait = window_from - wait_from;
+        parts.window = loop_from - window_from;
         // PLAY: straight to SELECT GAME. Once the game is past its boot it
         // runs on with nothing on screen, through the SEGA logo (which takes
         // no coin), while the coin and START go in for the player
@@ -1022,6 +1089,7 @@ int main(int argc, char** argv) {
                         g_opt.classic_hud = !s.hd_hud;
                         shown = ~0ull;   // compose the 2D layer again even while the game stands still
                     }
+                    g_opt.difficulty = s.difficulty;   // the game thread puts it in the operator settings
                     if (g_opt.interp != s.smooth) {
                         g_opt.interp = s.smooth;
                         renderer.set_interpolation(1.0f);   // the latest game frame as it is
@@ -1110,15 +1178,24 @@ int main(int argc, char** argv) {
                 }
             }
         }
+        double input_from = qpc_seconds();
+        parts.menu = input_from - loop_from;
+        g_vibration_seconds = 0;
         poll_keyboard(presenter.hwnd());
         bool pad_pause = poll_gamepads(presenter.hwnd());
-        if (g_pads.changed()) {   // the CONTROLS tab names the pads
+        static std::string shown_wheel;   // the wheel the CONTROLS tab names ("" = none)
+        const WheelState& wheel = wheel_state();
+        std::string wheel_name = wheel.connected ? wheel.name : std::string();
+        if (g_pads.changed() || wheel_name != shown_wheel) {   // the CONTROLS tab names the pads and the wheel
+            shown_wheel = wheel_name;
             std::wstring names;
             for (int i = 0; i < Gamepads::MAX; i++) {
                 const PadState& pad = g_pads.pad(i);
                 if (!pad.connected) continue;
                 names += (names.empty() ? L"" : L", ") + std::wstring(pad.name.begin(), pad.name.end());
             }
+            if (!wheel_name.empty())
+                names += (names.empty() ? L"" : L", ") + std::wstring(wheel_name.begin(), wheel_name.end());
             frontend.gamepads = names;
             frontend.invalidate();
         }
@@ -1136,6 +1213,8 @@ int main(int argc, char** argv) {
             g_menu_open = g_hold = true;
         }
         press_update();
+        parts.input = qpc_seconds() - input_from;
+        parts.vibration = g_vibration_seconds;
         bool f12 = GetForegroundWindow() == presenter.hwnd() && (GetAsyncKeyState(VK_F12) & 0x8000);
         if (f12 && !f12_was_down) capture_2d = true;
         f12_was_down = f12;
@@ -1346,7 +1425,9 @@ int main(int argc, char** argv) {
         }
         int y0, y1, tex_dirty_rows = 0;
         if (g_texture_ram.take_dirty(tex_rows, y0, y1)) {
+            double from = qpc_seconds();
             renderer.upload_texture_rows(tex_rows, y0, y1);
+            parts.textures = qpc_seconds() - from;
             tex_dirty_rows = y1 - y0;
             g_tex_rows_second += tex_dirty_rows;
         }
@@ -1388,14 +1469,13 @@ int main(int argc, char** argv) {
         // should, or the window waited long for one, with what the frames took
         // to build (finding slowdowns players see without a debugging build)
         if (built && g_opt.replay.empty()) {
-            static double second_from = 0, last_present = 0, worst_gap = 0;
+            static double second_from = 0;
             static uint64_t frame_from = 0;
             static int second_presents = 0;
             double now = qpc_seconds();
-            if (last_present > 0) worst_gap = std::max(worst_gap, now - last_present);
-            last_present = now;
             second_presents++;
-            if (second_from == 0) second_from = now, frame_from = built->frame;
+            if (second_from == 0) second_from = now, frame_from = built->frame, worst_parts = LoopParts{};
+            double worst_gap = worst_parts.total;   // the longest time from one present call to the next
             if (now - second_from >= 1.0) {
                 double game_fps = double(built->frame - frame_from) / (now - second_from);
                 // (none: booting, or paused; a stutter: an image waited for
@@ -1403,8 +1483,13 @@ int main(int argc, char** argv) {
                 // (or, on a faster screen, a tenth of its refreshes missed: at
                 // 120 Hz an image has 8.3 ms, and a GPU that takes 9 shows 90
                 // a second without any gap that long)
+                // (or a single refresh missed, whatever the screen: the calls
+                // come up to a quarter of a refresh early or late by themselves,
+                // so a gap of one and three quarters is an image shown twice.
+                // At 120 Hz the 34 ms let stutters of up to three refreshes by)
                 double refreshes = display_clock.period > 0 ? (now - second_from) / display_clock.period : 0;
-                if (game_fps > 0 && (game_fps < 50 || worst_gap > 0.034 || second_presents < 55 || second_presents < 0.9 * refreshes)) {
+                double gap_limit = display_clock.period > 0 ? std::min(0.034, 1.75 * display_clock.period) : 0.034;
+                if (game_fps > 0 && (game_fps < 50 || worst_gap > gap_limit || second_presents < 55 || second_presents < 0.9 * refreshes)) {
                     static FILE* slow = fopen("out/slow.log", "a");
                     if (slow) {
                         fprintf(slow, "frame %llu: game %.1f fps, %d presents, worst gap %.0f ms, build %.1f ms (worst %.1f), %zu polygons\n",
@@ -1412,13 +1497,24 @@ int main(int argc, char** argv) {
                                 g_build_ms.load(), g_build_worst_ms.exchange(0), scene ? scene->polygons : size_t(0));
                         std::string gpu = renderer.worst_gpu_frame();
                         if (!gpu.empty()) fprintf(slow, "    %s; texture rows uploaded %d\n", gpu.c_str(), g_tex_rows_second);
+                        // Where that longest gap went: `wait` is the screen or the GPU
+                        // late with an earlier image, the rest this thread's own work
+                        const LoopParts& w = worst_parts;
+                        double other = w.total - (w.wait + w.window + w.menu + w.input + w.scene + w.textures + w.gpu_wait +
+                                                  w.acquire + w.record + w.present);
+                        fprintf(slow, "    worst gap: wait %.1f window %.1f menu %.1f input %.1f (vibration %.1f) scene %.1f textures %.1f "
+                                      "gpu wait %.1f acquire %.1f record %.1f present %.1f other %.1f\n",
+                                w.wait * 1000, w.window * 1000, w.menu * 1000, w.input * 1000, w.vibration * 1000, w.scene * 1000,
+                                w.textures * 1000, w.gpu_wait * 1000, w.acquire * 1000, w.record * 1000, w.present * 1000,
+                                other * 1000);
                         fflush(slow);
                     }
                 }
                 g_build_worst_ms = 0;
                 g_tex_rows_second = 0;
                 renderer.worst_gpu_frame();
-                second_from = now, frame_from = built->frame, second_presents = 0, worst_gap = 0;
+                worst_parts = LoopParts{};
+                second_from = now, frame_from = built->frame, second_presents = 0;
             }
         }
         // The game makes ~57 frames per second; in between, the 3D scene is
@@ -1447,6 +1543,18 @@ int main(int argc, char** argv) {
             ui.record(cmd, view, extent);
             if (toast_shown) toast_layer.record(cmd, view, extent);   // over the menus too: their backdrop is opaque
         });
+        {   // this image's turn, for out/slow.log
+            const VkPresenter::LastFrame& f = presenter.last_frame();
+            double now = qpc_seconds();
+            parts.scene = scene_seconds;
+            parts.gpu_wait = f.fence, parts.acquire = f.acquire, parts.record = f.record, parts.present = f.present;
+            if (parts_skip > 0) parts_skip--;
+            else if (parts_from > 0) {
+                parts.total = now - parts_from;
+                if (parts.total > worst_parts.total) worst_parts = parts;
+            }
+            parts_from = now;
+        }
         if (g_frame_log) {
             const VkPresenter::LastFrame& f = presenter.last_frame();
             double t = interpolating && built ? std::clamp((shown_time - built->time) / frame_period + 1.0, 0.0, 1.0) : 1;
@@ -1456,6 +1564,9 @@ int main(int argc, char** argv) {
                       latest ? latest->time : 0.0, int(take), int(shown != shown_before), scene_seconds * 1000,
                       tex_dirty_rows, f.fence * 1000, f.acquire * 1000, f.record * 1000, f.present * 1000,
                       (qpc_seconds() - loop_from) * 1000, lateness);
+            // (L: the loop's other parts for that image, as in out/slow.log, in ms)
+            frame_log("L %llu %.3f %.3f %.3f %.3f %.3f %.3f\n", (unsigned long long)f.present_id, parts.wait * 1000,
+                      parts.window * 1000, parts.menu * 1000, parts.input * 1000, parts.vibration * 1000, parts.textures * 1000);
             if (f.present_id) presented_id = f.present_id;
         }
         if (!film.empty() && film_presents >= 4) {   // next snapshot of the sequence

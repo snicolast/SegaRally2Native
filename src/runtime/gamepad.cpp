@@ -18,6 +18,8 @@ float axis(SDL_Gamepad* p, SDL_GamepadAxis a) { return float(SDL_GetGamepadAxis(
 
 }  // namespace
 
+double g_vibration_seconds = 0;
+
 bool Gamepads::init() {
     SDL_SetHint(SDL_HINT_NO_SIGNAL_HANDLERS, "1");
     // The focus is the window's business (poll's `focused`); SDL has no window
@@ -185,8 +187,12 @@ std::vector<PadKey> Gamepads::take_keys() {
 }
 
 void Gamepads::rumble(int i, float low, float high, int ms) {
-    if (!slot_[i].pad) return;
+    if (!slot_[i].pad || rumble_ <= 0) return;   // (VIBRATION OFF: nothing to send)
+    // The call waits for the pad (on Xbox pads SDL sends it at once, with
+    // XInput): timed, so a slow one shows in out/slow.log
     float k = RUMBLE_STRENGTH[std::clamp(rumble_, 0, 3)] * 65535.0f;
+    Uint64 from = SDL_GetTicksNS();
     SDL_RumbleGamepad(slot_[i].pad, Uint16(std::clamp(low, 0.0f, 1.0f) * k), Uint16(std::clamp(high, 0.0f, 1.0f) * k),
                       Uint32(ms));
+    g_vibration_seconds += double(SDL_GetTicksNS() - from) * 1e-9;
 }

@@ -44,7 +44,7 @@ layout(location = 10) out vec4 dust_light; // DUST: the light bounced onto it (r
 
 #ifdef RAY_TRACING
 layout(set = 0, binding = 0) uniform usampler2D texture_ram;
-layout(set = 0, binding = 1) uniform sampler2D replacements[4096];
+layout(set = 0, binding = 1) uniform sampler2D replacements[];
 #define ATMOSPHERE_BINDING 2
 #include "atmosphere.glsl"
 #define RT_SET 0

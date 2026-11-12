@@ -58,6 +58,13 @@ const std::vector<Entry>& table() {
         text("--rom", "ZIP", &Options::rom_zip, "path to srally2.zip (or SR2_ROM_ZIP; by default next to the exe)"),
         text("--data", "DIR", &Options::data_dir, "folder with the ROM already extracted by tools/romtool.py (data)"),
         flag("--boot", &Options::show_boot, "show the power-on screens before the SEGA logo"),
+        custom("--difficulty", "very_easy|easy|normal|hard|very_hard",
+               "the arcade's difficulty: the time at the start and at each checkpoint (normal)", false,
+               [](Options& o, const char* v) {
+                   static const char* const NAMES[5] = {"normal", "hard", "very_hard", "very_easy", "easy"};
+                   for (int d = 0; d < 5; d++)
+                       if (strcmp(v, NAMES[d]) == 0) o.difficulty = d;
+               }),
         section("Picture"),
         real("--scale", &Options::supersample, "internal 3D resolution multiplied by F (1)"),
         num("--msaa", &Options::msaa, "samples per pixel (4; 1 = no MSAA)"),

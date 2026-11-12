@@ -33,6 +33,9 @@
 #include "../audio/sound_board.h"
 #include "../video/r3d_state.h"
 #include "stats.h"
+#include "options.h"
+
+extern Options g_opt;   // app.cpp: command line and menu settings (DIFFICULTY)
 
 Ctx g_ctx;
 uint8_t* g_ram;
@@ -1281,6 +1284,18 @@ void rt_event(Ctx& c) {
                         wr32(0xEB538 + 4 * uint32_t(i), w);
                         wr32(0xEB514 + 4 * uint32_t(i), counts[3]);
                     }
+                }
+            }
+            {   // DIFFICULTY (menu, --difficulty): bits 19-21 of the operator settings word, the
+                // EEPROM's copy in RAM (docs/game_ram.md). The game reads it at each new game
+                // (into 0x22CF18) and picks the time table's row with it. Only the RAM copy:
+                // the EEPROM keeps the operator's own setting
+                const int d = g_opt.difficulty;
+                if (d >= 0 && d <= 4) {
+                    constexpr uint32_t kSettings = 0x4A9D18, kMask = 0x00380000;
+                    uint32_t w = rd32(kSettings);
+                    uint32_t want = (w & ~kMask) | (uint32_t(d) << 19);
+                    if (w != want) wr32(kSettings, want);
                 }
             }
             {   // SR2_POKE=ADDR=VALUE[@FROM[-TO]],...: a RAM word written every frame (from that frame on, or

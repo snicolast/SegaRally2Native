@@ -179,6 +179,9 @@ int FrontendSettings::quality() const {
     return CUSTOM;
 }
 
+// The ini's names of the difficulties, in the game's numbering (FrontendSettings::difficulty)
+static const char* const DIFFICULTY_KEYS[5] = {"normal", "hard", "very_hard", "very_easy", "easy"};
+
 void FrontendSettings::load(const char* path) {
     FILE* f = fopen(path, "r");
     if (!f) return;
@@ -205,7 +208,7 @@ void FrontendSettings::load(const char* path) {
         else if (k == "speakers") speakers = v == "surround" ? 1 : v == "headphones" ? 2 : 0;
         else if (k == "rear_boost") rear_boost = std::clamp(atoi(value) / 3 * 3, 0, 12);
         else if (k == "sample_interpolation") cubic_samples = v != "linear";
-        else if (k == "aa") aa = v == "dlaa" ? 1 : v == "dlss" ? 3 : (v == "none" || v == "off") ? 2 : 0;
+        else if (k == "aa") aa = v == "dlaa" ? 1 : v == "dlss" ? 3 : (v == "none" || v == "off") ? 2 : 0, aa_saved = true;
         else if (k == "haze") haze = on;
         else if (k == "bloom") bloom = v == "low" ? 1 : v == "medium" ? 2 : v == "high" ? 3 : on ? 2 : 0;
         else if (k == "ao") ao = on;
@@ -218,7 +221,11 @@ void FrontendSettings::load(const char* path) {
         else if (k == "global_illumination") gi = v == "high" ? 2 : v == "off" || v == "0" ? 0 : 1;
         else if (k == "dust") dust = v != "original" && v != "0";
         else if (k == "sharpen") sharpen = on;
-        else if (k == "hd_hud" || k == "hd_text") hd_hud = on;   // (hd_text: before the HUD's pictures joined it)
+        else if (k == "hd_hud" || k == "hd_text") hd_hud = on;
+        else if (k == "difficulty") {
+            for (int d = 0; d < 5; d++)
+                if (v == DIFFICULTY_KEYS[d]) difficulty = d;
+        }   // (hd_text: before the HUD's pictures joined it)
         else if (k == "motion") smooth = v != "original";
         else if (k == "saturation") saturation = std::clamp(atoi(value), 0, 200);
         else if (k == "gamma") gamma = std::clamp(int(atof(value) * 100 + 0.5), 50, 150);
@@ -247,7 +254,7 @@ std::string FrontendSettings::text() const {
             BLOOM[vibration], RT_MODES[ray_tracing],
             splash, menu_music);
     out += buf;
-    snprintf(buf, sizeof(buf), "check_updates = %d\nnews_seen = %d\nrt_reflections = %d\nglobal_illumination = %s\ndust = %s\n", check_updates, news_seen, reflections, gi == 2 ? "high" : gi ? "low" : "off", dust ? "enhanced" : "original");
+    snprintf(buf, sizeof(buf), "check_updates = %d\nnews_seen = %d\nrt_reflections = %d\nglobal_illumination = %s\ndust = %s\ndifficulty = %s\n", check_updates, news_seen, reflections, gi == 2 ? "high" : gi ? "low" : "off", dust ? "enhanced" : "original", DIFFICULTY_KEYS[std::clamp(difficulty, 0, 4)]);
     out += buf;
     if (!lost_world_path.empty()) out += "lost_world_path = " + lost_world_path + "\n";
     if (!star_wars_path.empty()) out += "star_wars_path = " + star_wars_path + "\n";
@@ -352,7 +359,7 @@ void Frontend::shutdown() {
 
 // ---- Menu contents and navigation ----
 
-const wchar_t* const Frontend::TAB_NAMES[Frontend::TAB_COUNT] = {L"DISPLAY", L"GRAPHICS", L"AUDIO", L"CONTROLS"};
+const wchar_t* const Frontend::TAB_NAMES[Frontend::TAB_COUNT] = {L"DISPLAY", L"GRAPHICS", L"AUDIO", L"CONTROLS", L"GAME"};
 
 // Every settings option: its tab and, within the tab, the order shown. This is
 // the one place to put a new option (besides `all` in items()); an option
@@ -366,6 +373,7 @@ const Frontend::OptionTab Frontend::OPTION_TABS[] = {
     {OPT_AO, LIGHTING_TAB}, {OPT_BLOOM, LIGHTING_TAB}, {OPT_HAZE, LIGHTING_TAB}, {OPT_DUST, LIGHTING_TAB}, {OPT_HUD, LIGHTING_TAB},
     {OPT_VOLUME, AUDIO_TAB}, {OPT_MUSIC, AUDIO_TAB}, {OPT_SPEAKERS, AUDIO_TAB}, {OPT_REAR, AUDIO_TAB}, {OPT_SAMPLES, AUDIO_TAB}, {OPT_MENU_MUSIC, AUDIO_TAB},
     {OPT_VIBRATION, CONTROLS_TAB},
+    {OPT_DIFFICULTY, GAME_TAB},
 };
 
 const wchar_t* const Frontend::RECORD_TAB_NAMES[Frontend::RECORD_TAB_COUNT] = {L"ACHIEVEMENTS", L"STATS"};
@@ -394,6 +402,10 @@ struct DebugPick {
 };
 const DebugPick DEBUG_COURSES[] = {{0, L"DESERT"}, {1, L"MOUNTAIN"}, {3, L"SNOWY"}, {2, L"RIVIERA"}};
 // In SELECT CAR's order, then the two hidden ones (its table at 0xF1F00 has eight)
+// DIFFICULTY in the menu's order, easiest first: the game's number for each
+// (FrontendSettings::difficulty)
+const int DIFFICULTY_ORDER[5] = {3, 4, 0, 1, 2};
+const wchar_t* const DIFFICULTY_NAMES[5] = {L"NORMAL", L"HARD", L"VERY HARD", L"VERY EASY", L"EASY"};
 const DebugPick DEBUG_CARS[] = {{2, L"FORD ESCORT"},   {3, L"SUBARU IMPREZA"}, {1, L"TOYOTA COROLLA"},
                                 {4, L"MITSUBISHI LANCER"}, {0, L"PEUGEOT 306"}, {5, L"LANCIA STRATOS"},
                                 {7, L"LANCIA DELTA"},  {6, L"TOYOTA CELICA"}};
@@ -478,7 +490,7 @@ std::vector<Frontend::Item> Frontend::items() const {
             L"Shadows from a shadow map and occlusion from the depth, as without ray tracing",
             L"Sun shadows traced through the world: every car and tree, soft with distance",
             L"Also the ambient occlusion: corners and the ground under things, even off screen"};
-        std::wstring pads = gamepads.empty() ? L"No gamepad connected" : L"Connected: " + gamepads;
+        std::wstring pads = gamepads.empty() ? L"No gamepad or wheel connected" : L"Connected: " + gamepads;
         std::vector<Item> all = {{OPT_DISPLAY, L"DISPLAY", settings.fullscreen ? L"FULLSCREEN" : L"WINDOW",
                  pad_prompts ? L"Window or full screen" : L"Window or full screen (also F11 or Alt+Enter)"},
                 {OPT_MOTION, L"MOTION", settings.smooth ? L"SMOOTH" : L"ORIGINAL",
@@ -531,6 +543,8 @@ std::vector<Frontend::Item> Frontend::items() const {
                 {OPT_HUD, L"HD HUD", on_off(settings.hd_hud),
                  settings.hd_hud ? L"Redrawn HUD: sharp fonts, rev counters, gear box and co-driver signs"
                                  : L"The arcade's original pixel HUD and screens"},
+                {OPT_DIFFICULTY, L"DIFFICULTY", DIFFICULTY_NAMES[settings.difficulty],
+                 L"Arcade difficulty: the time you get at the start and at each checkpoint"},
                 {OPT_VIBRATION, L"VIBRATION", BLOOM_LEVELS[settings.vibration],
                  L"The gamepad rumbles with the steering wheel's force feedback: bumps, slides and crashes"}};
         std::vector<Item> list = {{TABS, L"", L"", pad_prompts ? L"Left / Right here, or LB / RB, change the tab"
@@ -684,6 +698,14 @@ void Frontend::activate(const Item& it, int dir) {
     case OPT_SHARPEN: settings.sharpen = !settings.sharpen; push(Action::SettingsChanged); break;
     case OPT_HUD: settings.hd_hud = !settings.hd_hud; push(Action::SettingsChanged); break;
     case OPT_MOTION: settings.smooth = !settings.smooth; push(Action::SettingsChanged); break;
+    case OPT_DIFFICULTY: {
+        int at = 0;
+        for (int i = 0; i < 5; i++)
+            if (DIFFICULTY_ORDER[i] == settings.difficulty) at = i;
+        settings.difficulty = DIFFICULTY_ORDER[(at + dir + 5) % 5];
+        push(Action::SettingsChanged);
+        break;
+    }
     case OPT_VIBRATION: settings.vibration = (settings.vibration + dir + 4) % 4; push(Action::SettingsChanged); break;
     case OPT_SAT:   // 0..200 % in steps of 10; a click past the top starts again from the bottom
         settings.saturation = dir > 0 && settings.saturation >= 200 && wrap_

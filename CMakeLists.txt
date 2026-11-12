@@ -116,6 +116,14 @@ set(SDL_INSTALL OFF CACHE BOOL "" FORCE)
 foreach(sub AUDIO VIDEO GPU RENDER CAMERA POWER DIALOG TRAY)
     set(SDL_${sub} OFF CACHE BOOL "" FORCE)
 endforeach()
+# SDL looks for DirectInput only with its audio or video on (both off above).
+# MSVC gets it anyway (SDL presets its checks there); clang or GCC for Windows
+# (llvm-mingw: NicoLauncher's builds) did not, and without it the wheels that
+# only speak DirectInput (Fanatec...) were not seen and no wheel had force
+# feedback (issue #33)
+if(WIN32 AND NOT MSVC)
+    set(HAVE_DINPUT_H 1 CACHE INTERNAL "Have include dinput.h")
+endif()
 sr2_dep(SDL3)
 FetchContent_Declare(SDL3
     URL ${SDL3_URL}

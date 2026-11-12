@@ -28,6 +28,7 @@ void options_from_settings(Options& o, const FrontendSettings& ini) {
     o.dust = ini.dust;
     o.sharpen = ini.sharpen;
     o.classic_hud = !ini.hd_hud;
+    o.difficulty = ini.difficulty;
     o.interp = ini.smooth;
     o.saturation = ini.saturation / 100.0f;
     o.gamma = ini.gamma / 100.0f;
@@ -53,6 +54,7 @@ void settings_from_options(FrontendSettings& s, const Options& o) {
     s.dust = o.dust;
     s.sharpen = o.sharpen;
     s.hd_hud = !o.classic_hud;
+    if (o.difficulty >= 0) s.difficulty = o.difficulty;
     s.smooth = o.interp;
     s.saturation = std::clamp(int(o.saturation * 100 + 0.5f), 0, 200);
     s.gamma = std::clamp(int(o.gamma * 100 + 0.5f), 50, 150);
