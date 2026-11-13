@@ -30,6 +30,7 @@ struct Options {
     bool hud_centre = false;         // --hud-centre: keep the HUD in the 4:3 area (otherwise its corners go to the window's)
     bool letterbox = false;          // --letterbox: keep the black cutscene bars
     bool classic_hud = false;        // --classic-hud: the ROM's own HUD and screens (pixel letters, no redrawn dials, signs...)
+    bool classic_liveries = false;   // --classic-liveries: the cars with the ROM's own paint (no texture pack in textures/)
     bool interp = true;              // --no-interp: show game frames as they are
     bool dump_textures = false;      // --dump-textures: write new textures to out/textures
     float light_gain = 1.0f;         // --light-gain: light multiplier on the sun and the ambient

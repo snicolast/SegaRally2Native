@@ -13,6 +13,12 @@
 #   # ...          a comment, never shown
 # Newest entry at the top. Keep each one short: about ten lines fit.
 
+[13] 13 November 2026
+- New installs on NVIDIA cards start with DLAA (DLSS QUALITY on screens above 1440p) instead of MSAA 4X, which was too heavy for 4K at 120 Hz. Saved settings are not changed.
+- NicoLauncher now shows your achievements on the game's page: start the game once from the launcher and exit, and the row appears.
+- Started from a terminal, the game gives the prompt back when it ends.
+- Stutters: out/slow.log now says where the time went in each one. Attach it if you report one.
+
 [12] 13 November 2026
 - Intel graphics (UHD, Iris): the game should now start instead of stopping with "Could not start the 3D renderer".
 

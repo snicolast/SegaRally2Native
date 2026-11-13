@@ -43,6 +43,7 @@ extern AutoInput g_auto;
 DWORD WINAPI game_thread(LPVOID);
 double qpc_seconds();              // seconds from a fixed origin (QueryPerformanceCounter)
 void frame_log(const char* fmt, ...);   // LW_FRAMELOG (app.cpp); does nothing without it
+void console_prompt();             // before the process ends: the prompt of the terminal it was started from (app.cpp)
 extern LARGE_INTEGER g_qpf, g_start_time;
 extern bool g_realtime;            // pace the game to real time (off with LW_FAST)
 extern std::atomic<bool> g_boot_skip;   // the power-on screens run through with nothing on screen

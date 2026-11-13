@@ -993,6 +993,7 @@ ULONGLONG g_boot_ms = GetTickCount64();
     stats_save();   // runs that end here (--frames, --headless) keep what they counted
     fflush(stdout);
     g_audio.stop();
+    console_prompt();
     ExitProcess(code);
 }
 

@@ -109,6 +109,7 @@ const std::vector<Entry>& table() {
         flag("--pixel2d", &Options::pixel_2d, "2D layers without xBR upscaling"),
         flag("--classic-hud", &Options::classic_hud, "the ROM's own HUD and screens: pixel letters, no redrawn graphics"),
         flag("--classic-text", &Options::classic_hud, "the same as --classic-hud"),
+        flag("--classic-liveries", &Options::classic_liveries, "the cars with the ROM's own paint, not the redone liveries"),
         flag("--hud-centre", &Options::hud_centre, "the HUD stays in the 4:3 area"),
         flag("--dump-textures", &Options::dump_textures, "write new textures to out/textures"),
         section("Sound"),

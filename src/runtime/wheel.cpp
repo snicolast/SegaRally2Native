@@ -7,6 +7,7 @@
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
+#include <cctype>
 #include <cstring>
 #include <string>
 
@@ -19,6 +20,7 @@ constexpr int NO_REST = 100000;            // a pedal's resting value not given 
 constexpr int REST_END = 30000;            // a pedal's rest learnt late must be near one end of its axis
 
 struct Config {
+    std::string device;   // part of the wheel's name (any case); "" = choose by itself
     int steer_axis = 0;
     float steer_range = 1.0f;     // fraction of the axis' travel (each side) that gives the full lock
     bool steer_invert = false;
@@ -40,6 +42,11 @@ const char* INI_TEXT =
     "; Numbers of axes and buttons are SDL's, counted from 0. Run the game with\n"
     "; SR2_WHEEL_LOG=1 (set SR2_WHEEL_LOG=1 in a command prompt, then SegaRally2.exe)\n"
     "; to see which axis or button moves as you use the wheel. -1 = not used.\n"
+    "\n"
+    "; The wheel: part of its name as the log shows it ([joystick] lines), for when\n"
+    "; a shifter, pedals or a button box is taken instead. Empty: the game picks a\n"
+    "; device SDL knows as a wheel, then one with force feedback, then the first.\n"
+    "device = %s\n"
     "\n"
     "; Steering: the axis, and the part of its travel (each side) that gives the full lock.\n"
     "; The arcade wheel turns about 270 degrees: with your wheel set to 900 degrees in its\n"
@@ -90,7 +97,7 @@ void write_ini(const Config& c) {
     SDL_CreateDirectory("save");
     FILE* f = fopen(INI_FILE, "w");
     if (!f) return;
-    fprintf(f, INI_TEXT, c.steer_axis, c.steer_range, c.steer_invert, c.steer_dead, c.gas_axis, c.brake_axis,
+    fprintf(f, INI_TEXT, c.device.c_str(), c.steer_axis, c.steer_range, c.steer_invert, c.steer_dead, c.gas_axis, c.brake_axis,
             c.combined_pedals, c.combined_gas_negative, c.shift_up, c.shift_down, c.view, c.handbrake, c.coin, c.start,
             c.menu_accept, c.menu_back, c.gear[0], c.gear[1], c.gear[2], c.gear[3], c.ffb_strength, c.ffb_spring, c.ffb_invert);
     fclose(f);
@@ -106,7 +113,12 @@ Config read_ini() {
     }
     char line[256];
     while (fgets(line, sizeof line, f)) {
-        char key[64];
+        char key[64], text[128];
+        if (sscanf(line, " device = %127[^\r\n]", text) == 1) {
+            c.device = text;
+            while (!c.device.empty() && (c.device.back() == ' ' || c.device.back() == '\t')) c.device.pop_back();
+            continue;
+        }
         float v;
         if (line[0] == ';' || sscanf(line, " %63[a-z_0-9] = %f", key, &v) != 2) continue;
         std::string k = key;
@@ -152,6 +164,7 @@ struct Wheel {
     int constant = -1, spring = -1;
     int16_t level = 0;
     bool rumble = false;   // no haptic effects: shakes as rumble
+    int score = 0;         // how sure we are it is the wheel (pick_score)
 };
 
 bool g_ok = false;
@@ -285,10 +298,30 @@ static void log_joystick(uint32_t id) {
            SDL_IsGamepad(id) ? ", mapped as a gamepad" : "");
 }
 
+// Which of the joysticks is the wheel, when there are several (a shifter,
+// pedals, a button box... issue #33): the one named in wheel.ini, then one
+// SDL knows as a wheel, then one with force feedback, then the first
+static int pick_score(uint32_t id, SDL_Joystick* j, const char** why) {
+    std::string name = SDL_GetJoystickName(j) ? SDL_GetJoystickName(j) : "", want = g_cfg.device;
+    for (char& c : name) c = char(std::tolower((unsigned char)c));
+    for (char& c : want) c = char(std::tolower((unsigned char)c));
+    if (!want.empty() && name.find(want) != std::string::npos) return *why = "named in wheel.ini", 4;
+    if (SDL_GetJoystickTypeForID(id) == SDL_JOYSTICK_TYPE_WHEEL) return *why = "a wheel for SDL", 3;
+    if (SDL_IsJoystickHaptic(j)) return *why = "it has force feedback", 2;
+    return *why = "the first joystick", 1;
+}
+
+static void close_wheel() {
+    stop_haptics(g_wheel);
+    SDL_CloseJoystick(g_wheel.joy);
+    g_wheel = Wheel{};
+    g_state = WheelState{};
+}
+
 void wheels_added(uint32_t id) {
     if (!g_ok) return;
     log_joystick(id);
-    if (g_wheel.joy || !is_wheel(id)) return;
+    if (wheel_is_ours(id) || !is_wheel(id)) return;
     SDL_Joystick* j = SDL_OpenJoystick(id);
     if (!j) return;
     int axes = SDL_GetNumJoystickAxes(j);
@@ -297,10 +330,21 @@ void wheels_added(uint32_t id) {
         return;
     }
     g_cfg = read_ini();
+    const char* why = "";
+    int score = pick_score(id, j, &why);
+    if (g_wheel.joy && score <= g_wheel.score) {   // the one we have is as good
+        SDL_CloseJoystick(j);
+        return;
+    }
+    if (g_wheel.joy) {
+        printf("[wheel] %s replaces %s\n", SDL_GetJoystickName(j), g_state.name.c_str());
+        close_wheel();
+    }
     Wheel& w = g_wheel;
     w = Wheel{};
     w.joy = j;
     w.id = id;
+    w.score = score;
     w.axes = axes;
     w.buttons = std::min(SDL_GetNumJoystickButtons(j), 64);
     for (int a = 0; a < std::min(axes, 16); a++) {
@@ -322,16 +366,14 @@ void wheels_added(uint32_t id) {
     g_state = WheelState{};
     g_state.connected = true;
     g_state.name = name ? name : "Wheel";
-    printf("[wheel] %s: %d axes, %d buttons (settings in %s)\n", g_state.name.c_str(), axes, w.buttons, INI_FILE);
+    printf("[wheel] %s: %d axes, %d buttons, taken as the wheel: %s (settings in %s)\n", g_state.name.c_str(), axes,
+           w.buttons, why, INI_FILE);
     start_haptics(w);
 }
 
 void wheels_removed(uint32_t id) {
     if (!wheel_is_ours(id)) return;
-    stop_haptics(g_wheel);
-    SDL_CloseJoystick(g_wheel.joy);
-    g_wheel = Wheel{};
-    g_state = WheelState{};
+    close_wheel();
     printf("[wheel] disconnected\n");
 }
 

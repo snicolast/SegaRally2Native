@@ -239,6 +239,8 @@ static int screen_height(HWND hwnd) {
     return int(std::min(mode.dmPelsWidth, mode.dmPelsHeight));   // (the shorter side: a screen turned upright too)
 }
 
+static std::atomic<bool> g_terminal_prompt{false};   // started from a terminal, nothing redirected: its prompt to bring back
+
 // The game is a windowed program (no console window of its own). Started from
 // a terminal, its log goes to that terminal; redirected to a file or a pipe
 // (the tests), it goes there as it always did
@@ -252,6 +254,33 @@ static void attach_parent_console() {
     if (!AttachConsole(ATTACH_PARENT_PROCESS)) return;   // double click: no console at all
     if (!out_ok) freopen("CONOUT$", "w", stdout);
     if (!err_ok) freopen("CONOUT$", "w", stderr);
+    g_terminal_prompt = !out_ok && !err_ok;   // (something redirected: a script's run, left as it is)
+    atexit(console_prompt);                   // the ways out of main() that return
+}
+
+// A terminal does not wait for a windowed program: its prompt came back as the
+// game started and the log was written after it, so when the game ended the
+// terminal looked busy until Enter was pressed. The game presses it: an Enter
+// in the terminal's input, and the terminal draws its prompt again
+void console_prompt() {
+    if (!g_terminal_prompt.exchange(false)) return;
+    fflush(stdout);
+    HANDLE in = CreateFileA("CONIN$", GENERIC_READ | GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr, OPEN_EXISTING, 0,
+                            nullptr);
+    if (in == INVALID_HANDLE_VALUE) return;
+    INPUT_RECORD key[2]{};   // down and up
+    for (int i = 0; i < 2; i++) {
+        key[i].EventType = KEY_EVENT;
+        KEY_EVENT_RECORD& k = key[i].Event.KeyEvent;
+        k.bKeyDown = i == 0;
+        k.wRepeatCount = 1;
+        k.wVirtualKeyCode = VK_RETURN;
+        k.wVirtualScanCode = WORD(MapVirtualKeyA(VK_RETURN, MAPVK_VK_TO_VSC));
+        k.uChar.AsciiChar = '\r';
+    }
+    DWORD written = 0;
+    WriteConsoleInputA(in, key, 2, &written);
+    CloseHandle(in);
 }
 
 int main(int argc, char** argv) {
@@ -456,7 +485,10 @@ int main(int argc, char** argv) {
     // is recognised with the mud or snow the game blends into it; texture_pack.h)
     pack.init("textures", g_opt.dump_textures ? "out/textures" : "", "save/clean_textures");
     pack.set_max_slots(renderer.texture_slots());
-    builder.set_texture_pack(&pack, &g_texture_ram);
+    // HD LIVERIES off (classic_liveries): the cars keep the ROM's own textures;
+    // the pack stays loaded so the option changes during a race (dumping keeps it on)
+    auto liveries_pack = [&]() -> TexturePack* { return g_opt.classic_liveries && !g_opt.dump_textures ? nullptr : &pack; };
+    builder.set_texture_pack(liveries_pack(), &g_texture_ram);
     // 2D replacements: the foreground (GPU slots 1-27) and the layers below the
     // 3D image (28-55; the backdrops of SkyPack use 56-63)
     Pack2D pack2d, pack2d_back;
@@ -857,6 +889,7 @@ int main(int argc, char** argv) {
                 double from = qpc_seconds();
                 builder.set_fov_widened(g_wide_applied);
                 builder.set_hide_blob_shadows(g_opt.shadows && g_opt.ray_tracing >= 1 && renderer.ray_tracing_available());
+                builder.set_texture_pack(liveries_pack(), &g_texture_ram);
                 builder.set_view_wide(g_opt.max_aspect > 4.0f / 3.0f + 0.01f ? std::max(1.0f, g_wide_view.load()) : 1.0f);
                 builder.build(*state, p->scene);
                 double built_at = qpc_seconds();
@@ -1089,6 +1122,7 @@ int main(int argc, char** argv) {
                         g_opt.classic_hud = !s.hd_hud;
                         shown = ~0ull;   // compose the 2D layer again even while the game stands still
                     }
+                    g_opt.classic_liveries = !s.hd_liveries;   // the scene builders pick it up with their next frame
                     g_opt.difficulty = s.difficulty;   // the game thread puts it in the operator settings
                     if (g_opt.interp != s.smooth) {
                         g_opt.interp = s.smooth;
@@ -1372,6 +1406,7 @@ int main(int argc, char** argv) {
                 std::lock_guard<std::mutex> lock(prep_mutex);
                 builder.set_fov_widened(g_wide_applied);
                 builder.set_hide_blob_shadows(g_opt.shadows && g_opt.ray_tracing >= 1 && renderer.ray_tracing_available());
+                builder.set_texture_pack(liveries_pack(), &g_texture_ram);
                 builder.set_view_wide(g_opt.max_aspect > 4.0f / 3.0f + 0.01f ? std::max(1.0f, g_wide_view.load()) : 1.0f);
                 builder.build(*next_state, own_scene);
                 auto images = pack.take_new_images();
@@ -1629,5 +1664,6 @@ int main(int argc, char** argv) {
     renderer.shutdown();
     presenter.shutdown();
     g_pads.shutdown();
+    console_prompt();
     ExitProcess(0);
 }

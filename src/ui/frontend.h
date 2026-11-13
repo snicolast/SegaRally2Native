@@ -45,6 +45,7 @@ struct FrontendSettings {
     bool dust = true;      // Sega Rally 2: dust and stones as particles (false: the game's own flat fans)
     bool sharpen = true;   // contrast adaptive sharpening
     bool hd_hud = true;    // redrawn HUD and game screens (false: the ROM's own graphics)
+    bool hd_liveries = true;   // the cars' redone paint, textures/*.png (false: the ROM's own textures)
     // The arcade's difficulty, in the game's own numbering (bits 19-21 of the
     // operator settings word, RAM 0x4A9D18): 0 NORMAL, 1 HARD, 2 VERY HARD,
     // 3 VERY EASY, 4 EASY. It sets the time at the start and at each checkpoint
@@ -135,7 +136,7 @@ private:
         RECORDS, MORE_GAMES, LOST_WORLD, STAR_WARS,   // LOST_WORLD + g: the games of MORE RECOMPS, in order
         COFFEE,   // MORE RECOMPS: the donation link
         DEBUG, DEBUG_COURSE, DEBUG_CAR, DEBUG_GEARS, DEBUG_TIME, DEBUG_GO,
-        OPT_QUALITY, OPT_DISPLAY, OPT_VOLUME, OPT_MUSIC, OPT_SPEAKERS, OPT_REAR, OPT_SAMPLES, OPT_AA, OPT_HAZE, OPT_BLOOM, OPT_AO, OPT_SUN, OPT_SHADOWS, OPT_SOFT, OPT_HDR, OPT_SHARPEN, OPT_HUD,
+        OPT_QUALITY, OPT_DISPLAY, OPT_VOLUME, OPT_MUSIC, OPT_SPEAKERS, OPT_REAR, OPT_SAMPLES, OPT_AA, OPT_HAZE, OPT_BLOOM, OPT_AO, OPT_SUN, OPT_SHADOWS, OPT_SOFT, OPT_HDR, OPT_SHARPEN, OPT_HUD, OPT_LIVERIES,
         OPT_SAT, OPT_GAMMA, OPT_MOTION, OPT_VIBRATION, OPT_RT, OPT_MENU_MUSIC, OPT_REFLECT, OPT_GI, OPT_DUST, OPT_UPDATES,
         OPT_DIFFICULTY,
     };
