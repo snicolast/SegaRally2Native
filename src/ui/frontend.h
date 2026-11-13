@@ -158,7 +158,11 @@ private:
         float alpha = 1;
         int shadow = 0;         // drop shadow offset (pixels), black
     };
-    enum Family { TITLE, ITEM, MONO };
+    // TITLE: Saira ExtraCondensed Bold (headings), ITEM: Barlow Condensed Bold,
+    // MONO: Share Tech Mono, and for the settings page ROW: Barlow Condensed
+    // SemiBold (its rows), ROW_MEDIUM: Barlow Condensed Medium (group names, key
+    // help), BODY: Barlow Regular (descriptions)
+    enum Family { TITLE, ITEM, MONO, ROW, ROW_MEDIUM, BODY };
 
     std::vector<Item> items() const;
     void activate(const Item& it, int dir);
@@ -273,12 +277,18 @@ private:
     struct ValueArea { int left, middle; };   // option rows: value column (left < 0: none)
     std::vector<ValueArea> values_;
     bool wrap_ = false;
-    // Settings tabs (tab_of in frontend.cpp says where each option goes)
+    // Settings sections (tab_of in frontend.cpp says where each option goes),
+    // shown as a column at the left of the settings page
     enum { DISPLAY_TAB, LIGHTING_TAB, AUDIO_TAB, CONTROLS_TAB, GAME_TAB };   // LIGHTING_TAB is shown as GRAPHICS
     static constexpr int TAB_COUNT = 5;
     static const wchar_t* const TAB_NAMES[TAB_COUNT];
     static int tab_of(Id id);
-    struct OptionTab { Id id; int tab; };
+    struct OptionTab {
+        Id id;
+        int tab;
+        const wchar_t* group = nullptr;   // the first of a group of rows: its heading
+    };
+    static const wchar_t* group_of(Id id);   // the heading the option starts, if any
     static const OptionTab OPTION_TABS[];   // frontend.cpp: where each option goes
     void set_tab(int t);
     int tab_ = 0;   // open tab of the settings, or of the records
@@ -299,9 +309,14 @@ private:
     int record_scroll_ = 0;
     void scroll_records(int by);
     void draw_records(int x0, int x1, int y0, int row_h);
-    // A settings tab shows this many options at most; the rest scroll
+    // The records show this many rows of the old settings card
     static constexpr int VISIBLE_OPTIONS = 6;
-    int scroll_ = 0;           // first option shown
+    int scroll_ = 0;           // first option shown (the settings page scrolls only when its rows do not fit)
+    bool options_scroll_ = false;   // the settings page's rows did not fit in the last draw
+    // The settings page (Options, also from the pause menu): the sections in a
+    // column at the left, the open one's options in groups in the middle, what
+    // the chosen one does in a panel at the right, the key help at the bottom
+    void draw_options_page(const std::vector<Item>& list, bool over_game);
     RECT more_up_{}, more_down_{};   // clickable "more" arrows of a scrolled tab
     std::vector<RECT> tab_rects_;   // a step past the end starts again (clicks on the label)
     int mouse_x_ = -1, mouse_y_ = -1;

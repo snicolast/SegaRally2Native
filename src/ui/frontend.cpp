@@ -137,7 +137,10 @@ bool https_get(const wchar_t* host, const wchar_t* path, std::string& body) {
     return ok;
 }
 
-const wchar_t* const FACES[3] = {L"Saira ExtraCondensed ExCond", L"Barlow Condensed", L"Share Tech Mono"};
+// Frontend::Family: the font's family name (as Windows knows it) and weight
+const wchar_t* const FACES[6] = {L"Saira ExtraCondensed ExCond", L"Barlow Condensed", L"Share Tech Mono",
+                                 L"Barlow Condensed SemiBold", L"Barlow Condensed Medium", L"Barlow"};
+const int WEIGHTS[6] = {FW_BOLD, FW_BOLD, FW_NORMAL, FW_SEMIBOLD, FW_MEDIUM, FW_NORMAL};
 
 }  // namespace
 
@@ -273,8 +276,9 @@ void FrontendSettings::save(const char* path) const {
 // ---- Setup ----
 
 bool Frontend::init(const std::string& font_dir) {
-    static const char* const FILES[3] = {"SairaExtraCondensed-Bold.ttf", "BarlowCondensed-Bold.ttf",
-                                         "ShareTechMono-Regular.ttf"};
+    static const char* const FILES[6] = {"SairaExtraCondensed-Bold.ttf", "BarlowCondensed-Bold.ttf",
+                                         "ShareTechMono-Regular.ttf", "BarlowCondensed-SemiBold.ttf",
+                                         "BarlowCondensed-Medium.ttf", "Barlow-Regular.ttf"};
     bool ok = true;
     for (const char* name : FILES) {
         font_data_.push_back(read_file(font_dir + "/" + name));
@@ -363,20 +367,35 @@ void Frontend::shutdown() {
 
 const wchar_t* const Frontend::TAB_NAMES[Frontend::TAB_COUNT] = {L"DISPLAY", L"GRAPHICS", L"AUDIO", L"CONTROLS", L"GAME"};
 
-// Every settings option: its tab and, within the tab, the order shown. This is
-// the one place to put a new option (besides `all` in items()); an option
-// missing here is not shown. Left out in Sega Rally 2: SOFT PARTICLES
-// (only the spectators' camera flashes).
-// Tabs past VISIBLE_OPTIONS rows scroll.
+// Every settings option: its tab, within the tab the order shown, and the
+// heading of each group of rows (on its first one). This is the one place to
+// put a new option (besides `all` in items()); an option missing here is not
+// shown. Left out in Sega Rally 2: SOFT PARTICLES (only the spectators'
+// camera flashes). A tab whose rows do not fit the page scrolls.
 const Frontend::OptionTab Frontend::OPTION_TABS[] = {
-    {OPT_QUALITY, DISPLAY_TAB}, {OPT_DISPLAY, DISPLAY_TAB}, {OPT_MOTION, DISPLAY_TAB}, {OPT_AA, DISPLAY_TAB},
-    {OPT_SAT, DISPLAY_TAB}, {OPT_GAMMA, DISPLAY_TAB}, {OPT_SHARPEN, DISPLAY_TAB}, {OPT_UPDATES, DISPLAY_TAB},
-    {OPT_SUN, LIGHTING_TAB}, {OPT_SHADOWS, LIGHTING_TAB}, {OPT_RT, LIGHTING_TAB}, {OPT_REFLECT, LIGHTING_TAB}, {OPT_GI, LIGHTING_TAB}, {OPT_HDR, LIGHTING_TAB},
-    {OPT_AO, LIGHTING_TAB}, {OPT_BLOOM, LIGHTING_TAB}, {OPT_HAZE, LIGHTING_TAB}, {OPT_DUST, LIGHTING_TAB}, {OPT_HUD, LIGHTING_TAB}, {OPT_LIVERIES, LIGHTING_TAB},
-    {OPT_VOLUME, AUDIO_TAB}, {OPT_MUSIC, AUDIO_TAB}, {OPT_SPEAKERS, AUDIO_TAB}, {OPT_REAR, AUDIO_TAB}, {OPT_SAMPLES, AUDIO_TAB}, {OPT_MENU_MUSIC, AUDIO_TAB},
-    {OPT_CONNECTED, CONTROLS_TAB}, {OPT_VIBRATION, CONTROLS_TAB},
-    {OPT_DIFFICULTY, GAME_TAB},
+    {OPT_QUALITY, DISPLAY_TAB, L"PRESET"},
+    {OPT_DISPLAY, DISPLAY_TAB, L"SCREEN"}, {OPT_MOTION, DISPLAY_TAB}, {OPT_AA, DISPLAY_TAB},
+    {OPT_SAT, DISPLAY_TAB, L"PICTURE"}, {OPT_GAMMA, DISPLAY_TAB}, {OPT_SHARPEN, DISPLAY_TAB},
+    {OPT_UPDATES, DISPLAY_TAB, L"UPDATES"},
+    {OPT_SUN, LIGHTING_TAB, L"LIGHTING"}, {OPT_SHADOWS, LIGHTING_TAB}, {OPT_HDR, LIGHTING_TAB}, {OPT_AO, LIGHTING_TAB},
+    {OPT_BLOOM, LIGHTING_TAB}, {OPT_HAZE, LIGHTING_TAB},
+    {OPT_RT, LIGHTING_TAB, L"RAY TRACING"}, {OPT_REFLECT, LIGHTING_TAB}, {OPT_GI, LIGHTING_TAB},
+    {OPT_DUST, LIGHTING_TAB, L"ARCADE ART"}, {OPT_HUD, LIGHTING_TAB}, {OPT_LIVERIES, LIGHTING_TAB},
+    {OPT_VOLUME, AUDIO_TAB, L"VOLUME"}, {OPT_MUSIC, AUDIO_TAB}, {OPT_MENU_MUSIC, AUDIO_TAB},
+    {OPT_SPEAKERS, AUDIO_TAB, L"SOUND"}, {OPT_REAR, AUDIO_TAB}, {OPT_SAMPLES, AUDIO_TAB},
+    {OPT_CONNECTED, CONTROLS_TAB, L"DEVICES"}, {OPT_VIBRATION, CONTROLS_TAB, L"GAMEPAD"},
+    {OPT_DIFFICULTY, GAME_TAB, L"ARCADE"},
 };
+
+// Under each section's name in the column at the left
+static const wchar_t* const TAB_ABOUT[] = {L"Screen, smoothing, picture", L"Lighting, ray tracing, arcade art",
+                                           L"Volume, speakers, sound", L"Devices, vibration", L"Difficulty"};
+
+const wchar_t* Frontend::group_of(Id id) {
+    for (const OptionTab& o : OPTION_TABS)
+        if (o.id == id) return o.group;
+    return nullptr;
+}
 
 const wchar_t* const Frontend::RECORD_TAB_NAMES[Frontend::RECORD_TAB_COUNT] = {L"ACHIEVEMENTS", L"STATS"};
 
@@ -390,7 +409,8 @@ void Frontend::set_tab(int t) {
     tab_ = (t + tab_count()) % tab_count();
     scroll_ = 0;
     record_scroll_ = 0;
-    selected_ = std::min(selected_, int(items().size()) - 1);
+    // the settings page: its first option (the column of sections is not a row)
+    selected_ = screen_ == Screen::Options ? 1 : std::min(selected_, int(items().size()) - 1);
     hovered_ = -1;
     dirty_ = true;
 }
@@ -560,8 +580,8 @@ std::vector<Frontend::Item> Frontend::items() const {
                  false},
                 {OPT_VIBRATION, L"VIBRATION", BLOOM_LEVELS[settings.vibration],
                  L"The gamepad rumbles with the steering wheel's force feedback: bumps, slides and crashes"}};
-        std::vector<Item> list = {{TABS, L"", L"", pad_prompts ? L"Left / Right here, or LB / RB, change the tab"
-                                                               : L"Left / Right here, Q / E or L1 / R1 change the tab"}};
+        std::vector<Item> list = {{TABS, L"", L"", pad_prompts ? L"LB / RB change the section"
+                                                               : L"Q / E or Tab change the section, or click one"}};
         for (const OptionTab& o : OPTION_TABS)   // the tab's options in their order, then any not listed
             for (const Item& it : all)
                 if (it.id == o.id && o.tab == tab_) list.push_back(it);
@@ -631,7 +651,7 @@ void Frontend::activate(const Item& it, int dir) {
     dirty_ = true;
     switch (it.id) {
     case PLAY: push(Action::StartArcade); break;   // Sega Rally 2: no mode select, the arcade game
-    case OPTIONS: options_from_pause_ = false; tab_ = 0; open(Screen::Options); break;
+    case OPTIONS: options_from_pause_ = false; tab_ = 0; open(Screen::Options); selected_ = 1; break;
     case RECORDS: tab_ = 0; record_scroll_ = 0; open(Screen::Records); break;
     case QUIT: push(Action::Quit); break;
     case QUIT_TO_MENU: push(Action::QuitToMenu); break;
@@ -654,7 +674,7 @@ void Frontend::activate(const Item& it, int dir) {
     case COFFEE: open_coffee(); break;
     case BACK: back(); break;
     case RESUME: push(Action::Resume); break;
-    case SETTINGS: options_from_pause_ = true; tab_ = 0; open(Screen::Options); break;
+    case SETTINGS: options_from_pause_ = true; tab_ = 0; open(Screen::Options); selected_ = 1; break;
     case OPT_DISPLAY: push(Action::ToggleFullscreen); break;
     case OPT_QUALITY: {
         int q = settings.quality();
@@ -767,7 +787,7 @@ bool Frontend::key(int vk) {
     if (news_open_ && screen_ == Screen::Main) return news_key(vk);
     auto list = items();
     int n = int(list.size());
-    bool option_row = selected_ < n && (list[selected_].id >= OPT_DISPLAY || list[selected_].id == DEBUG_COURSE ||
+    bool option_row = selected_ < n && (list[selected_].id >= OPT_QUALITY || list[selected_].id == DEBUG_COURSE ||
                                         list[selected_].id == DEBUG_CAR || list[selected_].id == DEBUG_GEARS ||
                                         list[selected_].id == DEBUG_TIME);
     bool tabs_row = selected_ < n && list[selected_].id == TABS;
@@ -788,6 +808,10 @@ bool Frontend::key(int vk) {
         open_recomp_page(more_game_);
         return true;
     }
+    if (screen_ == Screen::Options && n > 1) switch (vk) {   // the rows: the column of sections is not one of them
+        case VK_UP: case 'W': select(selected_ <= 1 ? n - 1 : selected_ - 1); return true;
+        case VK_DOWN: case 'S': select(selected_ >= n - 1 ? 1 : selected_ + 1); return true;
+        }
     switch (vk) {
     case VK_UP: case 'W': select((selected_ + n - 1) % n); return true;
     case VK_DOWN: case 'S': select((selected_ + 1) % n); return true;
@@ -1085,9 +1109,11 @@ void Frontend::click(int x, int y) {
     mouse_move(x, y);
     auto list = items();
     if (hovered_ < 0 || hovered_ >= int(list.size()) || !list[hovered_].enabled) return;
-    if (list[hovered_].id == TABS) {   // the tab under the pointer
+    if (list[hovered_].id == TABS) {   // the tab under the pointer (the settings page: the section)
         for (int t = 0; t < int(tab_rects_.size()); t++)
-            if (x >= tab_rects_[t].left && x < tab_rects_[t].right) set_tab(t);
+            if (screen_ == Screen::Options ? PtInRect(&tab_rects_[t], p) != FALSE
+                                           : x >= tab_rects_[t].left && x < tab_rects_[t].right)
+                set_tab(t);
         return;
     }
     // Option rows: a click on the value side goes down left of the middle of the
@@ -1110,8 +1136,8 @@ void Frontend::wheel(int x, int y, int delta) {
     auto list = items();
     bool on_value = hovered_ >= 0 && hovered_ < int(values_.size()) && values_[hovered_].left >= 0 &&
                     x >= values_[hovered_].left;
-    bool scrolls = screen_ == Screen::Options && int(list.size()) - 2 > VISIBLE_OPTIONS;
-    if (hovered_ >= 0 && hovered_ < int(list.size()) && list[hovered_].id >= OPT_DISPLAY && (on_value || !scrolls)) {
+    bool scrolls = screen_ == Screen::Options && options_scroll_;
+    if (hovered_ >= 0 && hovered_ < int(list.size()) && list[hovered_].id >= OPT_QUALITY && (on_value || !scrolls)) {
         int keep = hovered_;   // over a value: change it
         hovered_ = -1;   // no wrap-around from the wheel
         activate(list[keep], delta > 0 ? +1 : -1);
@@ -1312,7 +1338,7 @@ HFONT Frontend::font(Family f, int px) {
     auto key = std::make_pair(int(f), px);
     auto it = fonts_.find(key);
     if (it != fonts_.end()) return it->second;
-    HFONT h = CreateFontW(-px, 0, 0, 0, f == MONO ? FW_NORMAL : FW_BOLD, FALSE, FALSE, FALSE, DEFAULT_CHARSET,
+    HFONT h = CreateFontW(-px, 0, 0, 0, WEIGHTS[f], FALSE, FALSE, FALSE, DEFAULT_CHARSET,
                           OUT_TT_ONLY_PRECIS, CLIP_DEFAULT_PRECIS, ANTIALIASED_QUALITY, DEFAULT_PITCH, FACES[f]);
     fonts_[key] = h;
     return h;
@@ -1322,7 +1348,7 @@ const Frontend::Mask& Frontend::mask(Family f, int px, const std::wstring& s, in
     std::wstring key = std::to_wstring(int(f)) + L"|" + std::to_wstring(px) + L"|" + std::to_wstring(edge_px) + L"|" + s;
     auto it = masks_.find(key);
     if (it != masks_.end()) return it->second;
-    if (masks_.size() > 400) masks_.clear();   // window resized many times
+    if (masks_.size() > 800) masks_.clear();   // window resized many times
     Mask& m = masks_[key];
     SelectObject(dc_, font(f, px));
     const std::wstring& t = s;
@@ -1977,6 +2003,217 @@ bool Frontend::draw_splash_video(std::vector<uint32_t>& out) {
     return true;
 }
 
+// ---- The settings page ----
+
+namespace {
+constexpr uint32_t PAGE_TEXT = 0xEEF3FA, PAGE_DIM = 0x8A98AC, PAGE_FAINT = 0x56627A, PAGE_LINE = 0x3A4458;
+constexpr uint32_t GROUP_RED = 0xD8564A, VALUE = 0xE8D278, TAG = 0x26324A, TAG_TEXT = 0xAFC6E6;
+
+std::wstring title_case(const wchar_t* s) {   // DISPLAY -> Display
+    std::wstring t = s;
+    for (size_t i = 1; i < t.size(); i++)
+        if (t[i - 1] != L' ') t[i] = wchar_t(towlower(t[i]));
+    return t;
+}
+}  // namespace
+
+void Frontend::draw_options_page(const std::vector<Item>& list, bool over_game) {
+    auto U = [&](float v) { return int(v * u_ + 0.5f); };
+    const int w = w_, h = h_, n = int(list.size());
+    const int n_opts = n - 2;   // list: the sections, the options of the open one, BACK
+    // The page darkens what is behind it: the blurred backdrop, or the paused game
+    fill(0, 0, w, h, over_game ? 0x000000 : PANEL, over_game ? 0.9f : 0.6f);   // (the game's HUD must not show through)
+
+    // Columns: as wide as the window allows, up to 1728 units (1080p: a 96 pixel margin)
+    const int mx = std::max(U(56), (w - U(1728)) / 2);
+    const int wide_u = int(float(w - 2 * mx) / u_);   // the content's width in 1080p units
+    const bool wide = wide_u >= 1600;
+    const int rail_w = U(wide ? 300.0f : 250.0f), gap = U(wide ? 48.0f : 32.0f), panel_w = U(wide ? 600.0f : 430.0f);
+    const int rail_x = mx, rows_x0 = mx + rail_w + gap, panel_x0 = w - mx - panel_w, rows_x1 = panel_x0 - gap;
+    const int top = U(196), bottom = h - U(100);   // the columns, between the title and the key help
+
+    // Title, the red mark under it, where this is, and the logo at the top right
+    text(TITLE, U(80), over_game ? L"SETTINGS" : L"OPTIONS", mx, U(34), 0, {0xFFFFFF, 0xE2EAF4, 0, 0, 1, U(3)});
+    fill(mx + U(2), U(134), mx + U(74), U(139), SABER, 1);
+    std::wstring crumb = std::wstring(over_game ? L"Pause" : L"Main menu") + L"  ›  " +
+                         (over_game ? L"Settings" : L"Options") + L"  ›  " + title_case(TAB_NAMES[tab_]);
+    text(ROW_MEDIUM, U(24), crumb, mx + U(92), U(120), 0, {PAGE_DIM, PAGE_DIM});
+    if (logo_.w > 0) {
+        int lw = U(wide ? 300.0f : 240.0f), lh = lw * logo_.h / logo_.w;
+        sprite(logo_, w - mx - lw, U(26), lw, lh);
+    }
+
+    hit_.assign(size_t(n), RECT{});
+    values_.assign(size_t(n), ValueArea{-1, 0});
+
+    // The sections, one under the other; the open one with a red band
+    const int sec_h = U(92);
+    tab_rects_.clear();
+    for (int t = 0; t < TAB_COUNT; t++) {
+        int y = top + t * sec_h;
+        bool open_tab = t == tab_;
+        RECT r{rail_x - U(20), y - U(8), rail_x + rail_w, y + sec_h - U(16)};
+        if (open_tab) {
+            hgrad(r.left, r.top, r.right, r.bottom, SABER, 0.62f, 0.0f);
+            fill(r.left, r.top, r.left + std::max(3, U(6)), r.bottom, 0xFF6A5A, 1);
+        } else if (selected_ == 0 && hovered_ == 0 && mouse_y_ >= r.top && mouse_y_ < r.bottom) {
+            hgrad(r.left, r.top, r.right, r.bottom, 0xFFFFFF, 0.08f, 0.0f);   // under the pointer
+        }
+        text(TITLE, U(44), TAB_NAMES[t], rail_x + U(10), y - U(6), 0,
+             {open_tab ? 0xFFFFFFu : PAGE_DIM, open_tab ? 0xE2EAF4u : PAGE_DIM, 0, 0, 1, U(2)});
+        text(BODY, U(17), TAB_ABOUT[t], rail_x + U(12), y + U(46), 0,
+             {open_tab ? 0xD2DAE6u : PAGE_FAINT, open_tab ? 0xD2DAE6u : PAGE_FAINT});
+        tab_rects_.push_back(r);
+    }
+    hit_[0] = {rail_x - U(20), top - U(8), rail_x + rail_w, top + TAB_COUNT * sec_h - U(16)};
+    {   // BACK, under the sections
+        int y = top + TAB_COUNT * sec_h + U(28);
+        bool sel = selected_ == n - 1;
+        RECT r{rail_x - U(20), y - U(6), rail_x + rail_w, y + U(58)};
+        if (sel) {
+            hgrad(r.left, r.top, r.right, r.bottom, SABER, 0.62f, 0.0f);
+            fill(r.left, r.top, r.left + std::max(3, U(6)), r.bottom, 0xFF6A5A, 1);
+        }
+        triangle(rail_x + U(20), y + U(26), U(16), -1, sel ? GOLD_BOTTOM : PAGE_DIM, 1);
+        text(TITLE, U(40), L"BACK", rail_x + U(40), y - U(2), 0,
+             sel ? Style{GOLD_TOP, GOLD_BOTTOM, 0, 0, 1, U(2)} : Style{PAGE_DIM, PAGE_DIM, 0, 0, 1, U(2)});
+        hit_[n - 1] = r;
+    }
+
+    // The options in their groups. Rows that do not fit scroll, keeping the chosen one in view
+    const int row_h = U(46), head_h = U(38), head_gap = U(10), label_px = U(30);
+    std::vector<const wchar_t*> group(size_t(std::max(0, n_opts)), nullptr);   // the heading over each row, if any
+    std::vector<const wchar_t*> group_name(size_t(std::max(0, n_opts)), L"");  // the group each row is in
+    const wchar_t* current = L"";
+    for (int k = 0; k < n_opts; k++) {
+        if (const wchar_t* g = group_of(list[1 + k].id)) current = group[k] = g;
+        group_name[k] = current;
+    }
+    auto height = [&](int k, bool first) {   // a row with its heading (the first one shown always has one)
+        bool head = first ? *group_name[k] != 0 : group[k] != nullptr;
+        return row_h + (head ? head_h + (first ? 0 : head_gap) : 0);
+    };
+    auto fits = [&](int from, int to) {
+        int sum = 0;
+        for (int k = from; k <= to; k++) sum += height(k, k == from);
+        return sum <= bottom - top;
+    };
+    int k_sel = selected_ - 1;
+    scroll_ = std::clamp(scroll_, 0, std::max(0, n_opts - 1));
+    if (k_sel >= 0 && k_sel < n_opts) {
+        if (k_sel < scroll_) scroll_ = k_sel;
+        while (scroll_ < k_sel && !fits(scroll_, k_sel)) scroll_++;
+    }
+    while (scroll_ > 0 && fits(scroll_ - 1, n_opts - 1)) scroll_--;   // no room left empty at the bottom
+    options_scroll_ = n_opts > 0 && (scroll_ > 0 || !fits(0, n_opts - 1));
+    more_up_ = more_down_ = RECT{};
+
+    const int text_h = mask(ROW, label_px, L"Ag", 0).text_h;
+    const Style gold{GOLD_TOP, GOLD_BOTTOM, 0, 0, 1, U(2)};
+    int y = top, last_shown = scroll_ - 1;
+    for (int k = scroll_; k < n_opts; k++) {
+        if (y + height(k, k == scroll_) > bottom) break;
+        const Item& it = list[1 + k];
+        const wchar_t* head = k == scroll_ ? (*group_name[k] ? group_name[k] : nullptr) : group[k];
+        if (head) {
+            if (k != scroll_) y += head_gap;
+            int gw = text(ROW_MEDIUM, U(20), head, rows_x0, y + U(6), 0, {GROUP_RED, GROUP_RED});
+            fill(rows_x0 + gw + U(14), y + U(20), rows_x1, y + U(20) + std::max(1, U(1)), PAGE_LINE, 1);
+            y += head_h;
+        }
+        bool sel = 1 + k == selected_;
+        if (sel) {
+            hgrad(rows_x0 - U(18), y, rows_x1 + U(4), y + row_h, SABER, it.enabled ? 0.28f : 0.12f, it.enabled ? 0.7f : 0.25f);
+            fill(rows_x0 - U(18), y, rows_x0 - U(18) + std::max(3, U(6)), y + row_h, 0xFF6A5A, it.enabled ? 1.0f : 0.5f);
+        }
+        int ty = y + (row_h - text_h) / 2, cy = y + row_h / 2;
+        uint32_t lc = it.enabled ? PAGE_TEXT : PAGE_FAINT;
+        int lw = text(ROW, label_px, it.label, rows_x0, ty, 0, {lc, lc, 0, 0, 1, U(2)});
+        if (it.id == OPT_RT || it.id == OPT_REFLECT || it.id == OPT_GI) {   // needs a graphics card with ray tracing
+            int tx = rows_x0 + lw + U(14), tw = measure(ROW, U(15), L"RT") + U(16);
+            fill(tx, cy - U(11), tx + tw, cy + U(11), TAG, 1);
+            text(ROW, U(15), L"RT", tx + tw / 2, cy - U(10), 1, {TAG_TEXT, TAG_TEXT});
+        }
+        int right = rows_x1 - U(20), vx0;
+        if (it.id == OPT_VOLUME || it.id == OPT_MUSIC) {   // ten segments
+            int seg_w = U(15), sgap = U(5), seg_h = U(20);
+            vx0 = right - 10 * seg_w - 9 * sgap;
+            for (int s = 0; s < 10; s++) {
+                int x0 = vx0 + s * (seg_w + sgap);
+                bool lit = s < (it.id == OPT_MUSIC ? settings.music : settings.volume);
+                uint32_t c = lit ? mix(0xBFE8FF, SABER, float(s) / 9) : 0x2A3240;
+                fill(x0 - 1, cy - seg_h / 2 - 1, x0 + seg_w + 1, cy + seg_h / 2 + 1, 0x000000, 0.8f);
+                fill(x0, cy - seg_h / 2, x0 + seg_w, cy + seg_h / 2, c, sel || !lit ? 1.0f : 0.8f);
+            }
+        } else {
+            uint32_t vc = it.enabled ? VALUE : PAGE_FAINT;
+            vx0 = right - text(ROW, label_px, it.value, right, ty, 2, sel && it.enabled ? gold : Style{vc, vc, 0, 0, 1, U(2)});
+        }
+        if (sel && it.enabled) {
+            triangle(vx0 - U(20), cy, U(14), -1, GOLD_BOTTOM, 1);
+            triangle(right + U(13), cy, U(14), +1, GOLD_BOTTOM, 1);
+        }
+        hit_[1 + k] = {rows_x0 - U(18), y, rows_x1 + U(4), y + row_h};
+        values_[1 + k] = {vx0 - U(40), (vx0 + right) / 2};
+        y += row_h;
+        last_shown = k;
+    }
+    if (scroll_ > 0) {   // more rows above / below: arrows past the right end of the rows
+        triangle(rows_x1 + U(30), top + U(14), U(18), -2, GOLD_BOTTOM, 1);
+        more_up_ = {rows_x1 + U(10), top - U(8), rows_x1 + U(52), top + U(36)};
+    }
+    if (last_shown < n_opts - 1) {
+        triangle(rows_x1 + U(30), bottom - U(14), U(18), 2, GOLD_BOTTOM, 1);
+        more_down_ = {rows_x1 + U(10), bottom - U(36), rows_x1 + U(52), bottom + U(8)};
+    }
+
+    // The panel at the right: what the chosen row is and does
+    const int px1 = w - mx, pad = U(wide ? 36.0f : 26.0f);
+    fill(panel_x0, top - U(8), px1, bottom, PANEL, over_game ? 0.95f : 0.62f);
+    frame(panel_x0, top - U(8), px1, bottom, std::max(1, U(1)), PAGE_LINE, 1);
+    fill(panel_x0, top - U(8), px1, top - U(8) + std::max(2, U(4)), SABER, 1);
+    if (selected_ >= 0 && selected_ < n) {
+        const Item& it = list[selected_];
+        bool section = it.id == TABS, back = it.id == BACK;
+        int x = panel_x0 + pad, py = top + U(22), inner = px1 - pad - x;
+        const wchar_t* kicker = section ? L"SECTION" : back || n_opts <= 0 ? L"" : group_name[std::clamp(selected_ - 1, 0, n_opts - 1)];
+        if (kicker && *kicker) text(ROW_MEDIUM, U(20), kicker, x, py, 0, {GROUP_RED, GROUP_RED});
+        py += U(30);
+        std::wstring title = section ? std::wstring(TAB_NAMES[tab_]) : it.label;
+        int title_px = U(60);
+        while (title_px > U(36) && measure(TITLE, title_px, title) > inner) title_px -= U(4);
+        text(TITLE, title_px, title, x, py, 0, {0xFFFFFF, 0xE2EAF4, 0, 0, 1, U(3)});
+        py += title_px + U(22);
+        if (!section && !back && !it.value.empty() && it.id != OPT_VOLUME && it.id != OPT_MUSIC) {
+            text(ROW, U(34), it.value, x, py, 0, it.enabled ? gold : Style{PAGE_FAINT, PAGE_FAINT});
+            py += U(52);
+        } else if (it.id == OPT_VOLUME || it.id == OPT_MUSIC) {
+            text(ROW, U(34), std::to_wstring(it.id == OPT_MUSIC ? settings.music : settings.volume) + L" / 10", x, py, 0, gold);
+            py += U(52);
+        }
+        fill(x, py, px1 - pad, py + std::max(1, U(1)), PAGE_LINE, 1);
+        py += U(24);
+        std::wstring about = section ? std::wstring(TAB_ABOUT[tab_]) + L".  " + it.hint : it.hint;
+        for (const std::wstring& line : wrap(BODY, U(24), about, inner)) {
+            if (py + U(34) > bottom - U(16)) break;
+            text(BODY, U(24), line, x, py, 0, {0xD6DEEA, 0xD6DEEA});
+            py += U(34);
+        }
+    }
+
+    // The key help along the bottom
+    fill(0, h - U(76), w, h, 0x000000, 0.5f);
+    fill(0, h - U(76), w, h - U(76) + std::max(1, U(1)), PAGE_LINE, 1);
+    struct Key { const wchar_t *pad, *key, *what; };
+    std::vector<Key> keys = pad_prompts
+        ? std::vector<Key>{{L"LS", nullptr, L"SELECT / CHANGE"}, {L"LB", nullptr, L""}, {L"RB", nullptr, L"SECTION"},
+                           {L"B", nullptr, L"BACK"}}
+        : std::vector<Key>{{nullptr, L"UP / DOWN", L"SELECT"}, {nullptr, L"LEFT / RIGHT", L"CHANGE"},
+                           {nullptr, L"Q / E", L"SECTION"}, {nullptr, L"ESC", L"BACK"}};
+    int kh = U(34), kx = mx;
+    for (const Key& k : keys) prompt(kx, h - U(38) - kh / 2, kh, k.pad, k.key, k.what);
+}
+
 bool Frontend::draw(int w, int h, std::vector<uint32_t>& out) {
     if (!active() || w <= 0 || h <= 0) return false;
     take_news();
@@ -2034,6 +2271,12 @@ bool Frontend::draw(int w, int h, std::vector<uint32_t>& out) {
         return true;
     }
     auto list = items();
+    if (screen_ == Screen::Options) {   // the settings page, over the backdrop or the paused game
+        draw_options_page(list, over_game);
+        dirty_ = false;
+        fade_in();
+        return true;
+    }
     bool on_records = screen_ == Screen::Records;
     bool options = screen_ == Screen::Options || on_records;   // records use the settings' card and tab row
     if (!over_game && !options) {   // Main, Debug, More: on the backdrop
