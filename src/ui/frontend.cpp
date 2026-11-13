@@ -6,6 +6,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <cwctype>
 #include <ctime>
 #include <initializer_list>
 #include <thread>
@@ -373,7 +374,7 @@ const Frontend::OptionTab Frontend::OPTION_TABS[] = {
     {OPT_SUN, LIGHTING_TAB}, {OPT_SHADOWS, LIGHTING_TAB}, {OPT_RT, LIGHTING_TAB}, {OPT_REFLECT, LIGHTING_TAB}, {OPT_GI, LIGHTING_TAB}, {OPT_HDR, LIGHTING_TAB},
     {OPT_AO, LIGHTING_TAB}, {OPT_BLOOM, LIGHTING_TAB}, {OPT_HAZE, LIGHTING_TAB}, {OPT_DUST, LIGHTING_TAB}, {OPT_HUD, LIGHTING_TAB}, {OPT_LIVERIES, LIGHTING_TAB},
     {OPT_VOLUME, AUDIO_TAB}, {OPT_MUSIC, AUDIO_TAB}, {OPT_SPEAKERS, AUDIO_TAB}, {OPT_REAR, AUDIO_TAB}, {OPT_SAMPLES, AUDIO_TAB}, {OPT_MENU_MUSIC, AUDIO_TAB},
-    {OPT_VIBRATION, CONTROLS_TAB},
+    {OPT_CONNECTED, CONTROLS_TAB}, {OPT_VIBRATION, CONTROLS_TAB},
     {OPT_DIFFICULTY, GAME_TAB},
 };
 
@@ -491,7 +492,11 @@ std::vector<Frontend::Item> Frontend::items() const {
             L"Shadows from a shadow map and occlusion from the depth, as without ray tracing",
             L"Sun shadows traced through the world: every car and tree, soft with distance",
             L"Also the ambient occlusion: corners and the ground under things, even off screen"};
-        std::wstring pads = gamepads.empty() ? L"No gamepad or wheel connected" : L"Connected: " + gamepads;
+        // The pads and the wheel the game sees (app.cpp fills `gamepads`): the
+        // row's value, cut to fit, and the whole list as its hint
+        std::wstring connected = gamepads.empty() ? L"NONE" : gamepads;
+        if (connected.size() > 24) connected = connected.substr(0, 22) + L"...";
+        for (wchar_t& c : connected) c = wchar_t(towupper(c));   // as the other values
         std::vector<Item> all = {{OPT_DISPLAY, L"DISPLAY", settings.fullscreen ? L"FULLSCREEN" : L"WINDOW",
                  pad_prompts ? L"Window or full screen" : L"Window or full screen (also F11 or Alt+Enter)"},
                 {OPT_MOTION, L"MOTION", settings.smooth ? L"SMOOTH" : L"ORIGINAL",
@@ -549,6 +554,10 @@ std::vector<Frontend::Item> Frontend::items() const {
                                       : L"The arcade's original car paint"},
                 {OPT_DIFFICULTY, L"DIFFICULTY", DIFFICULTY_NAMES[settings.difficulty],
                  L"Arcade difficulty: the time you get at the start and at each checkpoint"},
+                {OPT_CONNECTED, L"CONNECTED", connected,
+                 gamepads.empty() ? L"No gamepad or wheel found. Plug one in: it shows here as soon as the game sees it"
+                                  : L"Found: " + gamepads,
+                 false},
                 {OPT_VIBRATION, L"VIBRATION", BLOOM_LEVELS[settings.vibration],
                  L"The gamepad rumbles with the steering wheel's force feedback: bumps, slides and crashes"}};
         std::vector<Item> list = {{TABS, L"", L"", pad_prompts ? L"Left / Right here, or LB / RB, change the tab"
@@ -711,6 +720,7 @@ void Frontend::activate(const Item& it, int dir) {
         push(Action::SettingsChanged);
         break;
     }
+    case OPT_CONNECTED: break;   // shows what is plugged in, nothing to change
     case OPT_VIBRATION: settings.vibration = (settings.vibration + dir + 4) % 4; push(Action::SettingsChanged); break;
     case OPT_SAT:   // 0..200 % in steps of 10; a click past the top starts again from the bottom
         settings.saturation = dir > 0 && settings.saturation >= 200 && wrap_
