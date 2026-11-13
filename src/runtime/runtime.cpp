@@ -1194,32 +1194,30 @@ static void attract_guard_frame() {
     g_game_over_menu = true;
 }
 
-// The wheel's force feedback as gamepad rumble: the drive board drives two
-// motors (0x7F = no force). Their slow part is the spring that holds the
-// wheel to the middle (it follows the wheel); the quick changes on top are
-// the game's jolts and shakes (bumps, crashes), kept for the pads
-// (app_input.cpp). SR2_FFB_LOG prints the motors as they change
+// The wheel's force feedback, from what the game asks of the drive board's
+// servo (drive_board.cpp): a force that turns the wheel, and a vibration.
+// For the pads (app_input.cpp) it becomes rumble: the vibration, and the
+// quick changes of the force (bumps, crashes) above its slow part. Outside
+// the races the game stops the motor, so nothing pulls the wheel then.
+// SR2_FFB_LOG prints them as they change
 static void ffb_frame() {
     static const bool log = getenv("SR2_FFB_LOG") != nullptr;
-    static float slow[2] = {0, 0};
-    static int last[2] = {-1, -1};
-    int m[2] = {g_drive.motor_x(), g_drive.motor_y()};
-    float shake = 0;
-    for (int a = 0; a < 2; a++) {
-        float f = float(m[a] - 0x7F);
-        slow[a] += 0.2f * (f - slow[a]);
-        shake = std::max(shake, std::fabs(f - slow[a]) / 128.0f);
-    }
-    if (log && (m[0] != last[0] || m[1] != last[1]))
-        printf("[ffb] frame %llu  x %02X y %02X  shake %.2f  wheel %d\n", (unsigned long long)g_frame, m[0], m[1], shake,
-               int(g_inputs.steer));
-    last[0] = m[0], last[1] = m[1];
+    static float slow = 0;
+    float f = g_drive.force(), vib = g_drive.vibration();
+    slow += 0.2f * (f - slow);
+    float shake = std::max(vib, std::fabs(f - slow));
+    static float last_f = 2, last_vib = -1;
+    if (log && (f != last_f || vib != last_vib))
+        printf("[ffb] frame %llu  reg %02X = %02X  force %+.2f  vibration %.2f  shake %.2f  wheel %d\n",
+               (unsigned long long)g_frame, g_drive.reg(), g_drive.value(), f, vib, shake, int(g_inputs.steer));
+    last_f = f, last_vib = vib;
     float was = g_ffb_shake.load();
     if (shake > was) g_ffb_shake = shake;
-    // A steering wheel's force feedback (wheel.cpp): the motor as a force,
-    // 0x80 = none, smoothed over a few frames
+    // A steering wheel (wheel.cpp), smoothed over a few frames, with the sign
+    // it had when this was the motor byte read as a level (0x40, a force to
+    // the right, gave -0.5); ffb_invert in wheel.ini turns it round
     static float force = 0;
-    force += 0.5f * ((float(m[0]) - 128.0f) / 128.0f - force);
+    force += 0.5f * (-f - force);
     wheel_set_force(std::clamp(force, -1.0f, 1.0f), shake);
 }
 
