@@ -597,6 +597,16 @@ int main(int argc, char** argv) {
     if (g_opt.menu) {
         if (!frontend.init("third_party/fonts")) printf("[menu] fonts missing: using the Windows ones\n");
         if (!ui.init(presenter)) g_opt.menu = false;
+        // The backdrop moves under the menus (on the GPU); SR2_MENU_STILL=1: the still picture
+        if (g_opt.menu && !getenv("SR2_MENU_STILL")) {
+            for (int slot = 0; slot < UiOverlay::BACKDROPS; slot++) {
+                const uint32_t* px = nullptr;
+                int w = 0, h = 0;
+                frontend.backdrop_pixels(slot, px, w, h);
+                ui.set_backdrop(slot, px, uint32_t(w), uint32_t(h), 0.0f);   // the crop of backdrop_background()
+            }
+            frontend.set_motion(true);
+        }
     }
     if (g_opt.menu) {
         FrontendSettings& s = frontend.settings;
@@ -1211,6 +1221,7 @@ int main(int argc, char** argv) {
                     if (menu_shot) save_bmp(menu_shot, ui_pixels.data(), rc.right, rc.bottom);
                 }
             }
+            ui.set_motion(frontend.active() ? frontend.motion_backdrop() : -1);
         }
         double input_from = qpc_seconds();
         parts.menu = input_from - loop_from;
