@@ -15,3 +15,5 @@
 // After R3DSceneBuilder::link_previous (the vertices it adds have no keys)
 void r3d_sr2_dust(R3DScene& out, const std::vector<std::vector<R3DInstance>>& instances, R3DTextureRam* textures);
 void r3d_set_sr2_dust(bool enhanced);
+// The race is on the Snowy course: the dust is snow there (runtime.cpp, from the game's round)
+void r3d_set_sr2_snowy(bool snowy);
