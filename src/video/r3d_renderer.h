@@ -30,6 +30,8 @@ struct ScreenLayout {
     float scale;     // window pixels per Model 3 pixel
     float ox, oy;    // window position of the 3D view
     float game_x0;   // Model 3 x of the 4:3 area inside the 3D view
+    float hud_x;     // how far the race HUD's corners move out of the 4:3 area: to the
+                     // view's edges, but no further than a 16:9 view's (ultrawide screens)
 };
 // max_aspect <= 4/3 keeps the original 4:3 picture
 ScreenLayout compute_layout(float win_w, float win_h, float max_aspect);

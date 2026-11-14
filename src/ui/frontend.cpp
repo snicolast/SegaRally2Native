@@ -232,6 +232,7 @@ void FrontendSettings::load(const char* path) {
         else if (k == "saturation") saturation = std::clamp(atoi(value), 0, 200);
         else if (k == "gamma") gamma = std::clamp(int(atof(value) * 100 + 0.5), 50, 150);
         else if (k == "vibration") vibration = v == "low" ? 1 : v == "medium" ? 2 : v == "high" ? 3 : 0;
+        else if (k == "trigger_rumble") trigger_rumble = std::clamp(atoi(value) / 10 * 10, 0, 100);
         else if (k == "splash_screens") splash = on;
         else if (k == "menu_music") menu_music = on;
         else if (k == "check_updates") check_updates = on;
@@ -256,7 +257,7 @@ std::string FrontendSettings::text() const {
             BLOOM[vibration], RT_MODES[ray_tracing],
             splash, menu_music);
     out += buf;
-    snprintf(buf, sizeof(buf), "check_updates = %d\nnews_seen = %d\nrt_reflections = %d\nglobal_illumination = %s\ndust = %s\ndifficulty = %s\nhd_liveries = %d\n", check_updates, news_seen, reflections, gi == 2 ? "high" : gi ? "low" : "off", dust ? "enhanced" : "original", DIFFICULTY_KEYS[std::clamp(difficulty, 0, 4)], hd_liveries);
+    snprintf(buf, sizeof(buf), "check_updates = %d\nnews_seen = %d\nrt_reflections = %d\nglobal_illumination = %s\ndust = %s\ndifficulty = %s\nhd_liveries = %d\ntrigger_rumble = %d\n", check_updates, news_seen, reflections, gi == 2 ? "high" : gi ? "low" : "off", dust ? "enhanced" : "original", DIFFICULTY_KEYS[std::clamp(difficulty, 0, 4)], hd_liveries, trigger_rumble);
     out += buf;
     if (!lost_world_path.empty()) out += "lost_world_path = " + lost_world_path + "\n";
     if (!star_wars_path.empty()) out += "star_wars_path = " + star_wars_path + "\n";
@@ -374,7 +375,7 @@ const Frontend::OptionTab Frontend::OPTION_TABS[] = {
     {OPT_SUN, LIGHTING_TAB}, {OPT_SHADOWS, LIGHTING_TAB}, {OPT_RT, LIGHTING_TAB}, {OPT_REFLECT, LIGHTING_TAB}, {OPT_GI, LIGHTING_TAB}, {OPT_HDR, LIGHTING_TAB},
     {OPT_AO, LIGHTING_TAB}, {OPT_BLOOM, LIGHTING_TAB}, {OPT_HAZE, LIGHTING_TAB}, {OPT_DUST, LIGHTING_TAB}, {OPT_HUD, LIGHTING_TAB}, {OPT_LIVERIES, LIGHTING_TAB},
     {OPT_VOLUME, AUDIO_TAB}, {OPT_MUSIC, AUDIO_TAB}, {OPT_SPEAKERS, AUDIO_TAB}, {OPT_REAR, AUDIO_TAB}, {OPT_SAMPLES, AUDIO_TAB}, {OPT_MENU_MUSIC, AUDIO_TAB},
-    {OPT_CONNECTED, CONTROLS_TAB}, {OPT_VIBRATION, CONTROLS_TAB},
+    {OPT_CONNECTED, CONTROLS_TAB}, {OPT_VIBRATION, CONTROLS_TAB}, {OPT_TRIGGERS, CONTROLS_TAB},
     {OPT_DIFFICULTY, GAME_TAB},
 };
 
@@ -559,7 +560,10 @@ std::vector<Frontend::Item> Frontend::items() const {
                                   : L"Found: " + gamepads,
                  false},
                 {OPT_VIBRATION, L"VIBRATION", BLOOM_LEVELS[settings.vibration],
-                 L"The gamepad rumbles with the steering wheel's force feedback: bumps, slides and crashes"}};
+                 L"The gamepad rumbles with the steering wheel's force feedback: bumps, slides and crashes"},
+                {OPT_TRIGGERS, L"TRIGGER RUMBLE", settings.trigger_rumble ? std::to_wstring(settings.trigger_rumble) + L"%" : std::wstring(L"OFF"),
+                 L"Xbox One / Series pads: the brake trigger trembles as you slow down, the accelerator as the wheels spin, "
+                 L"both over bumps (a share of VIBRATION)"}};
         std::vector<Item> list = {{TABS, L"", L"", pad_prompts ? L"Left / Right here, or LB / RB, change the tab"
                                                                : L"Left / Right here, Q / E or L1 / R1 change the tab"}};
         for (const OptionTab& o : OPTION_TABS)   // the tab's options in their order, then any not listed
@@ -722,6 +726,11 @@ void Frontend::activate(const Item& it, int dir) {
     }
     case OPT_CONNECTED: break;   // shows what is plugged in, nothing to change
     case OPT_VIBRATION: settings.vibration = (settings.vibration + dir + 4) % 4; push(Action::SettingsChanged); break;
+    case OPT_TRIGGERS:   // 0..100 % in steps of 10; a click past the top starts again from OFF
+        settings.trigger_rumble = dir > 0 && settings.trigger_rumble >= 100 && wrap_
+                                      ? 0 : std::clamp(settings.trigger_rumble + 10 * dir, 0, 100);
+        push(Action::SettingsChanged);
+        break;
     case OPT_SAT:   // 0..200 % in steps of 10; a click past the top starts again from the bottom
         settings.saturation = dir > 0 && settings.saturation >= 200 && wrap_
                                   ? 0 : std::clamp(settings.saturation + 10 * dir, 0, 200);

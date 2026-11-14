@@ -54,6 +54,7 @@ struct FrontendSettings {
     int saturation = 100;   // colour saturation in % (100 = original, the default)
     int gamma = 100;        // gamma x 100 (100 = original, higher = brighter)
     int vibration = 2;      // gamepad vibration: 0 off, 1 low, 2 medium, 3 high
+    int trigger_rumble = 100;   // the triggers' own motors (Xbox One / Series pads), % of VIBRATION's strength, steps of 10
     bool splash = true;     // the logo video at launch (splash_screens = 0: straight to the menu)
     bool menu_music = true; // the game's Main Title in the menus
     std::string lost_world_path;   // MORE RECOMPS: where The Lost World is (its folder or LostWorld.exe; "" = look for it)
@@ -138,7 +139,7 @@ private:
         DEBUG, DEBUG_COURSE, DEBUG_CAR, DEBUG_GEARS, DEBUG_TIME, DEBUG_GO,
         OPT_QUALITY, OPT_DISPLAY, OPT_VOLUME, OPT_MUSIC, OPT_SPEAKERS, OPT_REAR, OPT_SAMPLES, OPT_AA, OPT_HAZE, OPT_BLOOM, OPT_AO, OPT_SUN, OPT_SHADOWS, OPT_SOFT, OPT_HDR, OPT_SHARPEN, OPT_HUD, OPT_LIVERIES,
         OPT_SAT, OPT_GAMMA, OPT_MOTION, OPT_VIBRATION, OPT_RT, OPT_MENU_MUSIC, OPT_REFLECT, OPT_GI, OPT_DUST, OPT_UPDATES,
-        OPT_DIFFICULTY, OPT_CONNECTED,
+        OPT_DIFFICULTY, OPT_CONNECTED, OPT_TRIGGERS,
     };
     struct Item {
         Id id;
