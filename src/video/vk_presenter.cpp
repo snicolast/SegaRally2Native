@@ -463,6 +463,7 @@ void VkPresenter::frame(const RecordFn& record) {
     bi.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
     vkBeginCommandBuffer(cmd_, &bi);
     vk_image_barrier(cmd_, images_[index], VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
+    current_image_ = images_[index];
     record(cmd_, views_[index], extent_);
     double t2 = seconds();
     bool capture = !capture_path_.empty();

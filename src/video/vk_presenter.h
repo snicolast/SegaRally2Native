@@ -56,6 +56,7 @@ public:
     VkCommandPool pool() const { return pool_; }
     VkFormat swap_format() const { return format_; }
     uint32_t find_memory(uint32_t type_bits, VkMemoryPropertyFlags flags) const;
+    VkImage current_image() const { return current_image_; }   // the swapchain image frame() is recording
     // Runs one-off commands (initial uploads) and waits
     void run_once(const std::function<void(VkCommandBuffer)>& fn);
     // Saves the next presented frame as a BMP file
@@ -94,6 +95,7 @@ public:
     double limit_queue(int depth, uint64_t timeout_ns);
 
 private:
+    VkImage current_image_ = VK_NULL_HANDLE;
     bool create_swapchain();
     void destroy_swapchain();
     static LRESULT CALLBACK wndproc(HWND, UINT, WPARAM, LPARAM);

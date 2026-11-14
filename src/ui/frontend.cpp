@@ -1998,7 +1998,8 @@ void Frontend::draw_options_page(const std::vector<Item>& list, bool over_game) 
     const int w = w_, h = h_, n = int(list.size());
     const int n_opts = n - 2;   // list: the sections, the options of the open one, BACK
     // The page darkens what is behind it: the blurred backdrop, or the paused game
-    fill(0, 0, w, h, over_game ? 0x000000 : PANEL, over_game ? 0.9f : 0.6f);   // (the game's HUD must not show through)
+    // (the game's HUD must not show through: blurred under the pause settings, else nearly black)
+    fill(0, 0, w, h, over_game && !pause_blur ? 0x000000 : PANEL, over_game && !pause_blur ? 0.9f : 0.6f);
 
     // Columns: as wide as the window allows, up to 1728 units (1080p: a 96 pixel margin)
     const int mx = std::max(U(56), (w - U(1728)) / 2);

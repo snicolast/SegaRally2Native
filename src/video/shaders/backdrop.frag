@@ -14,12 +14,13 @@ layout(push_constant) uniform Params {
     float pic_aspect;      // ... of the picture
     float anchor_x;        // the picture's crop when the window is narrower: 0 keeps its left side
     float height;          // window height in pixels
-    float blurred;         // 1: the blurred picture behind the settings
+    float blurred;         // 1: the blurred picture behind the settings; 2: the frozen game (pause settings), still
     float dust;            // 1: the haze and the motes (SR2_MENU_DUST=0: off)
 } pc;
 
 const float TAU = 6.2831853;
 const float BLUR_DIM = 0.3;   // the blurred picture this much darker
+const float PAUSE_DIM = 0.35;  // the frozen game a little more (the race HUD is bright)
 
 // The picture covering the window (cut at the sides or at the top and bottom)
 vec2 cover(vec2 s) {
@@ -88,6 +89,10 @@ float motes(vec2 q, float t, float cells, vec2 vel, float density, float seed) {
 }
 
 void main() {
+    if (pc.blurred > 1.5) {   // the pause settings: the game blurred and darker, nothing moving
+        color = vec4(smooth_sample(uv) * (1.0 - PAUSE_DIM), 1.0);
+        return;
+    }
     float t = pc.t;
     bool blurred = pc.blurred > 0.5;
     vec2 q = vec2(uv.x * pc.screen_aspect, uv.y);   // window height = 1, y down

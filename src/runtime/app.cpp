@@ -602,6 +602,7 @@ int main(int argc, char** argv) {
     if (g_opt.menu) {
         if (!frontend.init("third_party/fonts")) printf("[menu] fonts missing: using the Windows ones\n");
         if (!ui.init(presenter)) g_opt.menu = false;
+        frontend.pause_blur = g_opt.menu && ui.can_freeze() && !getenv("SR2_PAUSE_DARK");   // SR2_PAUSE_DARK=1: the old nearly black shade
         // The backdrop moves under the menus (on the GPU); SR2_MENU_STILL=1: the still picture
         if (g_opt.menu && !getenv("SR2_MENU_STILL")) {
             for (int slot = 0; slot < UiOverlay::BACKDROPS; slot++) {
@@ -1266,6 +1267,7 @@ int main(int argc, char** argv) {
                 }
             }
             ui.set_motion(frontend.active() ? frontend.motion_backdrop() : -1);
+            ui.set_freeze(frontend.active() && frontend.pause_settings() && frontend.pause_blur);
         }
         double input_from = qpc_seconds();
         parts.menu = input_from - loop_from;

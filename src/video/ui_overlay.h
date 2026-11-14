@@ -26,6 +26,13 @@ public:
     void set_backdrop(int slot, const uint32_t* bgra, uint32_t w, uint32_t h, float anchor_x);
     // The one under the current menu picture, or -1 (the picture is opaque)
     void set_motion(int slot) { motion_ = slot; }
+    // The pause settings: the frozen game under them, blurred (copied once
+    // from the swapchain image, halved a few times) and a little darker
+    void set_freeze(bool on) {
+        if (!on) frost_ok_ = false;
+        freeze_ = on;
+    }
+    bool can_freeze() const { return back_pipeline_ != VK_NULL_HANDLE; }
 
     // After the main renderer: the moving backdrop (if any), then the picture
     // blended over the swapchain image
@@ -48,6 +55,7 @@ private:
         VkDescriptorSet set = VK_NULL_HANDLE;
     };
     void upload(VkCommandBuffer cmd, Layer& l);
+    void frost(VkCommandBuffer cmd, VkExtent2D extent);   // the blurred copy of the game
     void destroy(Layer& l);
     VkPipeline make_pipeline(const uint32_t* fs, size_t fs_bytes, VkPipelineLayout layout, bool blend);
 
@@ -63,6 +71,14 @@ private:
     bool dust_ = true;         // SR2_MENU_DUST=0: the backdrop without its haze and motes
     double fixed_fps_ = 0;     // SR2_MENU_FPS=N: the clock goes 1/N s a frame (films at any speed)
     uint64_t back_frames_ = 0;
+
+    bool freeze_ = false, frost_ok_ = false;
+    VkImage frost_image_ = VK_NULL_HANDLE;
+    VkDeviceMemory frost_memory_ = VK_NULL_HANDLE;
+    VkImageView frost_view_ = VK_NULL_HANDLE;   // its smallest level
+    VkDescriptorSet frost_set_ = VK_NULL_HANDLE;
+    VkExtent2D frost_extent_{};
+    uint32_t frost_levels_ = 0;
 
     VkSampler sampler_ = VK_NULL_HANDLE;
     VkDescriptorSetLayout set_layout_ = VK_NULL_HANDLE;
