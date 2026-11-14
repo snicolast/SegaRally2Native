@@ -16,6 +16,8 @@
 namespace {
 
 constexpr const char* INI_FILE = "save/wheel.ini";
+constexpr int NO_REST = 100000;            // a pedal's resting value not given in wheel.ini
+constexpr int REST_END = 30000;            // a pedal's rest learnt late must be near one end of its axis
 
 struct Config {
     std::string device;   // part of the wheel's name (any case); "" = choose by itself
@@ -26,8 +28,10 @@ struct Config {
     bool combined_pedals = false;   // one axis: accelerator one way, brake the other
     int gas_axis = 1, brake_axis = 2;
     bool combined_gas_negative = true;
+    int gas_rest = NO_REST, brake_rest = NO_REST;   // set by hand in wheel.ini; else learnt
     int shift_up = 4, shift_down = 5, view = 3, handbrake = 1, coin = 8, start = 9;
     int gear[4] = {-1, -1, -1, -1};   // H shifter buttons for gears 1..4
+    int menu_accept = 0, menu_back = 2;   // in the menus (with the hat, the paddles and start)
     float ffb_strength = 0.7f;    // the game's motor force
     float ffb_spring = 0.25f;     // centring spring (0 = none)
     bool ffb_invert = false;
@@ -55,11 +59,16 @@ const char* INI_TEXT =
     "; Pedals: one axis each, or combined_pedals = 1 for one axis (accelerator one way,\n"
     "; brake the other: combined_gas_negative = 1 when the accelerator moves it below\n"
     "; the middle). Their resting position is learnt when the wheel is plugged in or the\n"
-    "; game starts, so keep your feet off them then.\n"
+    "; game starts (or, on wheels that report them late, when they first move), so keep\n"
+    "; your feet off them then. If a pedal still reads as pressed when released, give its\n"
+    "; resting value (from SR2_WHEEL_LOG) by removing the ';' below, for example\n"
+    "; gas_rest = 32767 and brake_rest = 32767 on a Logitech G29.\n"
     "gas_axis = %d\n"
     "brake_axis = %d\n"
     "combined_pedals = %d\n"
     "combined_gas_negative = %d\n"
+    "; gas_rest = 32767\n"
+    "; brake_rest = 32767\n"
     "\n"
     "; Buttons\n"
     "shift_up = %d\n"
@@ -68,6 +77,10 @@ const char* INI_TEXT =
     "handbrake = %d\n"
     "coin = %d\n"
     "start = %d\n"
+    "; Menus and the pause screen: the hat (d-pad) moves, menu_accept and menu_back\n"
+    "; choose and go back, start resumes, the shift paddles change the settings tab\n"
+    "menu_accept = %d\n"
+    "menu_back = %d\n"
     "; H shifter (gears 1-4); with them set, no gear button held is neutral\n"
     "gear1 = %d\n"
     "gear2 = %d\n"
@@ -86,7 +99,7 @@ void write_ini(const Config& c) {
     if (!f) return;
     fprintf(f, INI_TEXT, c.device.c_str(), c.steer_axis, c.steer_range, c.steer_invert, c.steer_dead, c.gas_axis, c.brake_axis,
             c.combined_pedals, c.combined_gas_negative, c.shift_up, c.shift_down, c.view, c.handbrake, c.coin, c.start,
-            c.gear[0], c.gear[1], c.gear[2], c.gear[3], c.ffb_strength, c.ffb_spring, c.ffb_invert);
+            c.menu_accept, c.menu_back, c.gear[0], c.gear[1], c.gear[2], c.gear[3], c.ffb_strength, c.ffb_spring, c.ffb_invert);
     fclose(f);
 }
 
@@ -118,12 +131,16 @@ Config read_ini() {
         else if (k == "brake_axis") c.brake_axis = i;
         else if (k == "combined_pedals") c.combined_pedals = i != 0;
         else if (k == "combined_gas_negative") c.combined_gas_negative = i != 0;
+        else if (k == "gas_rest") c.gas_rest = std::clamp(i, -32768, 32767);
+        else if (k == "brake_rest") c.brake_rest = std::clamp(i, -32768, 32767);
         else if (k == "shift_up") c.shift_up = i;
         else if (k == "shift_down") c.shift_down = i;
         else if (k == "view") c.view = i;
         else if (k == "handbrake") c.handbrake = i;
         else if (k == "coin") c.coin = i;
         else if (k == "start") c.start = i;
+        else if (k == "menu_accept") c.menu_accept = i;
+        else if (k == "menu_back") c.menu_back = i;
         else if (k.size() == 5 && k.rfind("gear", 0) == 0 && k[4] >= '1' && k[4] <= '4') c.gear[k[4] - '1'] = i;
         else if (k == "ffb_strength") c.ffb_strength = std::clamp(v, 0.0f, 1.0f);
         else if (k == "ffb_spring") c.ffb_spring = std::clamp(v, 0.0f, 1.0f);
@@ -138,6 +155,9 @@ struct Wheel {
     uint32_t id = 0;
     int axes = 0, buttons = 0;
     int16_t rest[16] = {};
+    bool rest_known[16] = {};   // false: rest is still SDL's first value, which can be a stray 0
+    int menu_dir = -1;          // the hat in the menus, repeated while held
+    double next_repeat = 0;
     bool was_down[64] = {};
     int16_t last_axis[16] = {};
     SDL_Haptic* haptic = nullptr;
@@ -330,8 +350,18 @@ void wheels_added(uint32_t id) {
     for (int a = 0; a < std::min(axes, 16); a++) {
         int16_t v = 0;
         if (!SDL_GetJoystickAxisInitialState(j, a, &v)) v = SDL_GetJoystickAxis(j, a);
+        // Some wheels (a Logitech G29's pedals) give 0 here, and keep 0 until
+        // their first report, seconds later: a pedal's 0 is checked in wheels_poll
         w.rest[a] = w.last_axis[a] = v;
+        w.rest_known[a] = v != 0;
     }
+    auto set_rest = [&](int a, int v) {
+        if (v == NO_REST || a < 0 || a >= std::min(axes, 16)) return;
+        w.rest[a] = int16_t(v);
+        w.rest_known[a] = true;
+    };
+    set_rest(g_cfg.gas_axis, g_cfg.gas_rest);
+    set_rest(g_cfg.brake_axis, g_cfg.brake_rest);
     const char* name = SDL_GetJoystickName(j);
     g_state = WheelState{};
     g_state.connected = true;
@@ -347,12 +377,30 @@ void wheels_removed(uint32_t id) {
     printf("[wheel] disconnected\n");
 }
 
-void wheels_poll(bool focused) {
-    g_focused = focused;
+void wheels_poll(bool focused, bool menu, std::vector<PadKey>& keys) {
+    bool driving = focused && !menu;
+    menu = focused && menu;
+    g_focused = driving;
     Wheel& w = g_wheel;
     WheelState& st = g_state;
     st.shift_up = st.shift_down = st.coin = st.start = st.moved = false;
     if (!w.joy) return;
+    // A pedal whose rest SDL gave as 0: while it still reads 0 it has not
+    // reported yet. If its first reading jumps straight to one end of the axis,
+    // that end is its rest; anything else is a pedal that really rests in the
+    // middle and is moving. Not with combined pedals, whose ends are full gas
+    // or brake
+    if (!g_cfg.combined_pedals) {
+        for (int a : {g_cfg.gas_axis, g_cfg.brake_axis}) {
+            if (a < 0 || a >= std::min(w.axes, 16) || w.rest_known[a]) continue;
+            int16_t v = SDL_GetJoystickAxis(w.joy, a);
+            if (v == 0) continue;
+            w.rest_known[a] = true;
+            if (std::abs(int(v)) < REST_END) continue;
+            w.rest[a] = v;
+            printf("[wheel] axis %d rest %d\n", a, v);
+        }
+    }
     if (g_log) {
         for (int a = 0; a < std::min(w.axes, 16); a++) {
             int16_t v = SDL_GetJoystickAxis(w.joy, a);
@@ -370,7 +418,7 @@ void wheels_poll(bool focused) {
     }
     auto held = [&](int b) { return b >= 0 && b < w.buttons && down[b]; };
     auto pressed = [&](int b) { return held(b) && !w.was_down[b]; };
-    if (focused) {
+    if (driving) {
         float s = axis(w, g_cfg.steer_axis) / 32767.0f / g_cfg.steer_range;
         if (g_cfg.steer_invert) s = -s;
         float m = std::fabs(s);
@@ -406,6 +454,29 @@ void wheels_poll(bool focused) {
         st.steer = st.gas = st.brake = 0;
         st.view = st.handbrake = false;
         st.gear = -1;
+    }
+    if (menu) {
+        if (pressed(g_cfg.menu_accept)) keys.push_back(PadKey::Accept);
+        if (pressed(g_cfg.menu_back)) keys.push_back(PadKey::Back);
+        if (pressed(g_cfg.start)) keys.push_back(PadKey::Start);
+        if (pressed(g_cfg.shift_down)) keys.push_back(PadKey::TabPrev);
+        if (pressed(g_cfg.shift_up)) keys.push_back(PadKey::TabNext);
+        int dir = -1;
+        if (SDL_GetNumJoystickHats(w.joy) > 0) {
+            uint8_t h = SDL_GetJoystickHat(w.joy, 0);
+            dir = h & SDL_HAT_UP ? 0 : h & SDL_HAT_DOWN ? 1 : h & SDL_HAT_LEFT ? 2 : h & SDL_HAT_RIGHT ? 3 : -1;
+        }
+        double now = double(SDL_GetTicksNS()) * 1e-9;
+        if (dir != w.menu_dir || (dir >= 0 && now >= w.next_repeat)) {
+            if (dir >= 0) {
+                static const PadKey DIRS[4] = {PadKey::Up, PadKey::Down, PadKey::Left, PadKey::Right};
+                keys.push_back(DIRS[dir]);
+                w.next_repeat = now + (dir != w.menu_dir ? 0.4 : 0.11);
+            }
+            w.menu_dir = dir;
+        }
+    } else {
+        w.menu_dir = -1;
     }
     std::copy(std::begin(down), std::end(down), std::begin(w.was_down));
     apply_force(w);

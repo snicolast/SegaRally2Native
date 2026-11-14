@@ -76,13 +76,28 @@ void poll_keyboard(HWND hwnd) {
 // what they press is added to it, the stronger steering of the two. The first
 // pad connected drives; on any pad BACK is the coin, and START starts the
 // game after a coin (within 30 s, once per coin) and otherwise asks for the
-// pause menu. Returns true when a pad asks for it
+// pause menu; the wheel's coin and start buttons do the same. Returns true
+// when a pad or the wheel asks for it
 bool poll_gamepads(HWND hwnd) {
     bool focused = GetForegroundWindow() == hwnd;
     g_pads.poll(g_pad_rumble, focused, g_menu_open);
     if (!focused || g_menu_open || !g_auto.events.empty()) return false;
     Inputs& in = g_inputs;
     auto keyboard_steer = [&] { return (float(in.steer) - 128.0f) / 127.0f; };
+    bool pause = false;
+    static double coin_at = -1;   // START after a coin (any pad or the wheel) starts the game, else pauses
+    auto coin = [&] {
+        press_coin();
+        coin_at = qpc_seconds();
+    };
+    auto start = [&] {
+        if (coin_at >= 0 && qpc_seconds() - coin_at < 30) {
+            press_start();
+            coin_at = -1;
+        } else {
+            pause = true;
+        }
+    };
     if (const WheelState& w = wheel_state(); w.connected) {
         if (std::fabs(w.steer) >= std::fabs(keyboard_steer())) in.steer = adc(128.0f + 127.0f * w.steer);
         in.accel = std::max(int(in.accel), adc(255.0f * w.gas));
@@ -92,10 +107,10 @@ bool poll_gamepads(HWND hwnd) {
         if (w.shift_down) in.gear = std::max(int(in.gear) - 1, 1);
         if (w.view) in.view = true;
         if (w.handbrake) in.handbrake = true;
-        if (w.coin) press_coin();
-        if (w.start) press_start();
+        if (w.coin) coin();
+        if (w.start) start();
     }
-    bool pause = false, driver = true;   // the first connected pad is the driver's
+    bool driver = true;   // the first connected pad is the driver's
     for (int i = 0; i < Gamepads::MAX; i++) {
         const PadState& pad = g_pads.pad(i);
         if (!pad.connected) continue;
@@ -118,19 +133,8 @@ bool poll_gamepads(HWND hwnd) {
             }
             driver = false;
         }
-        static double coin_at = -1;
-        if (pad.back) {
-            press_coin();
-            coin_at = qpc_seconds();
-        }
-        if (pad.start) {
-            if (coin_at >= 0 && qpc_seconds() - coin_at < 30) {
-                press_start();
-                coin_at = -1;
-            } else {
-                pause = true;
-            }
-        }
+        if (pad.back) coin();
+        if (pad.start) start();
     }
     return pause;
 }
