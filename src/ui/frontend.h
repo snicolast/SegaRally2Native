@@ -54,10 +54,9 @@ struct FrontendSettings {
     int saturation = 100;   // colour saturation in % (100 = original, the default)
     int gamma = 100;        // gamma x 100 (100 = original, higher = brighter)
     int vibration = 2;      // gamepad vibration: 0 off, 1 low, 2 medium, 3 high
+    int trigger_rumble = 100;   // the triggers' own motors (Xbox One / Series pads), % of VIBRATION's strength, steps of 10
     bool splash = true;     // the logo video at launch (splash_screens = 0: straight to the menu)
     bool menu_music = true; // the game's Main Title in the menus
-    std::string lost_world_path;   // MORE RECOMPS: where The Lost World is (its folder or LostWorld.exe; "" = look for it)
-    std::string star_wars_path;    // MORE RECOMPS: where Star Wars Trilogy is (its folder or StarWarsTrilogy.exe; "" = look for it)
     bool check_updates = true;     // at launch, news.txt on GitHub: a window with what is new and UPDATE NOW
     int news_seen = 0;             // the newest news.txt entry the player closed with LATER
 
@@ -74,8 +73,7 @@ struct FrontendSettings {
 
 class Frontend {
 public:
-    static constexpr int RECOMP_COUNT = 2;   // the games of MORE RECOMPS
-    enum class Screen { None, Splash, Main, Options, Pause, Records, More, Debug };
+    enum class Screen { None, Splash, Main, Options, Pause, Records, Debug, Play };
     enum class Action { None, StartArcade, Resume, Quit, ToggleFullscreen, SettingsChanged,
                         QuitToMenu, StartDebug };
 
@@ -92,6 +90,10 @@ public:
     bool splash() const { return screen_ == Screen::Splash; }
     // The menu is over the frozen game (pause and its settings)
     bool over_game() const { return screen_ == Screen::Pause || (screen_ == Screen::Options && options_from_pause_); }
+    bool pause_settings() const { return screen_ == Screen::Options && options_from_pause_; }
+    // The pause settings stand on the game blurred on the GPU (ui_overlay): a
+    // lighter shade then, as OPTIONS over the blurred backdrop. App sets it
+    bool pause_blur = false;
 
     // Window input; true when the menu used it
     bool key(int vk);
@@ -128,17 +130,24 @@ public:
 
     // Redraws into `out` when something changed (or the size did); true if it did
     bool draw(int w, int h, std::vector<uint32_t>& out);
+    // The backdrop moving on the GPU (video/ui_overlay.cpp): draw() then leaves
+    // it out (transparent there) and only shades it. App sets it (SR2_MENU_STILL: off)
+    void set_motion(bool on);
+    // The backdrop under the picture draw() made: 0 the picture, 1 blurred
+    // (the settings), -1 none (the picture is opaque: the splash, the pause)
+    int motion_backdrop() const;
+    // The backdrop's pixels for the GPU (BGRA): 0 the picture, 1 blurred
+    void backdrop_pixels(int slot, const uint32_t*& px, int& w, int& h);
     void invalidate() { dirty_ = true; }
 
 private:
     enum Id {
         PLAY, OPTIONS, QUIT, BACK, RESUME, SETTINGS, QUIT_TO_MENU, TABS,
-        RECORDS, MORE_GAMES, LOST_WORLD, STAR_WARS,   // LOST_WORLD + g: the games of MORE RECOMPS, in order
-        COFFEE,   // MORE RECOMPS: the donation link
+        RECORDS, ARCADE, GHOST,   // ARCADE, GHOST: PLAY's page
         DEBUG, DEBUG_COURSE, DEBUG_CAR, DEBUG_GEARS, DEBUG_TIME, DEBUG_GO,
         OPT_QUALITY, OPT_DISPLAY, OPT_VOLUME, OPT_MUSIC, OPT_SPEAKERS, OPT_REAR, OPT_SAMPLES, OPT_AA, OPT_HAZE, OPT_BLOOM, OPT_AO, OPT_SUN, OPT_SHADOWS, OPT_SOFT, OPT_HDR, OPT_SHARPEN, OPT_HUD, OPT_LIVERIES,
         OPT_SAT, OPT_GAMMA, OPT_MOTION, OPT_VIBRATION, OPT_RT, OPT_MENU_MUSIC, OPT_REFLECT, OPT_GI, OPT_DUST, OPT_UPDATES,
-        OPT_DIFFICULTY,
+        OPT_DIFFICULTY, OPT_CONNECTED, OPT_TRIGGERS,
     };
     struct Item {
         Id id;
@@ -158,7 +167,11 @@ private:
         float alpha = 1;
         int shadow = 0;         // drop shadow offset (pixels), black
     };
-    enum Family { TITLE, ITEM, MONO };
+    // TITLE: Saira ExtraCondensed Bold (headings), ITEM: Barlow Condensed Bold,
+    // MONO: Share Tech Mono, and for the settings page ROW: Barlow Condensed
+    // SemiBold (its rows), ROW_MEDIUM: Barlow Condensed Medium (group names, key
+    // help), BODY: Barlow Regular (descriptions)
+    enum Family { TITLE, ITEM, MONO, ROW, ROW_MEDIUM, BODY };
 
     std::vector<Item> items() const;
     void activate(const Item& it, int dir);
@@ -177,6 +190,10 @@ private:
     void blend(int x, int y, uint32_t rgb, float a);
     void saber(int cx, int y, int half_w);   // a glowing lightsaber-blue line
     void hgrad(int x0, int y0, int x1, int y1, uint32_t rgb, float a0, float a1);
+    // A slanted red stripe, as on the cars: left edge leaning right by `slant`
+    // at the top (the right edge too), alpha a0 to a1 across, and a thin one
+    // (width sw) gap before it
+    void ribbon(int x0, int y0, int x1, int y1, int slant, float a0, float a1, int gap, int sw, float alpha);
     void vgrad(int x0, int y0, int x1, int y1, uint32_t rgb, float a0, float a1);
     void frame(int x0, int y0, int x1, int y1, int t, uint32_t rgb, float alpha);
     void pill(int x0, int y0, int x1, int y1, uint32_t rgb, float alpha);
@@ -203,20 +220,30 @@ private:
     void backdrop_background();
     // Main, Play, Boss, Survival and Debug on the backdrop: a column at the right under the logo
     void draw_side_menu(const std::vector<Item>& list);
-    // MORE RECOMPS: snicolast's other ports (The Lost World, Star Wars Trilogy).
-    // The chosen one's art (res/menu/more/) on the left of the backdrop; ENTER
-    // plays it when it is on this PC, else opens its page
-    struct RecompArt {
-        Picture backdrop, logo;
-        std::vector<uint32_t> bg;   // its backdrop of MORE RECOMPS for the current size
-        std::wstring exe;           // found on this PC ("" = not found)
+    // PLAY's page and back: the entries go out to the right one after the
+    // other, then the new page's come in (as Windjammers' menus). Drawn every
+    // refresh meanwhile; keys and clicks wait
+    double slide_from_ = -1;          // menu_clock() when the current half began (-1: still)
+    bool slide_out_ = false;          // going out (else coming in)
+    bool slide_intro_ = false;        // the main menu coming up: only in, a little slower
+    Screen slide_to_ = Screen::Main;  // the page coming in
+    int slide_sel_ = 0;               // its entry chosen
+    uint64_t menu_frames_ = 0;        // draw() calls (SR2_MENU_FPS: the clock goes by them)
+    double menu_clock() const;
+    void slide_to(Screen s, int sel);
+    void finish_slide();              // a key or a click meanwhile: at once to the end
+    int slide_offset(int i) const;    // how far right entry i is, in pixels
+    // The chosen entry's ribbon gliding to the next one (0.13 s, easing
+    // out) instead of jumping; `key` changes (another page or section, a new
+    // window size): straight there. Drawn every refresh while it moves
+    struct Glide {
+        float from = 0, to = 0, from_h = 0, to_h = 0;
+        double t0 = -1;
+        long key = -1;
     };
-    RecompArt recomps_[RECOMP_COUNT];
-    int more_game_ = 0;               // the one whose art is shown (the chosen one, the last one on BACK)
-    void find_recomps();
-    void open_recomp_page(int g);
-    void play_recomp(int g);
-    RECT recomp_logo_rect(int g) const;   // where its logo goes on the backdrop
+    Glide glide_menu_, glide_tab_, glide_row_;
+    bool gliding_ = false;            // one of them is moving (this picture)
+    void glide(Glide& g, long key, int y, int h, int& gy, int& gh);
     void placeholder_backdrop();      // no background picture: a drawn one (Sega Rally 2)
     void shade_backdrop();            // darker at the right and the bottom, the logo: on px_
     // UPDATE AVAILABLE: the window over the main menu with the entries of
@@ -240,8 +267,6 @@ private:
     bool news_key(int vk);
     void news_choose(int button);
     void start_update();
-
-    void open_coffee();   // the donation link (MORE RECOMPS)
 
     // The splash screens: their pictures, which one is on and since when
     std::vector<Picture> splash_;
@@ -273,12 +298,18 @@ private:
     struct ValueArea { int left, middle; };   // option rows: value column (left < 0: none)
     std::vector<ValueArea> values_;
     bool wrap_ = false;
-    // Settings tabs (tab_of in frontend.cpp says where each option goes)
+    // Settings sections (tab_of in frontend.cpp says where each option goes),
+    // shown as a column at the left of the settings page
     enum { DISPLAY_TAB, LIGHTING_TAB, AUDIO_TAB, CONTROLS_TAB, GAME_TAB };   // LIGHTING_TAB is shown as GRAPHICS
     static constexpr int TAB_COUNT = 5;
     static const wchar_t* const TAB_NAMES[TAB_COUNT];
     static int tab_of(Id id);
-    struct OptionTab { Id id; int tab; };
+    struct OptionTab {
+        Id id;
+        int tab;
+        const wchar_t* group = nullptr;   // the first of a group of rows: its heading
+    };
+    static const wchar_t* group_of(Id id);   // the heading the option starts, if any
     static const OptionTab OPTION_TABS[];   // frontend.cpp: where each option goes
     void set_tab(int t);
     int tab_ = 0;   // open tab of the settings, or of the records
@@ -299,9 +330,14 @@ private:
     int record_scroll_ = 0;
     void scroll_records(int by);
     void draw_records(int x0, int x1, int y0, int row_h);
-    // A settings tab shows this many options at most; the rest scroll
+    // The records show this many rows of the old settings card
     static constexpr int VISIBLE_OPTIONS = 6;
-    int scroll_ = 0;           // first option shown
+    int scroll_ = 0;           // first option shown (the settings page scrolls only when its rows do not fit)
+    bool options_scroll_ = false;   // the settings page's rows did not fit in the last draw
+    // The settings page (Options, also from the pause menu): the sections in a
+    // column at the left, the open one's options in groups in the middle, what
+    // the chosen one does in a panel at the right, the key help at the bottom
+    void draw_options_page(const std::vector<Item>& list, bool over_game);
     RECT more_up_{}, more_down_{};   // clickable "more" arrows of a scrolled tab
     std::vector<RECT> tab_rects_;   // a step past the end starts again (clicks on the label)
     int mouse_x_ = -1, mouse_y_ = -1;
@@ -317,5 +353,7 @@ private:
     uint32_t* px_ = nullptr;
     std::vector<uint32_t> bg_;        // main menu backdrop for the current size
     std::vector<uint32_t> bg_blur_;   // ... blurred and darkened, behind the options
+    bool motion_ = false;             // set_motion
+    Picture backdrop_blur_;           // backdrop_ blurred, for the GPU
     static bool load_image(const std::wstring& path, std::vector<uint32_t>& px, int& w, int& h);
 };

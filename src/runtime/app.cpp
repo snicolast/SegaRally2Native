@@ -297,6 +297,7 @@ int main(int argc, char** argv) {
         if (aa_auto) ini.aa = 1;   // DLAA; DLSS QUALITY or MSAA once the screen and the GPU are known
         options_from_settings(g_opt, ini);
         g_pad_rumble = ini.vibration;
+        g_trigger_share = ini.trigger_rumble / 100.0f;
     }
     int exit_code = 0;
     if (!parse_options(g_opt, argc, argv, nullptr, exit_code)) return exit_code;
@@ -381,8 +382,11 @@ int main(int argc, char** argv) {
     // Window: the game runs on its own thread at real speed; this thread draws
     // the latest image at the monitor's refresh rate (vsync)
     VkPresenter presenter;
-    if (!presenter.init("Sega Rally 2 Native by snicolast", int(SCREEN_H * 2 * std::max(g_opt.max_aspect, 4.0f / 3.0f)), SCREEN_H * 2,
-                        g_opt.dlaa)) {
+    // (no wider than 16:9 at first, whatever --aspect allows; debugging aid:
+    // SR2_WINDOW=WxH, the window's inside that size, e.g. 2560x720 for a 32:9 view)
+    int win_w = int(SCREEN_H * 2 * std::clamp(g_opt.max_aspect, 4.0f / 3.0f, 16.0f / 9.0f)), win_h = SCREEN_H * 2;
+    if (const char* e = getenv("SR2_WINDOW")) sscanf(e, "%dx%d", &win_w, &win_h);
+    if (!presenter.init("Sega Rally 2 Native by snicolast", win_w, win_h, g_opt.dlaa)) {
         fprintf(stderr, "Could not start Vulkan; try --headless\n");
         MessageBoxA(nullptr, "Could not start Vulkan. Update the graphics driver: the game needs Vulkan 1.3.",
                     "Sega Rally 2 Native", MB_OK | MB_ICONERROR);
@@ -390,6 +394,7 @@ int main(int argc, char** argv) {
     }
     printf("GPU: %s\n", presenter.device_name().c_str());
     if (aa_auto) g_opt.dlss = screen_height(presenter.hwnd()) > 1440;
+    g_pads.trigger_rumble = g_opt.trigger_rumble;
     g_pads.init();
     timeBeginPeriod(1);
     QueryPerformanceFrequency(&g_qpf);
@@ -597,6 +602,17 @@ int main(int argc, char** argv) {
     if (g_opt.menu) {
         if (!frontend.init("third_party/fonts")) printf("[menu] fonts missing: using the Windows ones\n");
         if (!ui.init(presenter)) g_opt.menu = false;
+        frontend.pause_blur = g_opt.menu && ui.can_freeze() && !getenv("SR2_PAUSE_DARK");   // SR2_PAUSE_DARK=1: the old nearly black shade
+        // The backdrop moves under the menus (on the GPU); SR2_MENU_STILL=1: the still picture
+        if (g_opt.menu && !getenv("SR2_MENU_STILL")) {
+            for (int slot = 0; slot < UiOverlay::BACKDROPS; slot++) {
+                const uint32_t* px = nullptr;
+                int w = 0, h = 0;
+                frontend.backdrop_pixels(slot, px, w, h);
+                ui.set_backdrop(slot, px, uint32_t(w), uint32_t(h), 0.0f);   // the crop of backdrop_background()
+            }
+            frontend.set_motion(true);
+        }
     }
     if (g_opt.menu) {
         FrontendSettings& s = frontend.settings;
@@ -1131,6 +1147,7 @@ int main(int argc, char** argv) {
                     }
                     renderer.set_picture(s.saturation / 100.0f, s.gamma / 100.0f);
                     g_pad_rumble = s.vibration;
+                    g_trigger_share = s.trigger_rumble / 100.0f;
                     save_settings(s);
                     break;
                 default: break;
@@ -1146,6 +1163,44 @@ int main(int argc, char** argv) {
             // pixel X,Y), then saves out/menu.bmp and quits
             static const char* menu_keys = getenv("LW_MENU_KEYS");
             static int menu_presents = 0;
+            // LW_MENU_FILM="N,EVERY": after the keys, N window pictures EVERY
+            // presents apart (out/menu_film/000.bmp...) in place of out/menu.bmp
+            static const char* menu_film = getenv("LW_MENU_FILM");
+            static int film_left = 0, film_every = 4, film_index = 0, film_wait = 0;
+            static bool filming = false;
+            // LW_MENU_FILM_NOW=1: filming from the first picture (the menu coming up), keys not waited for
+            static bool film_now = getenv("LW_MENU_FILM_NOW") && menu_film &&
+                                   sscanf(menu_film, "%d,%d", &film_left, &film_every) >= 1 && film_left > 0;
+            if (film_now && !filming && film_index == 0) {
+                film_every = std::max(film_every, 2);
+                CreateDirectoryA("out/menu_film", nullptr);
+                filming = true;
+                menu_keys = nullptr;
+            }
+            // LW_MENU_FILM_KEYS="30:13,75:40": while filming, those keys at those pictures
+            static const char* film_keys = getenv("LW_MENU_FILM_KEYS");
+            if (filming && ++film_wait % film_every == 0) {
+                for (const char* k = film_keys; k && *k;) {
+                    int at = 0, vk = 0, len = 0;
+                    if (sscanf(k, "%d:%d%n", &at, &vk, &len) < 2) break;
+                    if (at == film_index) {
+                        if (frontend.active()) frontend.key(vk);
+                        else if (vk == VK_ESCAPE) {   // the pause, as a player's Esc
+                            frontend.open(Frontend::Screen::Pause);
+                            g_menu_open = g_hold = true;
+                        }
+                    }
+                    k += len;
+                    if (*k == ',') k++;
+                }
+                char path[64];
+                snprintf(path, sizeof(path), "out/menu_film/%03d.bmp", film_index++);
+                presenter.capture_next(path);
+                if (--film_left <= 0) {
+                    filming = false;
+                    presenter.close();
+                }
+            }
             if (menu_keys && ++menu_presents % 10 == 0) {
                 if (*menu_keys == 'c') {
                     int cx = 0, cy = 0, len = 0;
@@ -1163,9 +1218,15 @@ int main(int argc, char** argv) {
                         g_menu_open = g_hold = true;
                     }
                 } else if (menu_presents % 30 == 0) {
-                    presenter.capture_next("out/menu.bmp");
                     menu_keys = nullptr;
-                    presenter.close();
+                    if (menu_film && sscanf(menu_film, "%d,%d", &film_left, &film_every) >= 1 && film_left > 0) {
+                        film_every = std::max(film_every, 2);   // a capture needs the next present to finish
+                        CreateDirectoryA("out/menu_film", nullptr);
+                        filming = true;
+                    } else {
+                        presenter.capture_next("out/menu.bmp");
+                        presenter.close();
+                    }
                 }
             }
             static Frontend::Screen menu_was = Frontend::Screen::None;
@@ -1211,6 +1272,8 @@ int main(int argc, char** argv) {
                     if (menu_shot) save_bmp(menu_shot, ui_pixels.data(), rc.right, rc.bottom);
                 }
             }
+            ui.set_motion(frontend.active() ? frontend.motion_backdrop() : -1);
+            ui.set_freeze(frontend.active() && frontend.over_game() && frontend.pause_blur);
         }
         double input_from = qpc_seconds();
         parts.menu = input_from - loop_from;

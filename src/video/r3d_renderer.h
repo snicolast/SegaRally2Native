@@ -30,6 +30,8 @@ struct ScreenLayout {
     float scale;     // window pixels per Model 3 pixel
     float ox, oy;    // window position of the 3D view
     float game_x0;   // Model 3 x of the 4:3 area inside the 3D view
+    float hud_x;     // how far the race HUD's corners move out of the 4:3 area: to the
+                     // view's edges, but no further than a 16:9 view's (ultrawide screens)
 };
 // max_aspect <= 4/3 keeps the original 4:3 picture
 ScreenLayout compute_layout(float win_w, float win_h, float max_aspect);
@@ -142,6 +144,8 @@ private:
         VkDeviceMemory memory = VK_NULL_HANDLE;
         VkImageView view = VK_NULL_HANDLE;
         VkImageView alpha_view = VK_NULL_HANDLE;   // optional: alpha read as grey (rgb = a, a = 1)
+        VkImageView attach_view = VK_NULL_HANDLE;  // depth + stencil: both aspects, to draw into
+        VkImageAspectFlags barrier_aspect = 0;     // depth + stencil: both aspects in each layout change
         VkImageLayout layout = VK_IMAGE_LAYOUT_UNDEFINED;
         uint32_t w = 0, h = 0;
     };
@@ -170,9 +174,9 @@ private:
         bool additive = false;                 // colour += output (sky glow)
         float ease = 0;                        // > 0: colour moves this fraction towards the output
         bool depth_only = false;               // no colour writes
-        bool once = false;                     // blended once at each pixel: depth tested strictly
-                                               // nearer, and written (the cars' patch, blob_)
-        float bias = 0;                        // depth bias (constant factor; < 0: farther)
+        bool stencil = false;                  // the depth image has a stencil (the 3D pass)
+        bool once = false;                     // blended once at each pixel: only where the stencil
+                                               // is still clear, and it is marked (the cars' patch, blob_)
     };
     VkPipeline make_pipeline(const PipelineDesc& d);
     void bind_scene_image(VkImageView view, VkImageView alpha);
@@ -304,7 +308,7 @@ private:
     VkDescriptorPool pool_ = VK_NULL_HANDLE;
     VkDescriptorSet r3d_set_ = VK_NULL_HANDLE, compose_set_ = VK_NULL_HANDLE;
     VkPipelineLayout r3d_layout_ = VK_NULL_HANDLE, compose_layout_ = VK_NULL_HANDLE;
-    VkPipeline opaque_ = VK_NULL_HANDLE, translucent_ = VK_NULL_HANDLE, blob_ = VK_NULL_HANDLE, blob_depth_ = VK_NULL_HANDLE, compose_ = VK_NULL_HANDLE;
+    VkPipeline opaque_ = VK_NULL_HANDLE, translucent_ = VK_NULL_HANDLE, blob_ = VK_NULL_HANDLE, compose_ = VK_NULL_HANDLE;
     VkPipeline trans_depth_ = VK_NULL_HANDLE;   // nearest translucent surface, depth only (spec 7.2)
     VkDescriptorSetLayout bloom_set_layout_ = VK_NULL_HANDLE;
     VkDescriptorSet bloom_sets_[4] = {};   // sources: glow_, bloom_a_, bloom_b_, bloom_c_

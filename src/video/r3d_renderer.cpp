@@ -62,6 +62,8 @@ struct AtmosphereUniform {
 // ray tracing were blotchy and thin ones vanished)
 constexpr uint32_t SHADOW_SIZE = 4096;   // shadow map, square
 constexpr float SHADOW_RANGE = 100.0f;   // how far in front of the camera shadows are drawn (view units)
+// The 3D pass's depth, with a stencil for the cars' patch (blob_)
+constexpr VkFormat DEPTH_STENCIL = VK_FORMAT_D32_SFLOAT_S8_UINT;
 
 VkShaderModule make_module(VkDevice dev, const uint32_t* code, size_t bytes) {
     VkShaderModuleCreateInfo ci{VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO};
@@ -90,6 +92,7 @@ ScreenLayout compute_layout(float win_w, float win_h, float max_aspect) {
     l.ox = (win_w - l.view_w * l.scale) / 2;
     l.oy = (win_h - SCREEN_H * l.scale) / 2;
     l.game_x0 = (l.view_w - SCREEN_W) / 2;
+    l.hud_x = std::min(l.game_x0, (SCREEN_H * 16.0f / 9.0f - SCREEN_W) / 2);
     return l;
 }
 
@@ -150,6 +153,7 @@ bool R3DRenderer::create_image(Image& img, uint32_t w, uint32_t h, VkFormat form
 void R3DRenderer::destroy_image(Image& img) {
     if (img.view) vkDestroyImageView(dev_, img.view, nullptr);
     if (img.alpha_view) vkDestroyImageView(dev_, img.alpha_view, nullptr);
+    if (img.attach_view) vkDestroyImageView(dev_, img.attach_view, nullptr);
     if (img.image) vkDestroyImage(dev_, img.image, nullptr);
     if (img.memory) vkFreeMemory(dev_, img.memory, nullptr);
     img = Image{};
@@ -157,7 +161,7 @@ void R3DRenderer::destroy_image(Image& img) {
 
 void R3DRenderer::transition(VkCommandBuffer cmd, Image& img, VkImageLayout to, VkImageAspectFlags aspect) {
     if (img.layout == to) return;
-    vk_image_barrier(cmd, img.image, img.layout, to, aspect);
+    vk_image_barrier(cmd, img.image, img.layout, to, img.barrier_aspect ? img.barrier_aspect : aspect);
     img.layout = to;
 }
 
@@ -174,7 +178,8 @@ bool R3DRenderer::init(VkPresenter& vk, float supersample, int msaa, int aniso, 
     // Highest supported MSAA level not above the requested one
     VkPhysicalDeviceProperties props;
     vkGetPhysicalDeviceProperties(vk.gpu(), &props);
-    VkSampleCountFlags counts = props.limits.framebufferColorSampleCounts & props.limits.framebufferDepthSampleCounts;
+    VkSampleCountFlags counts = props.limits.framebufferColorSampleCounts & props.limits.framebufferDepthSampleCounts &
+                                 props.limits.framebufferStencilSampleCounts;
     samples_ = VK_SAMPLE_COUNT_1_BIT;
     for (int s = 2; s <= std::min(msaa, 8); s *= 2)
         if (counts & s) samples_ = VkSampleCountFlagBits(s);
@@ -474,13 +479,15 @@ VkPipeline R3DRenderer::make_pipeline(const PipelineDesc& d) {
     ds.depthTestEnable = d.depth;
     ds.depthWriteEnable = d.depth_write;
     ds.depthCompareOp = VK_COMPARE_OP_GREATER_OR_EQUAL;   // reverse Z
-    if (d.once) {
-        ds.depthWriteEnable = VK_TRUE;
-        ds.depthCompareOp = VK_COMPARE_OP_GREATER;
-    }
-    if (d.bias != 0) {
-        rs.depthBiasEnable = VK_TRUE;
-        rs.depthBiasConstantFactor = d.bias;
+    if (d.once) {   // passes where the stencil is still 0 and marks it: one blend per pixel (per sample)
+        ds.stencilTestEnable = VK_TRUE;
+        ds.front.failOp = VK_STENCIL_OP_KEEP;
+        ds.front.passOp = VK_STENCIL_OP_INCREMENT_AND_CLAMP;
+        ds.front.depthFailOp = VK_STENCIL_OP_KEEP;
+        ds.front.compareOp = VK_COMPARE_OP_EQUAL;
+        ds.front.compareMask = ds.front.writeMask = 0xFF;
+        ds.front.reference = 0;
+        ds.back = ds.front;
     }
     VkPipelineColorBlendAttachmentState cbas[3]{};
     VkPipelineColorBlendAttachmentState& cba = cbas[0];
@@ -538,7 +545,8 @@ VkPipeline R3DRenderer::make_pipeline(const PipelineDesc& d) {
     VkFormat formats[3] = {d.color, d.motion ? VK_FORMAT_R16G16_SFLOAT : VK_FORMAT_UNDEFINED, VK_FORMAT_R8G8B8A8_UNORM};
     rend.colorAttachmentCount = attachments;
     rend.pColorAttachmentFormats = formats;
-    rend.depthAttachmentFormat = d.depth ? VK_FORMAT_D32_SFLOAT : VK_FORMAT_UNDEFINED;
+    rend.depthAttachmentFormat = !d.depth ? VK_FORMAT_UNDEFINED : d.stencil ? DEPTH_STENCIL : VK_FORMAT_D32_SFLOAT;
+    rend.stencilAttachmentFormat = d.depth && d.stencil ? DEPTH_STENCIL : VK_FORMAT_UNDEFINED;
 
     VkGraphicsPipelineCreateInfo gp{VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO};
     gp.pNext = &rend;
@@ -575,7 +583,7 @@ bool R3DRenderer::create_pipelines() {
     // The world: 3D geometry into the HDR image, with the motion and glow slots
     PipelineDesc world{.vs = r3d_vs, .fs = r3d_fs, .layout = r3d_layout_, .color = VK_FORMAT_R16G16B16A16_SFLOAT,
                        .depth = true, .depth_write = true, .vertex_input = true, .samples = samples_,
-                       .motion = motion, .glow = true};
+                       .motion = motion, .glow = true, .stencil = true};
     opaque_ = make_pipeline(world);
     PipelineDesc translucent = world;
     translucent.depth_write = false;
@@ -586,16 +594,14 @@ bool R3DRenderer::create_pipelines() {
     trans_depth_ = make_pipeline(trans_depth);
     // The game's dark patch under each car (its shadow), made of several
     // shapes laid over each other: blended over one another they came out
-    // nearly black. It is blended once at each pixel instead: its nearest depth
-    // goes first a hair farther (blob_depth_; 1 unit, the least that also
-    // leaves no seam where two of its shapes cross), then the first of it to
-    // pass, nearer than that, takes the pixel (blob_)
+    // nearly black. It is blended once at each pixel instead, with the
+    // stencil: the first of it to pass the depth test takes the pixel and
+    // marks it (blob_). (It was done with its depth drawn first a hair
+    // farther, but where the patch lay within that hair of the road the road
+    // won, the patch blended twice there and flickering black streaks crossed it)
     PipelineDesc blob = translucent;
     blob.once = true;
     blob_ = make_pipeline(blob);
-    PipelineDesc blob_depth = trans_depth;
-    blob_depth.bias = -1.0f;
-    blob_depth_ = make_pipeline(blob_depth);
     shadow_ = make_pipeline({.vs = r3d_vs, .fs = r3d_fs, .layout = r3d_layout_, .color = VK_FORMAT_UNDEFINED,
                              .depth = true, .depth_write = true, .vertex_input = true});
     // Full-screen passes: a triangle over the target, no vertex input
@@ -619,7 +625,7 @@ bool R3DRenderer::create_pipelines() {
     ao_apply_glow_ = make_pipeline({.vs = c_vs, .fs = aoa_fs, .layout = ao_layout_, .color = VK_FORMAT_R8G8B8A8_UNORM,
                                     .samples = samples_, .multiply = true});
     for (auto m : {r3d_vs, r3d_fs, c_vs, c_fs, b_fs, ao_fs, aoa_fs}) vkDestroyShaderModule(dev_, m, nullptr);
-    return opaque_ && translucent_ && blob_ && blob_depth_ && trans_depth_ && shadow_ && compose_measure_ && compose_ && bloom_ && ao_pass_ && ao_apply_ && ao_apply_glow_;
+    return opaque_ && translucent_ && blob_ && trans_depth_ && shadow_ && compose_measure_ && compose_ && bloom_ && ao_pass_ && ao_apply_ && ao_apply_glow_;
 }
 
 // w, h: the 3D image as drawn; up_w, up_h: as DLSS hands it on (the same but with DLSS upscaling)
@@ -648,15 +654,26 @@ void R3DRenderer::ensure_targets(uint32_t w, uint32_t h, uint32_t up_w, uint32_t
         create_image(color_ms_, w, h, VK_FORMAT_R16G16B16A16_SFLOAT, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
                      VK_IMAGE_ASPECT_COLOR_BIT, samples_);
     bool dlaa = motion_pass_;
-    create_image(depth_, w, h, VK_FORMAT_D32_SFLOAT,
+    create_image(depth_, w, h, DEPTH_STENCIL,
                  VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT,
                  VK_IMAGE_ASPECT_DEPTH_BIT, samples_);
     // The world's depth, kept after its opaque surfaces (sample 0 of it with
     // MSAA, a copy without) for the ambient occlusion and the soft particles;
     // and the raw occlusion
-    create_image(depth_resolved_, w, h, VK_FORMAT_D32_SFLOAT,
+    create_image(depth_resolved_, w, h, DEPTH_STENCIL,
                  VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT,
                  VK_IMAGE_ASPECT_DEPTH_BIT);
+    // With a stencil (the cars' patch, blob_): the views above read the depth,
+    // these draw into both; layout changes cover both aspects
+    for (Image* img : {&depth_, &depth_resolved_}) {
+        VkImageViewCreateInfo dvi{VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO};
+        dvi.image = img->image;
+        dvi.viewType = VK_IMAGE_VIEW_TYPE_2D;
+        dvi.format = DEPTH_STENCIL;
+        dvi.subresourceRange = {VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT, 0, 1, 0, 1};
+        vkCreateImageView(dev_, &dvi, nullptr, &img->attach_view);
+        img->barrier_aspect = VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT;
+    }
     depth_.layout = VK_IMAGE_LAYOUT_UNDEFINED;
     // The occlusion at half resolution (one pixel in four): ao_apply.frag
     // brings it back to full size along the depth edges. (Its colour: the
@@ -786,9 +803,12 @@ void R3DRenderer::set_layers(const uint32_t* back, const uint32_t* front) {
     memcpy(dst + BACK_W * SCREEN_H * 4, front, SCREEN_W * SCREEN_H * 4);
     layers_dirty_ = true;
     // Average colour of each row of the back layer, for the horizon colour
+    // (over the 200 columns past each side it always had, as before the
+    // margin grew for ultrawide views)
+    constexpr int AVG_FROM = BACK_MARGIN - 200, AVG_TO = BACK_MARGIN + SCREEN_W + 200;
     for (int y = 0; y < SCREEN_H; y++) {
         float sum[3] = {0, 0, 0}, n = 0;
-        for (int x = 0; x < BACK_W; x += 2) {
+        for (int x = AVG_FROM; x < AVG_TO; x += 2) {
             uint32_t p = back[y * BACK_W + x];
             float a = float(p >> 24);
             if (a < 128) continue;
@@ -1432,7 +1452,7 @@ void R3DRenderer::record_world(const Frame& f) {
     glow_.layout = glow_ms_.layout = VK_IMAGE_LAYOUT_UNDEFINED;
     transition(cmd, glow_, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
     if (msaa) transition(cmd, glow_ms_, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
-    transition(cmd, depth_, VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL, VK_IMAGE_ASPECT_DEPTH_BIT);
+    transition(cmd, depth_, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL, VK_IMAGE_ASPECT_DEPTH_BIT);
     VkRenderingAttachmentInfo cas[3] = {{VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO},
                                         {VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO},
                                         {VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO}};
@@ -1462,15 +1482,15 @@ void R3DRenderer::record_world(const Frame& f) {
     cas[2].imageView = msaa ? glow_ms_.view : glow_.view;
     if (msaa) cas[2].resolveImageView = glow_.view;
     VkRenderingAttachmentInfo da{VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO};
-    da.imageView = depth_.view;
-    da.imageLayout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL;
+    da.imageView = depth_.attach_view;
+    da.imageLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
     da.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
     da.storeOp = motion_pass_ || split ? VK_ATTACHMENT_STORE_OP_STORE : VK_ATTACHMENT_STORE_OP_DONT_CARE;
     if (split && msaa) {   // sample 0 of the depth, readable without multisampling
-        transition(cmd, depth_resolved_, VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL, VK_IMAGE_ASPECT_DEPTH_BIT);
+        transition(cmd, depth_resolved_, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL, VK_IMAGE_ASPECT_DEPTH_BIT);
         da.resolveMode = VK_RESOLVE_MODE_SAMPLE_ZERO_BIT;
-        da.resolveImageView = depth_resolved_.view;
-        da.resolveImageLayout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL;
+        da.resolveImageView = depth_resolved_.attach_view;
+        da.resolveImageLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
     }
     da.clearValue.depthStencil = {0.0f, 0};
     VkRenderingInfo ri{VK_STRUCTURE_TYPE_RENDERING_INFO};
@@ -1479,6 +1499,7 @@ void R3DRenderer::record_world(const Frame& f) {
     ri.colorAttachmentCount = 3;
     ri.pColorAttachments = cas;
     ri.pDepthAttachment = &da;
+    ri.pStencilAttachment = &da;   // the same image (the cars' patch: blob_)
     vkCmdBeginRendering(cmd, &ri);
 
     if (vcount) {
@@ -1494,7 +1515,7 @@ void R3DRenderer::record_world(const Frame& f) {
             size_t j = i;
             while (j < vps.size() && vps[j].priority == vps[i].priority) j++;
             if (!first_priority) {   // each priority starts with a cleared depth buffer
-                VkClearAttachment clr{VK_IMAGE_ASPECT_DEPTH_BIT, 0, {}};
+                VkClearAttachment clr{VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT, 0, {}};
                 clr.clearValue.depthStencil = {0.0f, 0};
                 VkClearRect rect{{{0, 0}, {out_w, out_h}}, 0, 1};
                 vkCmdClearAttachments(cmd, 1, &clr, 1, &rect);
@@ -1527,6 +1548,7 @@ void R3DRenderer::record_world(const Frame& f) {
                     VkRenderingInfo rag = ri;
                     rag.pColorAttachments = again;
                     rag.pDepthAttachment = &dagain;
+                    rag.pStencilAttachment = &dagain;
                     vkCmdBeginRendering(cmd, &rag);
                     vkCmdBindVertexBuffers(cmd, 0, 1, &vertices_.buffer, &zero);
                     vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, r3d_layout_, 0, 1, &r3d_set_, 0,
@@ -1548,9 +1570,10 @@ void R3DRenderer::record_world(const Frame& f) {
                         const int* s = sr2_split_;
                         bool top = v.y + v.h <= SR2_HUD_TOP_ROWS, bottom = v.y >= SR2_HUD_BOTTOM_ROW - 8;
                         bool top_left = v.y + v.h <= SR2_HUD_LEFT_ROWS;
-                        if ((top_left && v.x + v.w <= s[0]) || (bottom && s[2] > 0 && v.x + v.w <= s[2])) vx = v.x;
+                        if ((top_left && v.x + v.w <= s[0]) || (bottom && s[2] > 0 && v.x + v.w <= s[2]))
+                            vx = v.x + lay.game_x0 - lay.hud_x;
                         else if ((top && s[1] > 0 && v.x >= s[1]) || (bottom && s[2] > 0 && v.x >= s[2]))
-                            vx = v.x + 2.0f * lay.game_x0;
+                            vx = v.x + lay.game_x0 + lay.hud_x;
                     }
                     VkViewport viewport{vx * sx + jitter_x, v.y * sy + jitter_y, vw * sx, v.h * sy, 0.0f, 1.0f};
                     vkCmdSetViewport(cmd, 0, 1, &viewport);
@@ -1591,7 +1614,7 @@ void R3DRenderer::record_world(const Frame& f) {
                     // or luminous effects keep blending in list order.
                     // The world's see-through surfaces go in runs: the game's
                     // dark patch under each car (its shadow) with pipelines of
-                    // its own (blob_depth_, blob_: blended once at each pixel)
+                    // its own (blob_: blended once at each pixel, no depth first)
                     const std::vector<R3DVertex>& vs = scene_->vertices;
                     auto is_blob = [&](uint32_t i) {
                         const R3DVertex& x = vs[i];
@@ -1610,8 +1633,10 @@ void R3DRenderer::record_world(const Frame& f) {
                             uint32_t b = a + 3;
                             while (b < end && is_blob(b) == here) b += 3;
                             b = std::min(b, end);
-                            vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, here ? blob : other);
-                            vkCmdDraw(cmd, b - a, 1, a, 0);
+                            if (VkPipeline p = here ? blob : other) {
+                                vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, p);
+                                vkCmdDraw(cmd, b - a, 1, a, 0);
+                            }
                             a = b;
                         }
                     };
@@ -1620,7 +1645,7 @@ void R3DRenderer::record_world(const Frame& f) {
                         pd.quality[0] = -1000.0f;
                         vkCmdPushConstants(cmd, r3d_layout_, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
                                            0, sizeof(pd), &pd);
-                        draw_runs(trans_depth_, blob_depth_);
+                        draw_runs(trans_depth_, VK_NULL_HANDLE);
                         vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, translucent_);
                     }
                     vkCmdPushConstants(cmd, r3d_layout_, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0,
@@ -1661,7 +1686,7 @@ void R3DRenderer::record_world_depth(const Frame& f, const R3DViewport& w, bool 
         copy.extent = {out_w, out_h, 1};
         vkCmdCopyImage(cmd, depth_.image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, depth_resolved_.image,
                        VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &copy);
-        transition(cmd, depth_, VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL, VK_IMAGE_ASPECT_DEPTH_BIT);
+        transition(cmd, depth_, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL, VK_IMAGE_ASPECT_DEPTH_BIT);
     }
     Image& dsrc = depth_resolved_;
     transition(cmd, dsrc, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_IMAGE_ASPECT_DEPTH_BIT);
@@ -1737,7 +1762,7 @@ void R3DRenderer::record_dlaa(const Frame& f) {
         dlaa_out_.layout = VK_IMAGE_LAYOUT_UNDEFINED;   // fully rewritten
         transition(cmd, dlaa_out_, VK_IMAGE_LAYOUT_GENERAL);
         bool ok = dlaa_.evaluate(cmd, {color_.image, color_.view, VK_FORMAT_R16G16B16A16_SFLOAT},
-                                 {depth_.image, depth_.view, VK_FORMAT_D32_SFLOAT},
+                                 {depth_.image, depth_.view, DEPTH_STENCIL},
                                  {motion_.image, motion_.view, VK_FORMAT_R16G16_SFLOAT},
                                  {dlaa_out_.image, dlaa_out_.view, VK_FORMAT_R16G16B16A16_SFLOAT}, out_w, out_h, f.up_w,
                                  f.up_h, jitter_x, jitter_y, false);
@@ -1747,7 +1772,7 @@ void R3DRenderer::record_dlaa(const Frame& f) {
         dlaa_alpha_.layout = VK_IMAGE_LAYOUT_UNDEFINED;
         transition(cmd, dlaa_alpha_, VK_IMAGE_LAYOUT_GENERAL);
         ok = ok && dlaa_.evaluate(cmd, {color_.image, color_.alpha_view, VK_FORMAT_R16G16B16A16_SFLOAT},
-                                  {depth_.image, depth_.view, VK_FORMAT_D32_SFLOAT},
+                                  {depth_.image, depth_.view, DEPTH_STENCIL},
                                   {motion_.image, motion_.view, VK_FORMAT_R16G16_SFLOAT},
                                   {dlaa_alpha_.image, dlaa_alpha_.view, VK_FORMAT_R8G8B8A8_UNORM}, out_w, out_h,
                                   f.up_w, f.up_h, jitter_x, jitter_y, false, 1);
@@ -1794,7 +1819,7 @@ R3DRenderer::ComposePush R3DRenderer::compose_push(const Frame& f) const {
                    .window = {W, H},
                    .layer2d = {lay.game_x0 / lay.view_w, SCREEN_W / lay.view_w},
                    .filter2d = {smooth_2d_ ? 1.0f : 0.0f, lay.scale},
-                   .hud = {sr2_on ? lay.game_x0 : 0.0f, hdr_ ? 1.0f : 0.0f,
+                   .hud = {sr2_on ? lay.hud_x : 0.0f, hdr_ ? 1.0f : 0.0f,
                            overlay_brightness_, extend_back ? 1.0f : 0.0f},
                    .sky = {0, 0, 0, sr2_between_screens() ? 4.0f : 0.0f},
                    .effects = {bloom_strength_, saturation_, gamma_, 0},
@@ -2144,7 +2169,7 @@ void R3DRenderer::gpu_time_mark(VkCommandBuffer cmd, uint32_t index) {
 void R3DRenderer::shutdown() {
     if (!dev_) return;
     vkDeviceWaitIdle(dev_);
-    for (auto p : {opaque_, translucent_, blob_, blob_depth_, trans_depth_, shadow_, compose_measure_, compose_, bloom_, compose_glow_, ao_pass_, ao_apply_, ao_apply_glow_})
+    for (auto p : {opaque_, translucent_, blob_, trans_depth_, shadow_, compose_measure_, compose_, bloom_, compose_glow_, ao_pass_, ao_apply_, ao_apply_glow_})
         if (p) vkDestroyPipeline(dev_, p, nullptr);
     dlaa_.shutdown();
     rt_.shutdown();

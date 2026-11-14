@@ -206,6 +206,7 @@ add_executable(SegaRally2 WIN32
     src/runtime/wheel.cpp
     src/runtime/scsi53c810.cpp
     src/runtime/stats.cpp
+    src/runtime/achievements_csv.cpp
     src/ui/achievement_toast.cpp
     src/runtime/options.cpp
     src/runtime/rom_zip.cpp
@@ -269,6 +270,20 @@ target_include_directories(SegaRally2 PRIVATE
     third_party/z80
     third_party/minimp3
 )
+# The achievement icons (res/achievements/*.png) built into the exe as byte
+# arrays (achievement_icons.h): the game writes them next to
+# achievements/achievements.csv (src/runtime/achievements_csv.cpp)
+set(ICONS_DIR ${CMAKE_CURRENT_BINARY_DIR}/achievement_icons)
+set(icons_h "")
+foreach(icon unlocked locked)
+    set(png ${CMAKE_CURRENT_SOURCE_DIR}/res/achievements/${icon}.png)
+    set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${png})
+    file(READ ${png} hex HEX)
+    string(REGEX REPLACE "([0-9a-f][0-9a-f])" "0x\\1," hex "${hex}")
+    string(APPEND icons_h "static const unsigned char ICON_${icon}[] = {${hex}};\n")
+endforeach()
+file(CONFIGURE OUTPUT ${ICONS_DIR}/achievement_icons.h CONTENT "${icons_h}")
+target_include_directories(SegaRally2 PRIVATE ${ICONS_DIR})
 # volk loads vulkan-1.dll at runtime: the SDK is not needed
 target_compile_definitions(SegaRally2 PRIVATE VK_NO_PROTOTYPES VK_USE_PLATFORM_WIN32_KHR)
 target_link_libraries(SegaRally2 PRIVATE SDL3::SDL3-static winmm ole32 oleaut32 windowscodecs mfplat mfuuid gdi32 dwmapi shell32 winhttp
@@ -311,7 +326,10 @@ if(LW_TESTS)
     add_executable(news_test tests/news_test.cpp src/ui/news.cpp)
     add_executable(menu_music_test tests/menu_music_test.cpp src/ui/menu_music.cpp)
     target_include_directories(menu_music_test PRIVATE third_party/minimp3)
-    foreach(t tilegen_test fnv_test options_test audio_stream_test rom_zip_test jtag_test r3d_state_test news_test menu_music_test)
+    add_executable(achievements_csv_test tests/achievements_csv_test.cpp src/runtime/achievements_csv.cpp)
+    target_include_directories(achievements_csv_test PRIVATE ${ICONS_DIR})
+    foreach(t tilegen_test fnv_test options_test audio_stream_test rom_zip_test jtag_test r3d_state_test news_test menu_music_test
+            achievements_csv_test)
         target_include_directories(${t} PRIVATE src/video src/common src/runtime src/audio src/ui ${MINIZ_DIR})
         if(MSVC)
             target_compile_options(${t} PRIVATE /W4 /utf-8)
@@ -327,6 +345,7 @@ if(LW_TESTS)
     add_test(NAME r3d_state COMMAND r3d_state_test)
     add_test(NAME news COMMAND news_test)
     add_test(NAME menu_music COMMAND menu_music_test)
+    add_test(NAME achievements_csv COMMAND achievements_csv_test)
     # 3.10: the version the tools need, so an older Python in PATH is skipped (Star Wars Trilogy issue #51)
     find_package(Python3 3.10 COMPONENTS Interpreter)
     if(Python3_Interpreter_FOUND)

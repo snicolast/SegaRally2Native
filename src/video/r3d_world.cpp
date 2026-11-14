@@ -1,6 +1,7 @@
 #include "r3d_world.h"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
@@ -128,6 +129,7 @@ static void ground_under(const std::vector<R3DInstance>& list, const float* axes
         if (!same_axes(in.axes, axes)) continue;
         for (uint32_t i = in.opaque[0]; i + 2 < in.opaque[1]; i += 3) {
             const R3DVertex* t = &out.vertices[v.opaque_first + i];
+            if (t[0].flags & R3D_ACTOR) continue;   // (a car turned the scenery's way, settle_cars)
             float u[3], h[3], w[3];
             for (int k = 0; k < 3; k++) u[k] = dot(t[k].pos, ax), h[k] = dot(t[k].pos, up), w[k] = dot(t[k].pos, az);
             float u0 = std::min({u[0], u[1], u[2]}), u1 = std::max({u[0], u[1], u[2]});
@@ -179,6 +181,8 @@ static void settle_cars(const std::vector<R3DInstance>& list, const float* axes,
     struct Lift {
         float height = -1;   // how far down (-1: not known yet; a little under 0: up)
         uint32_t skips = 0;
+        bool kerb = false;                 // a step under the patch is being waited out
+        float raw = 0;                     // the last measurement
         uint64_t seen = 0, measured = 0;   // frames
         float at[3] = {0, 0, 0};           // where its patch was
         std::vector<uint32_t> pieces;      // the car's models (their keys), for the frames its patch is not drawn
@@ -222,6 +226,61 @@ static void settle_cars(const std::vector<R3DInstance>& list, const float* axes,
     for (auto it = lifts.begin(); it != lifts.end();)
         it = out.frame - it->second.seen > 30 ? lifts.erase(it) : std::next(it);
     if (cars.empty() && lifts.empty()) return;
+    // A car driving straight along one of the world's axes is turned exactly
+    // the scenery's way: its bodywork, glass and shine (the models placed at
+    // the car's own origin; its wheels turn) were taken for scenery, left up
+    // while the wheels and the patch went down, the body riding 20 cm over
+    // its wheels, then dropping onto them as the car turned a little (the
+    // desert demo, the Lancer coming along the fence). The models turned the
+    // scenery's way with their origin over a patch, together the shine of a
+    // car's paint (see `shine` below), are that car's, and its models of the
+    // world (R3D_ACTOR: not ground, not scenery to set down, lit and shadowed
+    // as a car)
+    std::vector<int> aligned(list.size(), -1);
+    for (size_t i = 0; i < cars.size(); i++) {
+        const Car& c = cars[i];
+        std::vector<std::pair<std::array<int32_t, 3>, size_t>> over;   // (origin in cm, instance)
+        for (size_t n = 0; n < list.size(); n++) {
+            const R3DInstance& in = list[n];
+            if (!same_axes(in.axes, axes)) continue;
+            float u = dot(in.origin, ax), h = dot(in.origin, up), w = dot(in.origin, az);
+            if (u < c.lo[0] - 0.5f || u > c.hi[0] + 0.5f || w < c.lo[2] - 0.5f || w > c.hi[2] + 0.5f) continue;
+            if (h < c.lo[1] - 1.0f || h > c.hi[1] + 4.0f) continue;
+            over.push_back({{int32_t(std::lround(u * 100)), int32_t(std::lround(h * 100)), int32_t(std::lround(w * 100))}, n});
+        }
+        std::sort(over.begin(), over.end());
+        for (size_t a = 0; a < over.size();) {
+            size_t b = a;
+            uint32_t shiny = 0;
+            // ... and no bigger than a car over its patch: the snowy course's
+            // icy road (shiny, the scenery's way) has models whose origin lies
+            // under the player's patch on the grid; taken for the car's, the
+            // road ahead of it went dark until the car drove off them
+            float lo[3] = {1e30f, 1e30f, 1e30f}, hi[3] = {-1e30f, -1e30f, -1e30f};
+            auto grow = [&](const R3DVertex& x) {
+                float p[3] = {dot(x.pos, ax), dot(x.pos, up), dot(x.pos, az)};
+                for (int k = 0; k < 3; k++) lo[k] = std::min(lo[k], p[k]), hi[k] = std::max(hi[k], p[k]);
+            };
+            for (; b < over.size() && over[b].first == over[a].first; b++) {
+                const R3DInstance& in = list[over[b].second];
+                for (uint32_t k = in.opaque[0]; k < in.opaque[1]; k++) {
+                    if (out.vertices[v.opaque_first + k].flags & R3D_SPECULAR) shiny++;
+                    grow(out.vertices[v.opaque_first + k]);
+                }
+                for (uint32_t k = in.trans[0]; k < in.trans[1]; k++) grow(out.vertices[v.trans_first + k]);
+            }
+            bool car_sized = lo[0] >= c.lo[0] - 1.0f && hi[0] <= c.hi[0] + 1.0f && lo[2] >= c.lo[2] - 1.0f && hi[2] <= c.hi[2] + 1.0f &&
+                             hi[1] - lo[1] <= 2.5f;
+            if (shiny >= 300 && car_sized)
+                for (size_t k = a; k < b; k++) {
+                    const R3DInstance& in = list[over[k].second];
+                    aligned[over[k].second] = int(i);
+                    for (uint32_t q = in.opaque[0]; q < in.opaque[1]; q++) out.vertices[v.opaque_first + q].flags |= R3D_ACTOR;
+                    for (uint32_t q = in.trans[0]; q < in.trans[1]; q++) out.vertices[v.trans_first + q].flags |= R3D_ACTOR;
+                }
+            a = b;
+        }
+    }
     if (!cars.empty()) ground_under(list, axes, out, v, queries);
     for (Car& c : cars) {
         const R3DInstance& in = list[c.patch];
@@ -244,13 +303,25 @@ static void settle_cars(const std::vector<R3DInstance>& list, const float* axes,
         memcpy(lift.at, at, sizeof at);
         // (under the road too, where the game's ground dips below the one it draws: the car comes up)
         bool measured = raw > -0.15f && raw < 0.45f;
-        if (measured) lift.measured = out.frame;
-        else if (out.frame - lift.measured > 120) lift.height = -1;
+        // A kerb, a bump: the ground under the patch steps from one frame to the
+        // next, and is not followed unless it stays. Where it changes little by
+        // little (the road drawn coarser away from the camera) or was not seen
+        // for a while (the patch left out as the car went past the camera), it
+        // is followed at once. Never in one jump either way: a car at 40 m
+        // hovered 15 to 28 cm while that was taken for a kerb, then dropped onto
+        // the road in a single frame (the desert demo, the second car past the camera)
+        bool step = measured && out.frame - lift.measured <= 3 && std::fabs(raw - lift.raw) > 0.05f;
         if (measured) {
-            if (lift.height < -0.5f) lift.height = raw, lift.skips = 0;
-            else if (std::fabs(raw - lift.height) <= 0.1f) lift.height += 0.5f * (raw - lift.height), lift.skips = 0;
-            else if (++lift.skips >= 30) lift.height = raw, lift.skips = 0;   // (a kerb under the patch is not followed, unless it stays)
-        }
+            if (lift.height < -0.5f) lift.height = raw, lift.skips = 0, lift.kerb = false;
+            else if (std::fabs(raw - lift.height) <= 0.1f) lift.height += 0.5f * (raw - lift.height), lift.skips = 0, lift.kerb = false;
+            else {
+                if (step) lift.kerb = true, lift.skips = 0;
+                if (!lift.kerb || ++lift.skips >= 30)
+                    lift.height += std::clamp(0.5f * (raw - lift.height), -0.03f, 0.03f);   // (3 cm a frame)
+            }
+            lift.raw = raw;
+            lift.measured = out.frame;
+        } else if (out.frame - lift.measured > 120) lift.height = -1;
         c.down = lift.height < -0.5f ? 0.0f : lift.height;
         if (log)
             printf("[car] frame %llu world car %06X at %.1f %.1f %.1f corners %zu raw %.3f down %.3f\n",
@@ -265,13 +336,25 @@ static void settle_cars(const std::vector<R3DInstance>& list, const float* axes,
     // the camera are in viewports of their own, over patches in the world like
     // these (R3DSceneBuilder::settle_player_car measures and moves those)
     std::vector<int> owner(list.size(), -1);
-    std::vector<uint32_t> solid(cars.size(), 0);
+    // A car's shine: the corners of its paint and glass (specular, solid). A
+    // man standing over a patch is no car: the start line's flagman walks into
+    // the corner of the player's patch during the countdown in the desert,
+    // some 2600 solid corners but only 12 shiny ones (the cars of the demos
+    // have 1900 and more). Taken for its car, he set the patch down under the
+    // road (it vanished for half a second) and sank into it himself. The
+    // mountain's flagman waves a flag of 600 shiny corners over the player's
+    // patch on the grid: whenever it dipped it made 612 with him, taken for
+    // a car (300 then), the patch went down 5 cm and the player's car, set
+    // down by its patch, hopped with it. The cars of the demos have 3800 and
+    // more (the whole attract), so 1500
+    std::vector<uint32_t> shine(cars.size(), 0);
     for (size_t n = 0; n < list.size(); n++) {
         const R3DInstance& in = list[n];
-        if (same_axes(in.axes, axes)) continue;
+        if (same_axes(in.axes, axes) && aligned[n] < 0) continue;
         float u = dot(in.origin, ax), h = dot(in.origin, up), w = dot(in.origin, az);
         float nearest = 1e30f;
-        for (size_t i = 0; i < cars.size(); i++) {
+        owner[n] = aligned[n];
+        for (size_t i = 0; i < cars.size() && aligned[n] < 0; i++) {
             const Car& c = cars[i];
             if (n == c.patch) {
                 owner[n] = int(i);
@@ -282,15 +365,17 @@ static void settle_cars(const std::vector<R3DInstance>& list, const float* axes,
             float du = u - 0.5f * (c.lo[0] + c.hi[0]), dw = w - 0.5f * (c.lo[2] + c.hi[2]);
             if (du * du + dw * dw < nearest) nearest = du * du + dw * dw, owner[n] = int(i);
         }
-        if (owner[n] >= 0) solid[owner[n]] += in.opaque[1] - in.opaque[0];
+        if (owner[n] >= 0)
+            for (uint32_t k = in.opaque[0]; k < in.opaque[1]; k++)
+                if (out.vertices[v.opaque_first + k].flags & R3D_SPECULAR) shine[owner[n]]++;
     }
     for (size_t n = 0; n < list.size(); n++) {
         const R3DInstance& in = list[n];
-        if (same_axes(in.axes, axes)) continue;
+        if (same_axes(in.axes, axes) && aligned[n] < 0 && !held.count(in.key)) continue;
         float down = 0;
         if (owner[n] >= 0) {
             const Car& c = cars[owner[n]];
-            if (solid[owner[n]] < 300) continue;
+            if (shine[owner[n]] < 1500) continue;
             down = c.down - (n == c.patch ? 0.03f : 0.0f);   // (the patch on the road itself would flicker through it)
             lifts[c.lift].pieces.push_back(in.key);
         } else {
@@ -300,6 +385,10 @@ static void settle_cars(const std::vector<R3DInstance>& list, const float* axes,
             down = it->second;
         }
         taken[n] = 1;
+        if (aligned[n] < 0 && same_axes(in.axes, axes)) {   // (held: a car's turned the scenery's way)
+            for (uint32_t k = in.opaque[0]; k < in.opaque[1]; k++) out.vertices[v.opaque_first + k].flags |= R3D_ACTOR;
+            for (uint32_t k = in.trans[0]; k < in.trans[1]; k++) out.vertices[v.trans_first + k].flags |= R3D_ACTOR;
+        }
         if (std::fabs(down) <= 0.002f) continue;
         auto lower = [&](R3DVertex& x) {
             for (int k = 0; k < 3; k++) x.pos[k] -= down * up[k], x.prev[k] -= down * up[k];

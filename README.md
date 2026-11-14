@@ -25,7 +25,7 @@
 - **Sharp and smooth**: NVIDIA DLAA and DLSS, or MSAA, and 120 / 144 Hz and above.
 - **Arcade sound**, with surround and headphone modes.
 - **Keyboard, gamepad or wheel** (wheel experimental).
-- **Achievements and statistics**: 14 achievements, your best laps and times per course, in RECORDS.
+- **Achievements and statistics**: 14 achievements, your best laps and times per course, in RECORDS. The achievements are also written to `achievements/achievements.csv` for [PlayniteAchievements](https://github.com/justin-delano/PlayniteAchievements) (Editor, Spreadsheet Import).
 
 <table>
   <tr>

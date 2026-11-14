@@ -13,6 +13,13 @@
 #   # ...          a comment, never shown
 # Newest entry at the top. Keep each one short: about ten lines fit.
 
+[14] 14 November 2026
+- New GRAPHICS option HD LIVERIES: turn it off to race with the original arcade car paint.
+- With several controllers connected, the right one is now picked as the wheel. You can also choose it with device = in save/wheel.ini.
+- Classic shadow: no more flickering black streaks, and it no longer vanishes at the Desert start.
+- Cars sit properly on the road: no more floating or sudden drops in the attract demos, and no more hopping on the Mountain grid.
+- Camera flashes from the crowd no longer cast shadows.
+
 [13] 13 November 2026
 - New installs on NVIDIA cards start with DLAA (DLSS QUALITY on screens above 1440p) instead of MSAA 4X, which was too heavy for 4K at 120 Hz. Saved settings are not changed.
 - NicoLauncher now shows your achievements on the game's page: start the game once from the launcher and exit, and the row appears.
