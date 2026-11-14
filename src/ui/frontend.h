@@ -69,11 +69,6 @@ struct FrontendSettings {
 
     // save/settings.ini; missing keys keep their current value
     void load(const char* path);
-    // QUALITY: the graphics options that cost the most, set together.
-    // quality() is the level they match, CUSTOM if none
-    enum Quality { LOW, MEDIUM, HIGH, ULTRA, CUSTOM };
-    void set_quality(int q);
-    int quality() const;
     void save(const char* path) const;
     std::string text() const;   // what save() writes: one "key = value" line per setting
 };
@@ -156,7 +151,8 @@ private:
         PLAY, OPTIONS, QUIT, BACK, RESUME, SETTINGS, QUIT_TO_MENU, TABS,
         RECORDS, ARCADE, GHOST,   // ARCADE, GHOST: PLAY's page
         DEBUG, DEBUG_COURSE, DEBUG_CAR, DEBUG_GEARS, DEBUG_TIME, DEBUG_GO,
-        OPT_QUALITY, OPT_DISPLAY, OPT_VOLUME, OPT_MUSIC, OPT_SPEAKERS, OPT_REAR, OPT_SAMPLES, OPT_AA, OPT_HAZE, OPT_BLOOM, OPT_AO, OPT_SUN, OPT_SHADOWS, OPT_SOFT, OPT_HDR, OPT_SHARPEN, OPT_HUD, OPT_LIVERIES,
+        OPT_QUALITY,   // (no row: the first of the option ids, the ones >= it are options)
+        OPT_DISPLAY, OPT_VOLUME, OPT_MUSIC, OPT_SPEAKERS, OPT_REAR, OPT_SAMPLES, OPT_AA, OPT_HAZE, OPT_BLOOM, OPT_AO, OPT_SUN, OPT_SHADOWS, OPT_SOFT, OPT_HDR, OPT_SHARPEN, OPT_HUD, OPT_LIVERIES,
         OPT_SAT, OPT_GAMMA, OPT_MOTION, OPT_VIBRATION, OPT_RT, OPT_MENU_MUSIC, OPT_REFLECT, OPT_GI, OPT_DUST, OPT_UPDATES,
         OPT_DIFFICULTY, OPT_CONNECTED, OPT_TRIGGERS, OPT_RESOLUTION, OPT_SCALE, OPT_VSYNC, OPT_MAXFPS, OPT_BGFPS,
     };

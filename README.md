@@ -86,7 +86,8 @@ every axis and button you move. If you have one, please tell me how it goes in a
 
 ## Performance
 
-OPTIONS > DISPLAY > **QUALITY** sets the costly effects together, from LOW (laptops) to ULTRA.
+The costly effects are in OPTIONS > GRAPHICS (RAY TRACING, AMBIENT OCCLUSION, SUN SHADOWS, GLOBAL
+ILLUMINATION), and OPTIONS > DISPLAY has **RENDER SCALE** and **MAX FPS** to lighten the GPU.
 On an RTX, **ANTI-ALIASING: DLSS QUALITY** draws the 3D at two thirds of the size and rebuilds it
 sharp, about 30% lighter on the GPU than DLAA: the one to try first at 1440p, 4K or 120 Hz and above.
 

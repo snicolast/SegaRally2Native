@@ -119,43 +119,6 @@ const int WEIGHTS[6] = {FW_BOLD, FW_BOLD, FW_NORMAL, FW_SEMIBOLD, FW_MEDIUM, FW_
 
 // ---- Settings file ----
 
-namespace {
-// What each QUALITY level sets (the other options are left as they are).
-// Measured on an RTX 5070 Ti at 1440p, the costly ones are the traced sun
-// shadows (in the 3D pass), the ambient occlusion and the anti-aliasing
-struct QualityLevel {
-    int ray_tracing;   // 0 off, 1 sun shadows, 2 also ambient occlusion
-    bool ao, shadows;
-    int bloom;
-    bool msaa;         // MSAA 4x, or off (DLAA, picked by hand, is left alone)
-};
-const QualityLevel QUALITY_LEVELS[4] = {
-    {0, false, false, 1, false},   // LOW: laptops and integrated graphics
-    {0, true, true, 1, true},      // MEDIUM: mid-range cards (RTX 3060, RX 6600): shadow map, no ray tracing
-    {1, true, true, 2, true},      // HIGH: ray traced sun shadows
-    {2, true, true, 2, true},      // ULTRA: everything (the defaults)
-};
-}  // namespace
-
-void FrontendSettings::set_quality(int q) {
-    if (q < LOW || q > ULTRA) return;
-    const QualityLevel& l = QUALITY_LEVELS[q];
-    ray_tracing = l.ray_tracing;
-    ao = l.ao;
-    shadows = l.shadows;
-    bloom = l.bloom;
-    if (aa != 1 && aa != 3) aa = l.msaa ? 0 : 2;
-}
-
-int FrontendSettings::quality() const {
-    for (int q = LOW; q <= ULTRA; q++) {
-        const QualityLevel& l = QUALITY_LEVELS[q];
-        bool aa_same = aa == 1 || aa == 3 || aa == (l.msaa ? 0 : 2);
-        if (ray_tracing == l.ray_tracing && ao == l.ao && shadows == l.shadows && bloom == l.bloom && aa_same) return q;
-    }
-    return CUSTOM;
-}
-
 // The ini's names of the difficulties, in the game's numbering (FrontendSettings::difficulty)
 static const char* const DIFFICULTY_KEYS[5] = {"normal", "hard", "very_hard", "very_easy", "easy"};
 
@@ -347,7 +310,6 @@ const wchar_t* const Frontend::TAB_NAMES[Frontend::TAB_COUNT] = {L"DISPLAY", L"G
 // shown. Left out in Sega Rally 2: SOFT PARTICLES (only the spectators'
 // camera flashes). A tab whose rows do not fit the page scrolls.
 const Frontend::OptionTab Frontend::OPTION_TABS[] = {
-    {OPT_QUALITY, DISPLAY_TAB, L"PRESET"},
     {OPT_DISPLAY, DISPLAY_TAB, L"SCREEN"}, {OPT_RESOLUTION, DISPLAY_TAB}, {OPT_SCALE, DISPLAY_TAB}, {OPT_MOTION, DISPLAY_TAB},
     {OPT_VSYNC, DISPLAY_TAB}, {OPT_MAXFPS, DISPLAY_TAB}, {OPT_BGFPS, DISPLAY_TAB}, {OPT_AA, DISPLAY_TAB},
     {OPT_SAT, DISPLAY_TAB, L"PICTURE"}, {OPT_GAMMA, DISPLAY_TAB}, {OPT_SHARPEN, DISPLAY_TAB},
@@ -459,13 +421,6 @@ std::vector<Frontend::Item> Frontend::items() const {
         wchar_t gamma_text[16];
         swprintf(gamma_text, 16, L"%.2f", settings.gamma / 100.0);
         static const wchar_t* const RT_MODES[3] = {L"OFF", L"SHADOWS", L"SHADOWS + AO"};
-        static const wchar_t* const QUALITY_NAMES[5] = {L"LOW", L"MEDIUM", L"HIGH", L"ULTRA", L"CUSTOM"};
-        static const wchar_t* const QUALITY_HINTS[5] = {
-            L"Laptops and integrated graphics: no shadows, ambient occlusion or MSAA, low bloom",
-            L"Mid-range cards (RTX 3060, RX 6600): no ray tracing, MSAA 4x, low bloom",
-            L"Fast cards: ray traced sun shadows and every effect",
-            L"Everything on: ray traced sun shadows and ambient occlusion",
-            L"Your own mix of the options.  Pick a level to set the costly ones at once"};
         static const wchar_t* const GI_HINTS[2] = {
             L"Only the sun's direct light and the light of the sky",
             L"Sunlight bounces off the ground, the walls and the banks and tints the cars, the dust and what is next to them (with ray tracing on)"};
@@ -529,7 +484,6 @@ std::vector<Frontend::Item> Frontend::items() const {
                  L"Louder rear speakers, as the cabinet's seat speakers"},
                 {OPT_SAMPLES, L"SAMPLE QUALITY", settings.cubic_samples ? L"SMOOTH" : L"ORIGINAL",
                  L"Smooth interpolation of the instrument and voice samples, or the original chip's"},
-                {OPT_QUALITY, L"QUALITY", QUALITY_NAMES[settings.quality()], QUALITY_HINTS[settings.quality()]},
                 {OPT_AA, L"ANTI-ALIASING", AA[settings.aa], aa_hint},
                 {OPT_HAZE, L"DISTANCE HAZE", on_off(settings.haze),
                  L"Far scenery fades into the sky instead of appearing suddenly"},
@@ -741,13 +695,6 @@ void Frontend::activate(const Item& it, int dir) {
         if (i < 0)   // a number set in settings.ini: the step above or below it
             for (i = 1; i < n - 1 && STEPS[i] < settings.max_fps; i++) {}
         settings.max_fps = STEPS[(i + dir + n) % n];
-        push(Action::SettingsChanged);
-        break;
-    }
-    case OPT_QUALITY: {
-        int q = settings.quality();
-        settings.set_quality(q == FrontendSettings::CUSTOM ? (dir > 0 ? FrontendSettings::LOW : FrontendSettings::ULTRA)
-                                                           : (q + dir + 4) % 4);
         push(Action::SettingsChanged);
         break;
     }
