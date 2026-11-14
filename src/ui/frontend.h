@@ -271,6 +271,9 @@ private:
     int drop_sel_ = 0, drop_top_ = 0;     // the highlighted one, the first shown (resolutions, largest first)
     std::vector<RECT> drop_rects_;
     RECT panel_rect_{};                   // the settings page's description panel (draw_options_page)
+    // The entry of `resolutions` RESOLUTION stands on: the chosen mode (never
+    // the window's measured inside), else the nearest to what is in use
+    int resolution_index() const;
     void open_drop();
     void drop_pick(int i);
     bool drop_key(int vk);

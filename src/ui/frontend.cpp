@@ -485,19 +485,23 @@ std::vector<Frontend::Item> Frontend::items() const {
             L"Exclusive full screen: the monitor switches to the RESOLUTION below while the game runs"};
         const int mode = std::clamp(settings.display_mode, 0, 2);
         auto size_text = [](int w, int h) { return std::to_wstring(w) + L" x " + std::to_wstring(h); };
-        std::wstring res = mode == 0   ? size_text(client_w, client_h)   // the window's inside as it is
-                           : mode == 1 ? size_text(desktop_w, desktop_h)
-                           : settings.res_w > 0 ? size_text(settings.res_w, settings.res_h) : size_text(desktop_w, desktop_h);
-        static const wchar_t* const RES_HINTS[3] = {
-            L"The size of the window's picture (smaller, the same shape, where it does not fit on the desktop).  Enter: the list",
+        // the chosen mode (the window without one: its inside); BORDERLESS the desktop's
+        std::wstring res = mode == 1 ? size_text(desktop_w, desktop_h)
+                           : settings.res_w > 0 ? size_text(settings.res_w, settings.res_h)
+                           : mode == 0 ? size_text(client_w, client_h) : size_text(desktop_w, desktop_h);
+        std::wstring res_hints[3] = {
+            L"The size of the window's picture.  Enter: the list",
             L"BORDERLESS always uses the desktop's resolution",
             L"The mode the monitor switches to.  Enter: the list"};
+        if (mode == 0 && settings.res_w > 0 && (std::abs(client_w - settings.res_w) > 2 || std::abs(client_h - settings.res_h) > 2))
+            res_hints[0] = L"The size of the window's picture: shown at " + size_text(client_w, client_h) +
+                           L", the same shape, to fit on the desktop.  Enter: the list";
         static const wchar_t* const RATES[3] = {L"MONITOR", L"HALF", L"60"};
         std::wstring scale_hint = L"The 3D drawn at this share of the picture's size: above 100% sharper and slower, below faster and softer";
         if (settings.render_scale != scale_at_launch) scale_hint += L".  Takes effect the next time the game starts";
         std::vector<Item> all = {{OPT_DISPLAY, L"MODE", MODES[mode],
                  std::wstring(MODE_HINTS[mode]) + (pad_prompts ? L"" : L" (F11 or Alt+Enter: window / full screen)")},
-                {OPT_RESOLUTION, L"RESOLUTION", res, RES_HINTS[mode], mode != 1 && !resolutions.empty()},
+                {OPT_RESOLUTION, L"RESOLUTION", res, res_hints[mode], mode != 1 && !resolutions.empty()},
                 {OPT_SCALE, L"RENDER SCALE", std::to_wstring(settings.render_scale) + L"%", scale_hint},
                 {OPT_VSYNC, L"VSYNC", settings.vsync == 2 ? L"ADAPTIVE" : settings.vsync ? L"ON" : L"OFF",
                  settings.vsync == 2 ? L"In step with the refreshes while the game keeps up with them; when a picture is late it goes out at once (less stutter, it may tear then)"
@@ -706,15 +710,8 @@ void Frontend::activate(const Item& it, int dir) {
     }
     case OPT_RESOLUTION: {
         if (settings.display_mode == 1 || resolutions.empty()) break;
-        int n = int(resolutions.size());
-        int cw = settings.display_mode == 0 ? client_w : settings.res_w > 0 ? settings.res_w : desktop_w;
-        int ch = settings.display_mode == 0 ? client_h : settings.res_w > 0 ? settings.res_h : desktop_h;
-        int i = 0;   // the one in use, or the largest not over it
-        for (int k = 0; k < n; k++)
-            if (resolutions[k].first * resolutions[k].second <= cw * ch) i = k;
-        bool exact = resolutions[i].first == cw && resolutions[i].second == ch;
-        i = dir > 0 ? (exact ? i + 1 : i + (resolutions[i].first * resolutions[i].second < cw * ch)) : (exact ? i - 1 : i);
-        drop_pick((i + n) % n);
+        int n = int(resolutions.size()), i = resolution_index();   // the next mode of the monitor's list from the chosen one
+        drop_pick((i + dir + n) % n);
         break;
     }
     case OPT_SCALE: {
@@ -1396,17 +1393,22 @@ void Frontend::draw_keep() {
 
 // ---- RESOLUTION's list ----
 
+int Frontend::resolution_index() const {
+    int n = int(resolutions.size());
+    int cw = settings.res_w > 0 ? settings.res_w : settings.display_mode == 0 ? client_w : desktop_w;
+    int ch = settings.res_w > 0 ? settings.res_h : settings.display_mode == 0 ? client_h : desktop_h;
+    int best = 0;
+    for (int k = 1; k < n; k++)
+        if (std::abs(resolutions[size_t(k)].first - cw) + std::abs(resolutions[size_t(k)].second - ch) <
+            std::abs(resolutions[size_t(best)].first - cw) + std::abs(resolutions[size_t(best)].second - ch))
+            best = k;
+    return best;
+}
+
 void Frontend::open_drop() {
     if (resolutions.empty()) return;
     int n = int(resolutions.size());
-    int cw = settings.display_mode == 0 ? client_w : settings.res_w > 0 ? settings.res_w : desktop_w;
-    int ch = settings.display_mode == 0 ? client_h : settings.res_w > 0 ? settings.res_h : desktop_h;
-    drop_sel_ = 0;   // the list is largest first: the one in use, or the nearest to it
-    for (int k = 1; k < n; k++) {
-        const auto& a = resolutions[size_t(n - 1 - k)];
-        const auto& b = resolutions[size_t(n - 1 - drop_sel_)];
-        if (std::abs(a.first - cw) + std::abs(a.second - ch) < std::abs(b.first - cw) + std::abs(b.second - ch)) drop_sel_ = k;
-    }
+    drop_sel_ = n - 1 - resolution_index();   // (the list is largest first)
     drop_top_ = 0;
     drop_open_ = true;
     dirty_ = true;
@@ -1416,11 +1418,8 @@ void Frontend::drop_pick(int i) {   // i: into resolutions (smallest first)
     drop_open_ = false;
     dirty_ = true;
     if (i < 0 || i >= int(resolutions.size())) return;
-    int mode = settings.display_mode, w = settings.res_w, h = settings.res_h;
-    if (mode == 0 && w <= 0) w = client_w, h = client_h;   // (going back: the window as it was)
-    settings.res_w = resolutions[size_t(i)].first;
+    settings.res_w = resolutions[size_t(i)].first;   // applied at once (no KEEP THESE SETTINGS? for a resolution)
     settings.res_h = resolutions[size_t(i)].second;
-    ask_keep(mode, w, h);
     push(Action::DisplayChanged);
 }
 
@@ -1455,12 +1454,11 @@ void Frontend::draw_drop() {
     fill(x0, y0, x1, y0 + std::max(2, U(4)), SABER, 1);
     text(ROW_MEDIUM, U(22), L"RESOLUTION", x0 + U(28), y0 + U(22), 0, {GROUP_RED, GROUP_RED});
     drop_rects_.clear();
-    int cw = settings.display_mode == 0 ? client_w : settings.res_w > 0 ? settings.res_w : desktop_w;
-    int ch = settings.display_mode == 0 ? client_h : settings.res_w > 0 ? settings.res_h : desktop_h;
+    const int chosen = n - 1 - resolution_index();
     for (int k = 0; k < shown && drop_top_ + k < n; k++) {
         int i = drop_top_ + k, y = y0 + head + k * row;
         const auto& r = resolutions[size_t(n - 1 - i)];
-        bool sel = i == drop_sel_, in_use = r.first == cw && r.second == ch;
+        bool sel = i == drop_sel_, in_use = i == chosen;
         if (sel) ribbon(x0 + U(24), y, x1 - U(12), y + row, row * 40 / 100, 0.45f, 0.75f, U(6), U(5), 1);
         std::wstring label = std::to_wstring(r.first) + L" x " + std::to_wstring(r.second);
         text(ROW, U(30), label, x0 + U(52), y + row / 2 - U(30) * 75 / 100, 0,

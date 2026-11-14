@@ -625,6 +625,18 @@ int main(int argc, char** argv) {
         frontend.aa_at_launch = s.aa;
         frontend.rt_available = renderer.ray_tracing_available();
         frontend.resolutions = presenter.display_modes();
+        if (s.res_w > 0 && !frontend.resolutions.empty()) {   // a size that is not one of the monitor's modes: the nearest
+            auto best = frontend.resolutions[0];
+            for (const auto& m : frontend.resolutions)
+                if (std::abs(m.first - s.res_w) + std::abs(m.second - s.res_h) < std::abs(best.first - s.res_w) + std::abs(best.second - s.res_h))
+                    best = m;
+            if (best.first != s.res_w || best.second != s.res_h) {
+                printf("[display] resolution %dx%d is not a mode of the monitor: %dx%d\n", s.res_w, s.res_h, best.first, best.second);
+                s.res_w = best.first, s.res_h = best.second;
+                save_settings(s);
+            }
+        }
+        printf("[display] %zu resolutions\n", frontend.resolutions.size());
         frontend.scale_at_launch = s.render_scale;
         g_max_fps = s.max_fps;
         g_background_fps = s.background_fps;
