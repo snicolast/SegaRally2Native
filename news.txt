@@ -13,6 +13,10 @@
 #   # ...          a comment, never shown
 # Newest entry at the top. Keep each one short: about ten lines fit.
 
+[17] 14 November 2026
+- G29 and other wheels: pedals no longer read as pressed at rest, the wheel works in the menus, and force feedback should follow the road in the right direction.
+- Wheels with more than 64 buttons are now read in full, so H-shifters on some Moza and Fanatec bases can be set in save/wheel.ini.
+
 [16] 14 November 2026
 - New main menu, the foundation for more options and modes to come.
 - Redesigned OPTIONS: every section fits on screen without scrolling, with new fonts.
