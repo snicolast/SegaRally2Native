@@ -97,22 +97,89 @@ void VkPresenter::set_cursor_visible(bool visible) {
 }
 
 void VkPresenter::toggle_fullscreen() {
+    if (fullscreen_) set_mode(0, 0, 0);
+    else set_mode(full_mode_, full_w_, full_h_);
+}
+
+void VkPresenter::restore_display() {   // the monitor back to the desktop's mode
+    if (!changed_display_) return;
+    MONITORINFOEXA mi{};
+    mi.cbSize = sizeof(mi);
+    GetMonitorInfoA(MonitorFromWindow(hwnd_, MONITOR_DEFAULTTOPRIMARY), &mi);
+    ChangeDisplaySettingsExA(mi.szDevice, nullptr, nullptr, 0, nullptr);
+    changed_display_ = false;
+}
+
+void VkPresenter::set_mode(int mode, int w, int h) {
+    static const bool dry_run = getenv("SR2_DISPLAY_DRYRUN") != nullptr;
+    mode = std::clamp(mode, 0, 2);
+    MONITORINFOEXA mi{};
+    mi.cbSize = sizeof(mi);
+    GetMonitorInfoA(MonitorFromWindow(hwnd_, MONITOR_DEFAULTTOPRIMARY), &mi);
+    if (mode) full_mode_ = mode, full_w_ = w, full_h_ = h;
+    if (dry_run) {   // tests: nothing changes on the screen
+        LONG test = DISP_CHANGE_SUCCESSFUL;
+        if (mode == 2 && w > 0 && h > 0) {
+            DEVMODEA dm{};
+            dm.dmSize = sizeof(dm);
+            dm.dmPelsWidth = DWORD(w), dm.dmPelsHeight = DWORD(h);
+            dm.dmFields = DM_PELSWIDTH | DM_PELSHEIGHT;
+            test = ChangeDisplaySettingsExA(mi.szDevice, &dm, nullptr, CDS_FULLSCREEN | CDS_TEST, nullptr);
+        }
+        printf("[display] dry run: mode %d, %dx%d%s\n", mode, w, h,
+               mode == 2 && w > 0 ? (test == DISP_CHANGE_SUCCESSFUL ? " (Windows: the monitor can take it)" : " (Windows: refused)") : "");
+        mode_ = mode;
+        fullscreen_ = mode != 0;
+        return;
+    }
     DWORD style = GetWindowLongA(hwnd_, GWL_STYLE);
-    if (!fullscreen_) {
-        MONITORINFO mi{sizeof(mi)};
-        GetWindowPlacement(hwnd_, &placement_);
-        GetMonitorInfoA(MonitorFromWindow(hwnd_, MONITOR_DEFAULTTOPRIMARY), &mi);
+    if (mode != 2) restore_display();
+    if (mode == 0) {
+        if (fullscreen_) {
+            SetWindowLongA(hwnd_, GWL_STYLE, style | WS_OVERLAPPEDWINDOW);
+            SetWindowPlacement(hwnd_, &placement_);
+            SetWindowPos(hwnd_, nullptr, 0, 0, 0, 0,
+                         SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOOWNERZORDER | SWP_FRAMECHANGED);
+        }
+        if (w > 0 && h > 0) {   // RESOLUTION: the window's inside
+            RECT r{0, 0, w, h};
+            AdjustWindowRect(&r, WS_OVERLAPPEDWINDOW, FALSE);
+            SetWindowPos(hwnd_, nullptr, 0, 0, r.right - r.left, r.bottom - r.top, SWP_NOMOVE | SWP_NOZORDER | SWP_NOOWNERZORDER);
+        }
+    } else {
+        if (!fullscreen_) GetWindowPlacement(hwnd_, &placement_);
+        if (mode == 2 && w > 0 && h > 0) {   // the monitor to that mode, for as long as the game runs (CDS_FULLSCREEN)
+            DEVMODEA dm{};
+            dm.dmSize = sizeof(dm);
+            dm.dmPelsWidth = DWORD(w), dm.dmPelsHeight = DWORD(h);
+            dm.dmFields = DM_PELSWIDTH | DM_PELSHEIGHT;
+            LONG r = ChangeDisplaySettingsExA(mi.szDevice, &dm, nullptr, CDS_FULLSCREEN, nullptr);
+            if (r == DISP_CHANGE_SUCCESSFUL) changed_display_ = true;
+            else printf("[display] the monitor did not take %dx%d (%ld): full screen at the desktop's resolution\n", w, h, r);
+            GetMonitorInfoA(MonitorFromWindow(hwnd_, MONITOR_DEFAULTTOPRIMARY), &mi);
+        }
         SetWindowLongA(hwnd_, GWL_STYLE, style & ~WS_OVERLAPPEDWINDOW);
         SetWindowPos(hwnd_, HWND_TOP, mi.rcMonitor.left, mi.rcMonitor.top, mi.rcMonitor.right - mi.rcMonitor.left,
                      mi.rcMonitor.bottom - mi.rcMonitor.top, SWP_NOOWNERZORDER | SWP_FRAMECHANGED);
-    } else {
-        SetWindowLongA(hwnd_, GWL_STYLE, style | WS_OVERLAPPEDWINDOW);
-        SetWindowPlacement(hwnd_, &placement_);
-        SetWindowPos(hwnd_, nullptr, 0, 0, 0, 0,
-                     SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOOWNERZORDER | SWP_FRAMECHANGED);
     }
-    fullscreen_ = !fullscreen_;
+    mode_ = mode;
+    fullscreen_ = mode != 0;
     resized_ = true;
+}
+
+std::vector<std::pair<int, int>> VkPresenter::display_modes() const {
+    std::vector<std::pair<int, int>> modes;
+    MONITORINFOEXA mi{};
+    mi.cbSize = sizeof(mi);
+    GetMonitorInfoA(MonitorFromWindow(hwnd_, MONITOR_DEFAULTTOPRIMARY), &mi);
+    DEVMODEA dm{};
+    dm.dmSize = sizeof(dm);
+    for (DWORD i = 0; EnumDisplaySettingsA(mi.szDevice, i, &dm); i++)
+        if (dm.dmBitsPerPel >= 24 && dm.dmPelsWidth >= 800 && dm.dmPelsHeight >= 600)
+            modes.push_back({int(dm.dmPelsWidth), int(dm.dmPelsHeight)});
+    std::sort(modes.begin(), modes.end());
+    modes.erase(std::unique(modes.begin(), modes.end()), modes.end());
+    return modes;
 }
 
 bool VkPresenter::init(const char* title, int width, int height, bool with_ngx) {
@@ -374,6 +441,14 @@ bool VkPresenter::create_swapchain() {
     ci.preTransform = caps.currentTransform;
     ci.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
     ci.presentMode = VK_PRESENT_MODE_FIFO_KHR;   // vsync at the monitor's refresh rate
+    if (getenv("LW_NO_VSYNC")) {   // debugging aid: as when the driver forces vsync off (the frame limit's test)
+        uint32_t pn = 0;
+        vkGetPhysicalDeviceSurfacePresentModesKHR(gpu_, surface_, &pn, nullptr);
+        std::vector<VkPresentModeKHR> pm(pn);
+        vkGetPhysicalDeviceSurfacePresentModesKHR(gpu_, surface_, &pn, pm.data());
+        for (VkPresentModeKHR m : pm)
+            if (m == VK_PRESENT_MODE_IMMEDIATE_KHR) ci.presentMode = m;
+    }
     ci.clipped = VK_TRUE;
     std::unique_lock<std::shared_mutex> lock(swapchain_mutex_);
     swapchain_first_id_ = present_id_ + 1;
@@ -571,6 +646,7 @@ double VkPresenter::limit_queue(int depth, uint64_t timeout_ns) {
 }
 
 void VkPresenter::shutdown() {
+    restore_display();
     if (device_) {
         vkDeviceWaitIdle(device_);
         destroy_swapchain();

@@ -24,7 +24,12 @@
 #include "splash_video.h"
 
 struct FrontendSettings {
-    bool fullscreen = false;
+    bool fullscreen = false;   // (written as display_mode != window, for older versions)
+    int display_mode = 0;      // MODE: 0 window, 1 borderless (the desktop's resolution), 2 exclusive full screen
+    bool display_mode_saved = false;   // load() found it (else from fullscreen: borderless, as before)
+    int res_w = 0, res_h = 0;  // RESOLUTION: the window's inside, or the full-screen mode (0: default window / the desktop's)
+    int render_scale = 100;    // RENDER SCALE, %: the 3D drawn at this share of the screen's size (--scale; next launch)
+    int frame_rate = 0;        // FRAME RATE: 0 every refresh, 1 every other refresh, 2 about 60 (whole refreshes)
     int volume = 5;    // 0..10 (output gain): the sound effects and voices
     int music = 5;     // 0..10: the music board's gain
     int speakers = 0;  // 0 stereo, 1 surround 4.0, 2 headphones (AudioStream::Speakers)
@@ -75,7 +80,7 @@ class Frontend {
 public:
     enum class Screen { None, Splash, Main, Options, Pause, Records, Debug, Play };
     enum class Action { None, StartArcade, Resume, Quit, ToggleFullscreen, SettingsChanged,
-                        QuitToMenu, StartDebug };
+                        QuitToMenu, StartDebug, DisplayChanged };   // DisplayChanged: MODE / RESOLUTION to the window
 
     bool init(const std::string& font_dir);
     void shutdown();
@@ -106,6 +111,8 @@ public:
 
     FrontendSettings settings;
     int aa_at_launch = 0;   // anti-aliasing the renderer was started with
+    int scale_at_launch = 100;   // RENDER SCALE the renderer was started with
+    std::vector<std::pair<int, int>> resolutions;   // the monitor's (app.cpp, VkPresenter::display_modes)
     bool rt_available = false;   // the GPU can trace rays (RAY TRACING option)
     std::wstring gamepads;  // the pads connected, for the CONTROLS tab ("" = none)
     bool pad_prompts = false;   // a gamepad drives the menu: its buttons in the key help and hints, not the keyboard's
@@ -147,7 +154,7 @@ private:
         DEBUG, DEBUG_COURSE, DEBUG_CAR, DEBUG_GEARS, DEBUG_TIME, DEBUG_GO,
         OPT_QUALITY, OPT_DISPLAY, OPT_VOLUME, OPT_MUSIC, OPT_SPEAKERS, OPT_REAR, OPT_SAMPLES, OPT_AA, OPT_HAZE, OPT_BLOOM, OPT_AO, OPT_SUN, OPT_SHADOWS, OPT_SOFT, OPT_HDR, OPT_SHARPEN, OPT_HUD, OPT_LIVERIES,
         OPT_SAT, OPT_GAMMA, OPT_MOTION, OPT_VIBRATION, OPT_RT, OPT_MENU_MUSIC, OPT_REFLECT, OPT_GI, OPT_DUST, OPT_UPDATES,
-        OPT_DIFFICULTY, OPT_CONNECTED, OPT_TRIGGERS,
+        OPT_DIFFICULTY, OPT_CONNECTED, OPT_TRIGGERS, OPT_RESOLUTION, OPT_SCALE, OPT_FRAMERATE,
     };
     struct Item {
         Id id;
@@ -244,6 +251,17 @@ private:
     Glide glide_menu_, glide_tab_, glide_row_;
     bool gliding_ = false;            // one of them is moving (this picture)
     void glide(Glide& g, long key, int y, int h, int& gy, int& gh);
+    // KEEP THESE SETTINGS?: after MODE FULLSCREEN or a new RESOLUTION, back
+    // to the previous ones by itself after 10 s unless KEEP is chosen
+    bool keep_open_ = false;
+    double keep_from_ = 0;
+    int keep_button_ = 0;   // 0 KEEP, 1 REVERT
+    int keep_mode_ = 0, keep_w_ = 0, keep_h_ = 0;
+    RECT keep_buttons_[2]{};
+    void ask_keep(int mode, int w, int h);
+    void keep_choose(int button);
+    bool keep_key(int vk);
+    void draw_keep();
     void placeholder_backdrop();      // no background picture: a drawn one (Sega Rally 2)
     void shade_backdrop();            // darker at the right and the bottom, the logo: on px_
     // UPDATE AVAILABLE: the window over the main menu with the entries of

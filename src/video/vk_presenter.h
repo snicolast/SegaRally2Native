@@ -38,8 +38,16 @@ public:
     // Sampled images can be bound with update-after-bind (higher descriptor limits)
     bool update_after_bind() const { return update_after_bind_; }
     HWND hwnd() const { return hwnd_; }
-    void toggle_fullscreen();
+    void toggle_fullscreen();   // F11 / Alt+Enter: the window, or the last full-screen mode
     bool fullscreen() const { return fullscreen_; }
+    // MODE: 0 a window (w x h inside, 0: as it is), 1 borderless at the
+    // desktop's resolution, 2 exclusive full screen: the monitor set to w x h
+    // (0: the desktop's) while the game runs. SR2_DISPLAY_DRYRUN=1 (tests):
+    // the window stays as it is, a mode is only checked with Windows (CDS_TEST)
+    void set_mode(int mode, int w, int h);
+    int mode() const { return mode_; }
+    // The monitor's resolutions (its modes, each size once, smallest first)
+    std::vector<std::pair<int, int>> display_modes() const;
     void close() { quit_ = true; }
 
     // Sees key presses and mouse messages first; returning true swallows
@@ -102,6 +110,9 @@ private:
 
     HWND hwnd_ = nullptr;
     bool quit_ = false, resized_ = false, fullscreen_ = false, show_cursor_ = false;
+    int mode_ = 0, full_mode_ = 1, full_w_ = 0, full_h_ = 0;   // the mode on; the last full-screen one (F11)
+    bool changed_display_ = false;   // the monitor is in another mode (exclusive full screen)
+    void restore_display();
     WINDOWPLACEMENT placement_{sizeof(WINDOWPLACEMENT)};
 
     VkInstance instance_ = VK_NULL_HANDLE;

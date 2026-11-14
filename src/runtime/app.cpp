@@ -57,6 +57,7 @@
 #include "settings_bridge.h"
 
 Options g_opt;   // command line and menu settings (options.h)
+int g_frame_rate = 0;   // the menu's FRAME RATE: 0 every refresh, 1 every other, 2 about 60
 
 // When the image being recorded will be on screen: with vsync the images go
 // out once per refresh, evenly, while this thread wakes up for them at uneven
@@ -622,7 +623,10 @@ int main(int argc, char** argv) {
         g_settings_launch = s;
         frontend.aa_at_launch = s.aa;
         frontend.rt_available = renderer.ray_tracing_available();
-        if (s.fullscreen && !presenter.fullscreen()) presenter.toggle_fullscreen();
+        frontend.resolutions = presenter.display_modes();
+        frontend.scale_at_launch = s.render_scale;
+        g_frame_rate = s.frame_rate;
+        if (s.display_mode != 0 || (s.res_w > 0 && s.res_h > 0)) presenter.set_mode(s.display_mode, s.res_w, s.res_h);
         // the logo first (not when a debugging aid drives the menu)
         if (getenv("LW_MENU_KEYS") || getenv("LW_MENU_SHOT")) frontend.open(Frontend::Screen::Main);
         else {
@@ -989,6 +993,20 @@ int main(int argc, char** argv) {
     double parts_from = 0;   // when the previous present call returned
     int parts_skip = 0;      // turns left out: a refresh skipped on purpose (the queue made shorter)
     for (;;) {
+        {   // FRAME RATE, and always a limit of its own: never more pictures than the
+            // monitor's refreshes, even when the driver has turned vsync off (it
+            // sleeps to a millisecond: with vsync the present then waits for the refresh)
+            static double due = 0;
+            double period = std::clamp(display_clock.period, 1.0 / 500, 1.0 / 20);
+            int every = 1;
+            if (g_opt.interp && g_frame_rate == 1) every = 2;
+            else if (g_opt.interp && g_frame_rate == 2) every = std::max(1, int(std::lround(1.0 / 60 / period)));
+            double step = every * period, now = qpc_seconds();
+            static const bool no_limit = getenv("LW_NO_LIMIT") != nullptr;   // debugging aid: without it (to compare)
+            if (!no_limit && due > 0 && due - now > 0.002) Sleep(DWORD((due - now) * 1000) - 1);
+            now = qpc_seconds();
+            due = due > 0 && now - due < step ? std::max(due + step, now + 0.25 * step) : now + step;
+        }
         double wait_from = qpc_seconds();
         {   // before the inputs are read
             int depth = queue_depth ? queue_depth + queue_extra : 0;
@@ -1115,6 +1133,12 @@ int main(int argc, char** argv) {
                     break;
                 case Frontend::Action::Quit: presenter.close(); break;
                 case Frontend::Action::ToggleFullscreen: presenter.toggle_fullscreen(); break;
+                case Frontend::Action::DisplayChanged:   // MODE, RESOLUTION (or KEEP THESE SETTINGS? going back)
+                    presenter.set_mode(s.display_mode, s.res_w, s.res_h);
+                    s.fullscreen = s.display_mode != 0;
+                    save_settings(s);
+                    frontend.invalidate();
+                    break;
                 case Frontend::Action::SettingsChanged:
                     g_sound.set_volume(float(s.volume));
                     g_sound.set_music_gain(float(s.music));
@@ -1148,6 +1172,7 @@ int main(int argc, char** argv) {
                     renderer.set_picture(s.saturation / 100.0f, s.gamma / 100.0f);
                     g_pad_rumble = s.vibration;
                     g_trigger_share = s.trigger_rumble / 100.0f;
+                    g_frame_rate = s.frame_rate;
                     save_settings(s);
                     break;
                 default: break;
@@ -1155,6 +1180,7 @@ int main(int argc, char** argv) {
             }
             if (frontend.settings.fullscreen != presenter.fullscreen()) {   // also F11 / Alt+Enter
                 frontend.settings.fullscreen = presenter.fullscreen();
+                frontend.settings.display_mode = presenter.mode();
                 save_settings(frontend.settings);
                 frontend.invalidate();
             }
@@ -1635,6 +1661,20 @@ int main(int argc, char** argv) {
             char path[64];
             snprintf(path, sizeof(path), "out/film_out/%04zu.bmp", film_pos);
             presenter.capture_next(path);
+        }
+        {   // Debugging aid: LW_PRESENTLOG=1 prints the pictures presented each second
+            static const bool log = getenv("LW_PRESENTLOG") != nullptr;
+            static double from = 0;
+            static int count = 0;
+            if (log) {
+                double now = qpc_seconds();
+                if (from == 0) from = now;
+                count++;
+                if (now - from >= 1) {
+                    printf("[present] %.1f/s (refresh %.1f Hz)\n", count / (now - from), 1.0 / display_clock.period);
+                    from = now, count = 0;
+                }
+            }
         }
         presenter.frame([&](VkCommandBuffer cmd, VkImageView view, VkExtent2D extent) {
             renderer.record(cmd, view, extent);
