@@ -37,8 +37,8 @@ public:
     // GENERAL with storage usage. jitter: sub-pixel offset of the projection
     // in pixels; reset: history must be discarded (camera cut, resize).
     // channel 0 is the image itself; channel 1 runs a second, independent
-    // DLAA over its alpha (presented as grey colour), which DLSS's own alpha
-    // upscaling leaves without temporal accumulation.
+    // DLAA (no longer used: the renderer smooths the alpha over time itself,
+    // alpha_taa.frag, for a fraction of the cost).
     // width, height: the inputs' size; out_width, out_height: the output's
     // (the same: DLAA; larger: DLSS at its quality setting)
     bool evaluate(VkCommandBuffer cmd, const Image& color, const Image& depth, const Image& motion,
