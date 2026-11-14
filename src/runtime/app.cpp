@@ -1189,8 +1189,9 @@ int main(int argc, char** argv) {
                     presenter.close();
                     break;
                 case Frontend::Action::ToggleFullscreen: presenter.toggle_fullscreen(); break;
-                case Frontend::Action::DisplayChanged:   // MODE, RESOLUTION (or KEEP THESE SETTINGS? going back)
+                case Frontend::Action::DisplayChanged:   // MODE, RESOLUTION: at once
                     presenter.set_mode(s.display_mode, s.res_w, s.res_h);
+                    s.display_mode = presenter.mode();   // (a FULLSCREEN the monitor refused: BORDERLESS)
                     g_window_resized_at = qpc_seconds();   // (the pointer's hover waits: the rows moved under it)
                     s.fullscreen = s.display_mode != 0;
                     save_settings(s);

@@ -250,8 +250,6 @@ private:
     Glide glide_menu_, glide_tab_, glide_row_;
     bool gliding_ = false;            // one of them is moving (this picture)
     void glide(Glide& g, long key, int y, int h, int& gy, int& gh);
-    // KEEP THESE SETTINGS?: after MODE FULLSCREEN or a new RESOLUTION, back
-    // to the previous ones by itself after 10 s unless KEEP is chosen
     // RESTART NOW?: leaving the settings with a change that only applies on a
     // new start (RENDER SCALE, ANTI-ALIASING). LATER goes on as BACK would
     bool restart_open_ = false;
@@ -260,15 +258,6 @@ private:
     std::wstring restart_list() const;   // what waits for a restart, "" nothing
     void restart_choose(int button);
     void draw_restart();
-    bool keep_open_ = false;
-    double keep_from_ = 0;
-    int keep_button_ = 0;   // 0 KEEP, 1 REVERT
-    int keep_mode_ = 0, keep_w_ = 0, keep_h_ = 0;
-    RECT keep_buttons_[2]{};
-    void ask_keep(int mode, int w, int h);
-    void keep_choose(int button);
-    bool keep_key(int vk);
-    void draw_keep();
     // RESOLUTION's list: Enter or a click opens it over the description panel
     bool drop_open_ = false;
     int drop_sel_ = 0, drop_top_ = 0;     // the highlighted one, the first shown (resolutions, largest first)

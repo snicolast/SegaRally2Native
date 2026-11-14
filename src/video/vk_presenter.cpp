@@ -69,6 +69,9 @@ LRESULT CALLBACK VkPresenter::wndproc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
     case WM_SIZE:
         if (self) self->resized_ = true;
         return 0;
+    case WM_ACTIVATEAPP:
+        if (self) self->on_activate(wp != 0);
+        break;
     case WM_KEYDOWN:
         if (wp == VK_ESCAPE && self) self->quit_ = true;
         if (wp == VK_F11 && self) self->toggle_fullscreen();
@@ -99,6 +102,21 @@ void VkPresenter::set_cursor_visible(bool visible) {
 void VkPresenter::toggle_fullscreen() {
     if (fullscreen_) set_mode(0, 0, 0);
     else set_mode(full_mode_, full_w_, full_h_);
+}
+
+// Exclusive full screen and Alt+Tab (or another window taking the focus):
+// the desktop's mode back and the game minimised; back to the game: its mode again
+void VkPresenter::on_activate(bool active) {
+    if (mode_ != 2 || full_w_ <= 0 || full_h_ <= 0) return;
+    if (!active && changed_display_) {
+        restore_display();
+        ShowWindow(hwnd_, SW_MINIMIZE);
+        lost_display_ = true;
+    } else if (active && lost_display_) {
+        lost_display_ = false;
+        ShowWindow(hwnd_, SW_RESTORE);
+        set_mode(2, full_w_, full_h_);
+    }
 }
 
 void VkPresenter::restore_display() {   // the monitor back to the desktop's mode
@@ -166,7 +184,10 @@ void VkPresenter::set_mode(int mode, int w, int h) {
             dm.dmFields = DM_PELSWIDTH | DM_PELSHEIGHT;
             LONG r = ChangeDisplaySettingsExA(mi.szDevice, &dm, nullptr, CDS_FULLSCREEN, nullptr);
             if (r == DISP_CHANGE_SUCCESSFUL) changed_display_ = true;
-            else printf("[display] the monitor did not take %dx%d (%ld): full screen at the desktop's resolution\n", w, h, r);
+            else {   // BORDERLESS instead (the menu shows it)
+                printf("[display] the monitor did not take %dx%d (%ld): BORDERLESS instead\n", w, h, r);
+                mode = 1;
+            }
             GetMonitorInfoA(MonitorFromWindow(hwnd_, MONITOR_DEFAULTTOPRIMARY), &mi);
         }
         if (const char* fake = getenv("SR2_FAKE_MONITOR")) {   // debugging aid: "x,y,w,h", full screen there (out of sight)

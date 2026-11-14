@@ -120,8 +120,10 @@ private:
     bool quit_ = false, resized_ = false, fullscreen_ = false, show_cursor_ = false;
     int mode_ = 0, full_mode_ = 1, full_w_ = 0, full_h_ = 0;   // the mode on; the last full-screen one (F11)
     bool changed_display_ = false;   // the monitor is in another mode (exclusive full screen)
+    bool lost_display_ = false;      // ...given back while the game lost the focus
     int vsync_ = 1;
     void restore_display();
+    void on_activate(bool active);   // exclusive full screen: the desktop's mode while another window has the focus
     WINDOWPLACEMENT placement_{sizeof(WINDOWPLACEMENT)};
 
     VkInstance instance_ = VK_NULL_HANDLE;

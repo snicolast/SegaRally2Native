@@ -656,14 +656,11 @@ void Frontend::activate(const Item& it, int dir) {
         tab_ = 0;
         slide_to(Screen::Options, 1);   // the pause's entries out to the right, then the page
         break;
-    case OPT_DISPLAY: {
-        int mode = settings.display_mode, w = settings.res_w, h = settings.res_h;
-        settings.display_mode = (mode + dir + 3) % 3;
+    case OPT_DISPLAY:   // applied at once (app.cpp)
+        settings.display_mode = (settings.display_mode + dir + 3) % 3;
         settings.fullscreen = settings.display_mode != 0;
-        if (settings.display_mode == 2) ask_keep(mode, w, h);   // the monitor changes mode: confirmed, or back in 10 s
         push(Action::DisplayChanged);
         break;
-    }
     case OPT_RESOLUTION: {
         if (settings.display_mode == 1 || resolutions.empty()) break;
         int n = int(resolutions.size()), i = resolution_index();   // the next mode of the monitor's list from the chosen one
@@ -818,7 +815,6 @@ bool Frontend::key(int vk) {
     if (starting) return true;   // nothing to choose while the game starts
     if (slide_from_ >= 0) finish_slide();   // the entries moving: in place at once, and the key does its job
     if (news_open_ && screen_ == Screen::Main) return news_key(vk);
-    if (keep_open_) return keep_key(vk);
     if (drop_open_) return drop_key(vk);
     if (restart_open_) {
         switch (vk) {
@@ -1083,11 +1079,6 @@ void Frontend::click(int x, int y) {
     }
     if (starting) return;
     POINT p{x, y};
-    if (keep_open_) {
-        for (int b = 0; b < 2; b++)
-            if (PtInRect(&keep_buttons_[b], p)) keep_choose(b);
-        return;
-    }
     if (restart_open_) {
         for (int b = 0; b < 2; b++)
             if (PtInRect(&restart_buttons_[b], p)) restart_choose(b);
@@ -1138,7 +1129,6 @@ void Frontend::click(int x, int y) {
 
 void Frontend::wheel(int x, int y, int delta) {
     if (starting || screen_ == Screen::Splash || (news_open_ && screen_ == Screen::Main)) return;
-    if (keep_open_) return;
     if (drop_open_) {
         drop_key(delta > 0 ? VK_UP : VK_DOWN);
         return;
@@ -1258,68 +1248,6 @@ std::vector<Frontend::RecordRow> Frontend::record_rows() const {
     return rows;
 }
 
-// ---- KEEP THESE SETTINGS? ----
-
-void Frontend::ask_keep(int mode, int w, int h) {
-    if (!keep_open_) keep_mode_ = mode, keep_w_ = w, keep_h_ = h;   // (the first one asked: what to go back to)
-    keep_open_ = true;
-    keep_from_ = now_seconds();
-    keep_button_ = 0;
-    dirty_ = true;
-}
-
-void Frontend::keep_choose(int button) {
-    keep_open_ = false;
-    dirty_ = true;
-    if (button == 1) {   // REVERT (or the time ran out)
-        settings.display_mode = keep_mode_;
-        settings.fullscreen = keep_mode_ != 0;
-        settings.res_w = keep_w_, settings.res_h = keep_h_;
-        push(Action::DisplayChanged);
-    }
-}
-
-bool Frontend::keep_key(int vk) {
-    switch (vk) {
-    case VK_LEFT: case 'A': case VK_RIGHT: case 'D': case VK_TAB: keep_button_ ^= 1; dirty_ = true; return true;
-    case VK_RETURN: case VK_SPACE: keep_choose(keep_button_); return true;
-    case VK_ESCAPE: case VK_BACK: keep_choose(1); return true;
-    }
-    return true;   // nothing else while it waits
-}
-
-void Frontend::draw_keep() {
-    constexpr uint32_t PAGE_TEXT = 0xEEF3FA, PAGE_LINE = 0x3A4458;   // (as the settings page's, below)
-    auto U = [&](float v) { return int(v * u_ + 0.5f); };
-    const int w = w_, h = h_;
-    // Over the description panel (the chosen row stays in sight), what is applied first
-    RECT pr = panel_rect_.right > panel_rect_.left ? panel_rect_ : RECT{w / 4, h / 4, w * 3 / 4, h * 3 / 4};
-    int x0 = pr.left, y0 = pr.top, x1 = pr.right, y1 = std::min(int(pr.bottom), y0 + U(330)), cx = (x0 + x1) / 2;
-    fill(x0, y0, x1, y1, PANEL, 1);
-    frame(x0, y0, x1, y1, std::max(1, U(1)), PAGE_LINE, 1);
-    fill(x0, y0, x1, y0 + std::max(2, U(4)), SABER, 1);
-    static const wchar_t* const MODES[3] = {L"WINDOW", L"BORDERLESS", L"FULLSCREEN"};
-    int m = std::clamp(settings.display_mode, 0, 2);
-    std::wstring what = MODES[m];
-    if (m != 1 && settings.res_w > 0) what += L"  " + std::to_wstring(settings.res_w) + L" x " + std::to_wstring(settings.res_h);
-    text(TITLE, U(44), what, cx, y0 + U(28), 1, {GOLD_TOP, GOLD_BOTTOM, 0, 0, 1, U(2)});
-    text(TITLE, U(44), L"KEEP THESE SETTINGS?", cx, y0 + U(84), 1, {0xFFFFFF, 0xE2EAF4, 0, 0, 1, U(3)});
-    int left = std::max(0, 10 - int(now_seconds() - keep_from_));
-    text(BODY, U(24), L"Back to the previous ones in " + std::to_wstring(left) + L" s", cx, y0 + U(150), 1,
-         {0xD6DEEA, 0xD6DEEA});
-    const wchar_t* names[2] = {L"KEEP", L"REVERT"};
-    int bw = std::min(U(200), (x1 - x0) / 2 - U(40)), bh = U(60), gap = U(30), bx = cx - bw - gap / 2, by = y1 - U(32) - bh;
-    for (int b = 0; b < 2; b++) {
-        int x = bx + b * (bw + gap);
-        bool sel = b == keep_button_;
-        if (sel) ribbon(x, by, x + bw, by + bh, bh * 30 / 100, 0.85f, 0.6f, U(8), U(6), 1);
-        else frame(x, by, x + bw, by + bh, std::max(1, U(1)), PAGE_LINE, 1);
-        text(TITLE, U(40), names[b], x + bw / 2, by + bh / 2 - U(40) * 75 / 100, 1,
-             sel ? Style{GOLD_TOP, GOLD_BOTTOM, 0, 0, 1, U(2)} : Style{PAGE_TEXT, PAGE_TEXT, 0, 0, 1, U(2)});
-        keep_buttons_[b] = {x, by, x + bw, by + bh};
-    }
-}
-
 // ---- RESTART NOW? ----
 
 std::wstring Frontend::restart_list() const {
@@ -1401,7 +1329,7 @@ void Frontend::drop_pick(int i) {   // i: into resolutions (smallest first)
     drop_open_ = false;
     dirty_ = true;
     if (i < 0 || i >= int(resolutions.size())) return;
-    settings.res_w = resolutions[size_t(i)].first;   // applied at once (no KEEP THESE SETTINGS? for a resolution)
+    settings.res_w = resolutions[size_t(i)].first;   // applied at once
     settings.res_h = resolutions[size_t(i)].second;
     push(Action::DisplayChanged);
 }
@@ -2565,10 +2493,6 @@ bool Frontend::draw(int w, int h, std::vector<uint32_t>& out) {
         dirty_ = gliding_;
         if (drop_open_) draw_drop();
         if (restart_open_) draw_restart();
-        if (keep_open_) {   // KEEP THESE SETTINGS? over it, counting down
-            if (now_seconds() - keep_from_ >= 10) keep_choose(1);
-            else draw_keep(), dirty_ = true;
-        }
         fade_in();
         return true;
     }
