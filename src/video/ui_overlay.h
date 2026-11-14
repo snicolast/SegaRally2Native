@@ -60,6 +60,9 @@ private:
     bool visible_ = false;
     std::chrono::steady_clock::time_point start_;
     double time_offset_ = 0;   // SR2_MENU_TIME: the backdrop's clock starts there (screenshots)
+    bool dust_ = true;         // SR2_MENU_DUST=0: the backdrop without its haze and motes
+    double fixed_fps_ = 0;     // SR2_MENU_FPS=N: the clock goes 1/N s a frame (films at any speed)
+    uint64_t back_frames_ = 0;
 
     VkSampler sampler_ = VK_NULL_HANDLE;
     VkDescriptorSetLayout set_layout_ = VK_NULL_HANDLE;

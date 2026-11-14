@@ -21,7 +21,7 @@ VkShaderModule make_module(VkDevice dev, const uint32_t* code, size_t bytes) {
 }
 
 struct BackdropParams {   // backdrop.frag's push constants
-    float t, screen_aspect, pic_aspect, anchor_x, height, blurred;
+    float t, screen_aspect, pic_aspect, anchor_x, height, blurred, dust;
 };
 }  // namespace
 
@@ -30,6 +30,8 @@ bool UiOverlay::init(VkPresenter& vk) {
     dev_ = vk.device();
     start_ = std::chrono::steady_clock::now();
     if (const char* t = getenv("SR2_MENU_TIME")) time_offset_ = atof(t);
+    if (const char* d = getenv("SR2_MENU_DUST")) dust_ = atoi(d) != 0;
+    if (const char* f = getenv("SR2_MENU_FPS")) fixed_fps_ = atof(f);
 
     VkSamplerCreateInfo si{VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO};
     si.magFilter = si.minFilter = VK_FILTER_LINEAR;
@@ -258,13 +260,15 @@ void UiOverlay::record(VkCommandBuffer cmd, VkImageView target, VkExtent2D exten
     vkCmdSetScissor(cmd, 0, 1, &all);
     if (back) {
         // the clock wraps every 2 hours (a jump then) so the shader's floats stay precise
-        double t = std::chrono::duration<double>(std::chrono::steady_clock::now() - start_).count() + time_offset_;
+        double t = fixed_fps_ > 0 ? double(back_frames_++) / fixed_fps_ + time_offset_
+                                  : std::chrono::duration<double>(std::chrono::steady_clock::now() - start_).count() + time_offset_;
         BackdropParams p{float(std::fmod(t, 7200.0)),
                          float(extent.width) / float(std::max(1u, extent.height)),
                          float(back->w) / float(back->h),
                          back_anchor_[motion_],
                          float(extent.height),
-                         motion_ == BACKDROP_BLURRED ? 1.0f : 0.0f};
+                         motion_ == BACKDROP_BLURRED ? 1.0f : 0.0f,
+                         dust_ ? 1.0f : 0.0f};
         vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, back_pipeline_);
         vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, back_layout_, 0, 1, &back->set, 0, nullptr);
         vkCmdPushConstants(cmd, back_layout_, VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(p), &p);
