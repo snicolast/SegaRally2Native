@@ -297,6 +297,7 @@ int main(int argc, char** argv) {
         if (aa_auto) ini.aa = 1;   // DLAA; DLSS QUALITY or MSAA once the screen and the GPU are known
         options_from_settings(g_opt, ini);
         g_pad_rumble = ini.vibration;
+        g_trigger_share = ini.trigger_rumble / 100.0f;
     }
     int exit_code = 0;
     if (!parse_options(g_opt, argc, argv, nullptr, exit_code)) return exit_code;
@@ -1135,6 +1136,7 @@ int main(int argc, char** argv) {
                     }
                     renderer.set_picture(s.saturation / 100.0f, s.gamma / 100.0f);
                     g_pad_rumble = s.vibration;
+                    g_trigger_share = s.trigger_rumble / 100.0f;
                     save_settings(s);
                     break;
                 default: break;

@@ -15,6 +15,7 @@
 bool g_menu_open = false;   // a menu has the controls
 Gamepads g_pads;
 int g_pad_rumble = 2;
+float g_trigger_share = 1.0f;
 
 static int adc(float v) { return std::clamp(int(std::lround(v)), 0, 255); }
 
@@ -112,6 +113,7 @@ bool poll_gamepads(HWND hwnd) {
                 if (sh > 0.08f) g_pads.rumble(i, sh, 0.6f * sh, 60);
                 // and the triggers' own (runtime.cpp, trigger_frame)
                 float tl = g_trigger_rumble[0].exchange(0.0f), tr = g_trigger_rumble[1].exchange(0.0f);
+                tl *= g_trigger_share, tr *= g_trigger_share;
                 if (tl > 0.05f || tr > 0.05f) g_pads.rumble_triggers(i, tl, tr, 60);
             }
             driver = false;
