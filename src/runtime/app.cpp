@@ -597,6 +597,16 @@ int main(int argc, char** argv) {
     if (g_opt.menu) {
         if (!frontend.init("third_party/fonts")) printf("[menu] fonts missing: using the Windows ones\n");
         if (!ui.init(presenter)) g_opt.menu = false;
+        // The backdrop moves under the menus (on the GPU); SR2_MENU_STILL=1: the still picture
+        if (g_opt.menu && !getenv("SR2_MENU_STILL")) {
+            for (int slot = 0; slot < UiOverlay::BACKDROPS; slot++) {
+                const uint32_t* px = nullptr;
+                int w = 0, h = 0;
+                frontend.backdrop_pixels(slot, px, w, h);
+                ui.set_backdrop(slot, px, uint32_t(w), uint32_t(h), 0.0f);   // the crop of backdrop_background()
+            }
+            frontend.set_motion(true);
+        }
     }
     if (g_opt.menu) {
         FrontendSettings& s = frontend.settings;
@@ -1146,6 +1156,20 @@ int main(int argc, char** argv) {
             // pixel X,Y), then saves out/menu.bmp and quits
             static const char* menu_keys = getenv("LW_MENU_KEYS");
             static int menu_presents = 0;
+            // LW_MENU_FILM="N,EVERY": after the keys, N window pictures EVERY
+            // presents apart (out/menu_film/000.bmp...) in place of out/menu.bmp
+            static const char* menu_film = getenv("LW_MENU_FILM");
+            static int film_left = 0, film_every = 4, film_index = 0, film_wait = 0;
+            static bool filming = false;
+            if (filming && ++film_wait % film_every == 0) {
+                char path[64];
+                snprintf(path, sizeof(path), "out/menu_film/%03d.bmp", film_index++);
+                presenter.capture_next(path);
+                if (--film_left <= 0) {
+                    filming = false;
+                    presenter.close();
+                }
+            }
             if (menu_keys && ++menu_presents % 10 == 0) {
                 if (*menu_keys == 'c') {
                     int cx = 0, cy = 0, len = 0;
@@ -1163,9 +1187,15 @@ int main(int argc, char** argv) {
                         g_menu_open = g_hold = true;
                     }
                 } else if (menu_presents % 30 == 0) {
-                    presenter.capture_next("out/menu.bmp");
                     menu_keys = nullptr;
-                    presenter.close();
+                    if (menu_film && sscanf(menu_film, "%d,%d", &film_left, &film_every) >= 1 && film_left > 0) {
+                        film_every = std::max(film_every, 2);   // a capture needs the next present to finish
+                        CreateDirectoryA("out/menu_film", nullptr);
+                        filming = true;
+                    } else {
+                        presenter.capture_next("out/menu.bmp");
+                        presenter.close();
+                    }
                 }
             }
             static Frontend::Screen menu_was = Frontend::Screen::None;
@@ -1211,6 +1241,7 @@ int main(int argc, char** argv) {
                     if (menu_shot) save_bmp(menu_shot, ui_pixels.data(), rc.right, rc.bottom);
                 }
             }
+            ui.set_motion(frontend.active() ? frontend.motion_backdrop() : -1);
         }
         double input_from = qpc_seconds();
         parts.menu = input_from - loop_from;

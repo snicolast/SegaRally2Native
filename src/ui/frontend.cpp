@@ -1615,50 +1615,60 @@ std::vector<std::wstring> Frontend::wrap(Family f, int px, const std::wstring& s
 // (1080p pixels) from the right edge: above the menu's column
 constexpr float LOGO_TOP = 0.07f, LOGO_H = 0.28f, LOGO_FROM_RIGHT = 420;   // Sega Rally 2: as in the mock-up
 
-// The background picture covering the window, darker towards the right where
-// the menu goes and at the bottom, with the logo; blurred for the options
-void Frontend::backdrop_background() {
-    uint32_t* keep = px_;
-    bg_.assign(size_t(w_) * h_, 0xFF000000u);
-    px_ = bg_.data();
-    picture(backdrop_, 0, 0, w_, h_, 0.0f);   // narrower windows lose its right side: the ship stays whole
-    // The blur: the picture averaged down by 16 in each direction, smoothed a
-    // few times and stretched back
+// A picture blurred: averaged down by 16 in each direction and smoothed a
+// few times (stretched back up by whoever draws it)
+static void blur16(const uint32_t* src, int w, int h, std::vector<uint32_t>& out, int& bw, int& bh) {
     const int F = 16;
-    Picture blur;
-    blur.w = std::max(4, w_ / F);
-    blur.h = std::max(4, h_ / F);
-    std::vector<float> acc(size_t(blur.w) * blur.h * 3, 0.0f);
-    for (int y = 0; y < blur.h * F && y < h_; y++)
-        for (int x = 0; x < blur.w * F && x < w_; x++) {
-            uint32_t c = bg_[size_t(y) * w_ + x];
-            float* d = &acc[(size_t(y / F) * blur.w + x / F) * 3];
+    bw = std::max(4, w / F);
+    bh = std::max(4, h / F);
+    std::vector<float> acc(size_t(bw) * bh * 3, 0.0f);
+    for (int y = 0; y < bh * F && y < h; y++)
+        for (int x = 0; x < bw * F && x < w; x++) {
+            uint32_t c = src[size_t(y) * w + x];
+            float* d = &acc[(size_t(y / F) * bw + x / F) * 3];
             for (int m = 0; m < 3; m++) d[m] += chan(c, 16 - 8 * m) / (F * F);
         }
     for (int pass = 0; pass < 3; pass++) {   // 3x3 box, three times
-        std::vector<float> src = acc;
-        for (int y = 0; y < blur.h; y++)
-            for (int x = 0; x < blur.w; x++)
+        std::vector<float> from = acc;
+        for (int y = 0; y < bh; y++)
+            for (int x = 0; x < bw; x++)
                 for (int m = 0; m < 3; m++) {
                     float sum = 0;
                     for (int dy = -1; dy <= 1; dy++)
                         for (int dx = -1; dx <= 1; dx++) {
-                            int xx = std::clamp(x + dx, 0, blur.w - 1), yy = std::clamp(y + dy, 0, blur.h - 1);
-                            sum += src[(size_t(yy) * blur.w + xx) * 3 + m];
+                            int xx = std::clamp(x + dx, 0, bw - 1), yy = std::clamp(y + dy, 0, bh - 1);
+                            sum += from[(size_t(yy) * bw + xx) * 3 + m];
                         }
-                    acc[(size_t(y) * blur.w + x) * 3 + m] = sum / 9;
+                    acc[(size_t(y) * bw + x) * 3 + m] = sum / 9;
                 }
     }
-    blur.px.resize(size_t(blur.w) * blur.h);
-    for (size_t i = 0; i < blur.px.size(); i++) {
-        uint32_t out = 0xFF000000u;
+    out.resize(size_t(bw) * bh);
+    for (size_t i = 0; i < out.size(); i++) {
+        uint32_t c = 0xFF000000u;
         for (int m = 0; m < 3; m++)
-            out |= uint32_t(std::clamp(acc[i * 3 + m], 0.0f, 1.0f) * 255.0f + 0.5f) << (16 - 8 * m);
-        blur.px[i] = out;
+            c |= uint32_t(std::clamp(acc[i * 3 + m], 0.0f, 1.0f) * 255.0f + 0.5f) << (16 - 8 * m);
+        out[i] = c;
     }
-    bg_blur_.assign(size_t(w_) * h_, 0xFF000000u);
+}
+
+// The background picture covering the window, darker towards the right where
+// the menu goes and at the bottom, with the logo; blurred for the options.
+// With the backdrop moving on the GPU (motion_), the picture is left out:
+// only the shading and the logo over transparency
+void Frontend::backdrop_background() {
+    uint32_t* keep = px_;
+    const uint32_t base = motion_ ? 0u : 0xFF000000u;
+    bg_.assign(size_t(w_) * h_, base);
+    bg_blur_.assign(size_t(w_) * h_, base);
+    if (!motion_) {
+        px_ = bg_.data();
+        picture(backdrop_, 0, 0, w_, h_, 0.0f);   // narrower windows lose its right side: the ship stays whole
+        Picture blur;
+        blur16(bg_.data(), w_, h_, blur.px, blur.w, blur.h);
+        px_ = bg_blur_.data();
+        picture(blur, 0, 0, w_, h_);
+    }
     px_ = bg_blur_.data();
-    picture(blur, 0, 0, w_, h_);
     fill(0, 0, w_, h_, 0x000000, 0.3f);
     px_ = bg_.data();
     shade_backdrop();
@@ -1675,6 +1685,30 @@ void Frontend::backdrop_background() {
         if (a.logo.w > 0 && r.right > r.left) sprite(a.logo, r.left, r.top, r.right - r.left, r.bottom - r.top);
     }
     px_ = keep;
+}
+
+void Frontend::set_motion(bool on) {
+    if (motion_ == on) return;
+    motion_ = on;
+    bg_.clear();   // drawn again, with or without the picture
+    bg_blur_.clear();
+    dirty_ = true;
+}
+
+int Frontend::motion_backdrop() const {
+    if (!motion_ || !active() || splash() || over_game()) return -1;
+    if (screen_ == Screen::Options || screen_ == Screen::Records) return 1;
+    if (screen_ == Screen::More && !recomps_[more_game_].bg.empty()) return -1;   // its own art, opaque
+    return 0;
+}
+
+void Frontend::backdrop_pixels(int slot, const uint32_t*& px, int& w, int& h) {
+    if (slot == 1 && backdrop_blur_.px.empty() && backdrop_.w > 0)
+        blur16(backdrop_.px.data(), backdrop_.w, backdrop_.h, backdrop_blur_.px, backdrop_blur_.w, backdrop_blur_.h);
+    const Picture& p = slot == 1 ? backdrop_blur_ : backdrop_;
+    px = p.px.empty() ? nullptr : p.px.data();
+    w = p.w;
+    h = p.h;
 }
 
 // No background picture yet (Sega Rally 2): a drawn one, so the menus keep

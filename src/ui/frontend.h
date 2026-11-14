@@ -128,6 +128,14 @@ public:
 
     // Redraws into `out` when something changed (or the size did); true if it did
     bool draw(int w, int h, std::vector<uint32_t>& out);
+    // The backdrop moving on the GPU (video/ui_overlay.cpp): draw() then leaves
+    // it out (transparent there) and only shades it. App sets it (SR2_MENU_STILL: off)
+    void set_motion(bool on);
+    // The backdrop under the picture draw() made: 0 the picture, 1 blurred
+    // (the settings), -1 none (the picture is opaque: the splash, the pause, MORE's art)
+    int motion_backdrop() const;
+    // The backdrop's pixels for the GPU (BGRA): 0 the picture, 1 blurred
+    void backdrop_pixels(int slot, const uint32_t*& px, int& w, int& h);
     void invalidate() { dirty_ = true; }
 
 private:
@@ -332,5 +340,7 @@ private:
     uint32_t* px_ = nullptr;
     std::vector<uint32_t> bg_;        // main menu backdrop for the current size
     std::vector<uint32_t> bg_blur_;   // ... blurred and darkened, behind the options
+    bool motion_ = false;             // set_motion
+    Picture backdrop_blur_;           // backdrop_ blurred, for the GPU
     static bool load_image(const std::wstring& path, std::vector<uint32_t>& px, int& w, int& h);
 };
