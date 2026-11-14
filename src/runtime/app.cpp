@@ -57,6 +57,10 @@
 #include "settings_bridge.h"
 
 Options g_opt;   // command line and menu settings (options.h)
+int g_max_fps = 0;             // MAX FPS: 0 the monitor's refresh rate, -1 unlimited
+bool g_restart = false;        // RESTART NOW: the game starts again once this one has closed
+double g_window_resized_at = -1;   // when the window's inside last changed size (the pointer's hover waits)
+bool g_background_fps = true;   // BACKGROUND FPS: 30 a second at most without the focus
 
 // When the image being recorded will be on screen: with vsync the images go
 // out once per refresh, evenly, while this thread wakes up for them at uneven
@@ -622,9 +626,26 @@ int main(int argc, char** argv) {
         g_settings_launch = s;
         frontend.aa_at_launch = s.aa;
         frontend.rt_available = renderer.ray_tracing_available();
-        if (s.fullscreen && !presenter.fullscreen()) presenter.toggle_fullscreen();
+        frontend.resolutions = presenter.display_modes();
+        if (s.res_w > 0 && !frontend.resolutions.empty()) {   // a size that is not one of the monitor's modes: the nearest
+            auto best = frontend.resolutions[0];
+            for (const auto& m : frontend.resolutions)
+                if (std::abs(m.first - s.res_w) + std::abs(m.second - s.res_h) < std::abs(best.first - s.res_w) + std::abs(best.second - s.res_h))
+                    best = m;
+            if (best.first != s.res_w || best.second != s.res_h) {
+                printf("[display] resolution %dx%d is not a mode of the monitor: %dx%d\n", s.res_w, s.res_h, best.first, best.second);
+                s.res_w = best.first, s.res_h = best.second;
+                save_settings(s);
+            }
+        }
+        printf("[display] %zu resolutions\n", frontend.resolutions.size());
+        frontend.scale_at_launch = s.render_scale;
+        g_max_fps = s.max_fps;
+        g_background_fps = s.background_fps;
+        presenter.set_vsync(s.vsync);
+        if (s.display_mode != 0 || (s.res_w > 0 && s.res_h > 0)) presenter.set_mode(s.display_mode, s.res_w, s.res_h);
         // the logo first (not when a debugging aid drives the menu)
-        if (getenv("LW_MENU_KEYS") || getenv("LW_MENU_SHOT")) frontend.open(Frontend::Screen::Main);
+        if (getenv("LW_MENU_KEYS") || getenv("LW_MENU_SHOT") || getenv("SR2_RESTARTED")) frontend.open(Frontend::Screen::Main);
         else {
             frontend.open_splash();
             frontend.check_for_news();   // news.txt on GitHub while the logo plays
@@ -648,10 +669,15 @@ int main(int argc, char** argv) {
                 // Windows also sends it when nothing moved (a window or the
                 // pointer changing): those neither bring the pointer back nor
                 // take the highlight from the pad's choice
+                // Compared on the screen: a window resized or moved under a still
+                // pointer (RESOLUTION, MODE) puts it over another row without the
+                // player moving it; and none taken for a moment after a resize
                 static int last_x = INT_MIN, last_y = INT_MIN;
-                bool moved = x != last_x || y != last_y;
-                last_x = x, last_y = y;
-                if (!moved) return true;
+                POINT screen{x, y};
+                ClientToScreen(presenter.hwnd(), &screen);
+                bool moved = screen.x != last_x || screen.y != last_y;
+                last_x = screen.x, last_y = screen.y;
+                if (!moved || qpc_seconds() - g_window_resized_at < 0.3) return true;
                 pad_in_menu = false;
                 frontend.mouse_move(x, y);
                 return true;
@@ -989,6 +1015,27 @@ int main(int argc, char** argv) {
     double parts_from = 0;   // when the previous present call returned
     int parts_skip = 0;      // turns left out: a refresh skipped on purpose (the queue made shorter)
     for (;;) {
+        {   // MAX FPS (with VSYNC in whole refreshes), never over the monitor's refresh rate
+            // unless UNLIMITED without VSYNC (even when the driver has turned vsync off),
+            // BACKGROUND FPS: 30 without the focus. Sleeps to the millisecond, then waits the rest
+            static double due = 0;
+            double period = std::clamp(display_clock.period, 1.0 / 500, 1.0 / 20);
+            bool vsync = frontend.settings.vsync != 0 || !g_opt.menu;   // (ADAPTIVE too)
+            double step = period;   // MONITOR, and MOTION ORIGINAL
+            if (g_opt.interp && g_max_fps > 0)
+                step = vsync ? period * std::max(1.0, std::round(1.0 / g_max_fps / period)) : std::max(1.0 / g_max_fps, 1.0 / 1000);
+            else if (g_opt.interp && g_max_fps < 0 && !vsync)
+                step = 0;   // UNLIMITED, chosen by the player
+            if (g_background_fps && g_opt.menu && GetForegroundWindow() != presenter.hwnd()) step = std::max(step, 1.0 / 30);
+            static const bool no_limit = getenv("LW_NO_LIMIT") != nullptr;   // debugging aid: without it (to compare)
+            double now = qpc_seconds();
+            if (!no_limit && step > 0 && due > 0 && due > now) {
+                if (due - now > 0.002) Sleep(DWORD((due - now) * 1000) - 1);
+                if (!vsync) while (qpc_seconds() < due) YieldProcessor();   // (without vsync nothing else paces it)
+            }
+            now = qpc_seconds();
+            due = step <= 0 ? 0 : due > 0 && now - due < step ? std::max(due + step, now + 0.25 * step) : now + step;
+        }
         double wait_from = qpc_seconds();
         {   // before the inputs are read
             int depth = queue_depth ? queue_depth + queue_extra : 0;
@@ -1065,6 +1112,28 @@ int main(int argc, char** argv) {
             frontend.starting = false;
             close_menu();
         }
+        {   // the window's inside and the desktop, for RESOLUTION
+            RECT c, m = presenter.monitor_rect();
+            GetClientRect(presenter.hwnd(), &c);
+            int hz = int(std::lround(1.0 / std::max(display_clock.period, 1.0 / 1000)));
+            if (c.right != frontend.client_w || c.bottom != frontend.client_h || m.right - m.left != frontend.desktop_w ||
+                m.bottom - m.top != frontend.desktop_h || hz != frontend.refresh_hz) {
+                if (c.right != frontend.client_w || c.bottom != frontend.client_h) g_window_resized_at = qpc_seconds();
+                frontend.client_w = c.right, frontend.client_h = c.bottom;
+                frontend.desktop_w = m.right - m.left, frontend.desktop_h = m.bottom - m.top;
+                frontend.refresh_hz = hz;
+                frontend.invalidate();
+            }
+            // Debugging aid: LW_MENU_POINTER="sx,sy", a pointer resting there on the screen:
+            // every refresh the move Windows reports for it (after a resize: over another row)
+            static const char* rest = getenv("LW_MENU_POINTER");
+            int sx, sy;
+            if (rest && sscanf(rest, "%d,%d", &sx, &sy) == 2 && presenter.input_hook) {
+                POINT p{sx, sy};
+                ScreenToClient(presenter.hwnd(), &p);
+                presenter.input_hook(WM_MOUSEMOVE, 0, MAKELPARAM(p.x, p.y));
+            }
+        }
         {   // the 3D view's width (widescreen culling and sight, runtime.cpp)
             RECT wrc;
             GetClientRect(presenter.hwnd(), &wrc);
@@ -1114,7 +1183,20 @@ int main(int argc, char** argv) {
                     frontend.open(Frontend::Screen::Main);
                     break;
                 case Frontend::Action::Quit: presenter.close(); break;
+                case Frontend::Action::Restart:   // RESTART NOW: saved, closed as on QUIT, started again (end of main)
+                    save_settings(s);
+                    g_restart = true;
+                    presenter.close();
+                    break;
                 case Frontend::Action::ToggleFullscreen: presenter.toggle_fullscreen(); break;
+                case Frontend::Action::DisplayChanged:   // MODE, RESOLUTION: at once
+                    presenter.set_mode(s.display_mode, s.res_w, s.res_h);
+                    s.display_mode = presenter.mode();   // (a FULLSCREEN the monitor refused: BORDERLESS)
+                    g_window_resized_at = qpc_seconds();   // (the pointer's hover waits: the rows moved under it)
+                    s.fullscreen = s.display_mode != 0;
+                    save_settings(s);
+                    frontend.invalidate();
+                    break;
                 case Frontend::Action::SettingsChanged:
                     g_sound.set_volume(float(s.volume));
                     g_sound.set_music_gain(float(s.music));
@@ -1148,6 +1230,9 @@ int main(int argc, char** argv) {
                     renderer.set_picture(s.saturation / 100.0f, s.gamma / 100.0f);
                     g_pad_rumble = s.vibration;
                     g_trigger_share = s.trigger_rumble / 100.0f;
+                    g_max_fps = s.max_fps;
+                    g_background_fps = s.background_fps;
+                    presenter.set_vsync(s.vsync);
                     save_settings(s);
                     break;
                 default: break;
@@ -1155,6 +1240,7 @@ int main(int argc, char** argv) {
             }
             if (frontend.settings.fullscreen != presenter.fullscreen()) {   // also F11 / Alt+Enter
                 frontend.settings.fullscreen = presenter.fullscreen();
+                frontend.settings.display_mode = presenter.mode();
                 save_settings(frontend.settings);
                 frontend.invalidate();
             }
@@ -1636,6 +1722,20 @@ int main(int argc, char** argv) {
             snprintf(path, sizeof(path), "out/film_out/%04zu.bmp", film_pos);
             presenter.capture_next(path);
         }
+        {   // Debugging aid: LW_PRESENTLOG=1 prints the pictures presented each second
+            static const bool log = getenv("LW_PRESENTLOG") != nullptr;
+            static double from = 0;
+            static int count = 0;
+            if (log) {
+                double now = qpc_seconds();
+                if (from == 0) from = now;
+                count++;
+                if (now - from >= 1) {
+                    printf("[present] %.1f/s (refresh %.1f Hz)\n", count / (now - from), 1.0 / display_clock.period);
+                    from = now, count = 0;
+                }
+            }
+        }
         presenter.frame([&](VkCommandBuffer cmd, VkImageView view, VkExtent2D extent) {
             renderer.record(cmd, view, extent);
             ui.record(cmd, view, extent);
@@ -1727,6 +1827,33 @@ int main(int argc, char** argv) {
     renderer.shutdown();
     presenter.shutdown();
     g_pads.shutdown();
+    if (g_restart) {   // RESTART NOW: the same exe, command line, folder and environment, straight to the main menu
+        SetEnvironmentVariableA("SR2_RESTARTED", "1");
+        for (const char* aid : {"LW_MENU_KEYS", "LW_MENU_SHOT", "LW_MENU_FILM", "LW_MENU_FILM_KEYS", "LW_MENU_FILM_NOW"})
+            SetEnvironmentVariableA(aid, nullptr);   // (debugging aids that drive one run only)
+        wchar_t exe[MAX_PATH];
+        GetModuleFileNameW(nullptr, exe, MAX_PATH);
+        std::wstring cmd = GetCommandLineW();
+        STARTUPINFOW si{sizeof(si)};
+        HANDLE out = GetStdHandle(STD_OUTPUT_HANDLE), err = GetStdHandle(STD_ERROR_HANDLE);
+        bool files = out && out != INVALID_HANDLE_VALUE && GetFileType(out) == FILE_TYPE_DISK;   // (a test's redirected log goes on)
+        if (files) {
+            si.dwFlags = STARTF_USESTDHANDLES;
+            si.hStdOutput = out, si.hStdError = err, si.hStdInput = GetStdHandle(STD_INPUT_HANDLE);
+            SetHandleInformation(out, HANDLE_FLAG_INHERIT, HANDLE_FLAG_INHERIT);
+            SetHandleInformation(err, HANDLE_FLAG_INHERIT, HANDLE_FLAG_INHERIT);
+        }
+        PROCESS_INFORMATION pi{};
+        printf("[menu] restarting\n");
+        fflush(stdout);
+        if (CreateProcessW(exe, cmd.data(), nullptr, nullptr, files, 0, nullptr, nullptr, &si, &pi)) {
+            CloseHandle(pi.hThread);
+            CloseHandle(pi.hProcess);
+        } else {
+            printf("[menu] could not start the game again (%lu)\n", GetLastError());
+        }
+        ExitProcess(0);
+    }
     console_prompt();
     ExitProcess(0);
 }

@@ -24,7 +24,14 @@
 #include "splash_video.h"
 
 struct FrontendSettings {
-    bool fullscreen = false;
+    bool fullscreen = false;   // (written as display_mode != window, for older versions)
+    int display_mode = 0;      // MODE: 0 window, 1 borderless (the desktop's resolution), 2 exclusive full screen
+    bool display_mode_saved = false;   // load() found it (else from fullscreen: borderless, as before)
+    int res_w = 0, res_h = 0;  // RESOLUTION: the window's inside, or the full-screen mode (0: default window / the desktop's)
+    int render_scale = 100;    // RENDER SCALE, %: the 3D drawn at this share of the screen's size (--scale; next launch)
+    int vsync = 1;             // VSYNC: 1 on (FIFO), 2 adaptive (FIFO_RELAXED), 0 off (MAILBOX, else IMMEDIATE)
+    int max_fps = 0;           // MAX FPS: 0 the monitor's refresh rate, -1 UNLIMITED, else pictures a second at most
+    bool background_fps = true;   // BACKGROUND FPS: 30 a second at most while another window has the focus
     int volume = 5;    // 0..10 (output gain): the sound effects and voices
     int music = 5;     // 0..10: the music board's gain
     int speakers = 0;  // 0 stereo, 1 surround 4.0, 2 headphones (AudioStream::Speakers)
@@ -62,11 +69,6 @@ struct FrontendSettings {
 
     // save/settings.ini; missing keys keep their current value
     void load(const char* path);
-    // QUALITY: the graphics options that cost the most, set together.
-    // quality() is the level they match, CUSTOM if none
-    enum Quality { LOW, MEDIUM, HIGH, ULTRA, CUSTOM };
-    void set_quality(int q);
-    int quality() const;
     void save(const char* path) const;
     std::string text() const;   // what save() writes: one "key = value" line per setting
 };
@@ -75,7 +77,7 @@ class Frontend {
 public:
     enum class Screen { None, Splash, Main, Options, Pause, Records, Debug, Play };
     enum class Action { None, StartArcade, Resume, Quit, ToggleFullscreen, SettingsChanged,
-                        QuitToMenu, StartDebug };
+                        QuitToMenu, StartDebug, DisplayChanged, Restart };   // Restart: RESTART NOW   // DisplayChanged: MODE / RESOLUTION to the window
 
     bool init(const std::string& font_dir);
     void shutdown();
@@ -90,7 +92,6 @@ public:
     bool splash() const { return screen_ == Screen::Splash; }
     // The menu is over the frozen game (pause and its settings)
     bool over_game() const { return screen_ == Screen::Pause || (screen_ == Screen::Options && options_from_pause_); }
-    bool pause_settings() const { return screen_ == Screen::Options && options_from_pause_; }
     // The pause settings stand on the game blurred on the GPU (ui_overlay): a
     // lighter shade then, as OPTIONS over the blurred backdrop. App sets it
     bool pause_blur = false;
@@ -106,6 +107,10 @@ public:
 
     FrontendSettings settings;
     int aa_at_launch = 0;   // anti-aliasing the renderer was started with
+    int scale_at_launch = 100;   // RENDER SCALE the renderer was started with
+    std::vector<std::pair<int, int>> resolutions;   // the monitor's (app.cpp, VkPresenter::display_modes)
+    int client_w = 0, client_h = 0, desktop_w = 0, desktop_h = 0;   // the window's inside, the desktop (app.cpp)
+    int refresh_hz = 60;                            // the monitor's (MAX FPS MONITOR)
     bool rt_available = false;   // the GPU can trace rays (RAY TRACING option)
     std::wstring gamepads;  // the pads connected, for the CONTROLS tab ("" = none)
     bool pad_prompts = false;   // a gamepad drives the menu: its buttons in the key help and hints, not the keyboard's
@@ -146,9 +151,10 @@ private:
         RECORDS, ARCADE, GHOST,   // ARCADE, GHOST: PLAY's page
         REC_ROW,                  // a row of RECORDS (nothing to change)
         DEBUG, DEBUG_COURSE, DEBUG_CAR, DEBUG_GEARS, DEBUG_TIME, DEBUG_GO,
-        OPT_QUALITY, OPT_DISPLAY, OPT_VOLUME, OPT_MUSIC, OPT_SPEAKERS, OPT_REAR, OPT_SAMPLES, OPT_AA, OPT_HAZE, OPT_BLOOM, OPT_AO, OPT_SUN, OPT_SHADOWS, OPT_SOFT, OPT_HDR, OPT_SHARPEN, OPT_HUD, OPT_LIVERIES,
+        OPT_QUALITY,   // (no row: the first of the option ids, the ones >= it are options)
+        OPT_DISPLAY, OPT_VOLUME, OPT_MUSIC, OPT_SPEAKERS, OPT_REAR, OPT_SAMPLES, OPT_AA, OPT_HAZE, OPT_BLOOM, OPT_AO, OPT_SUN, OPT_SHADOWS, OPT_SOFT, OPT_HDR, OPT_SHARPEN, OPT_HUD, OPT_LIVERIES,
         OPT_SAT, OPT_GAMMA, OPT_MOTION, OPT_VIBRATION, OPT_RT, OPT_MENU_MUSIC, OPT_REFLECT, OPT_GI, OPT_DUST, OPT_UPDATES,
-        OPT_DIFFICULTY, OPT_CONNECTED, OPT_TRIGGERS,
+        OPT_DIFFICULTY, OPT_CONNECTED, OPT_TRIGGERS, OPT_RESOLUTION, OPT_SCALE, OPT_VSYNC, OPT_MAXFPS, OPT_BGFPS,
     };
     struct Item {
         Id id;
@@ -186,7 +192,6 @@ private:
     int text(Family f, int px, const std::wstring& s, int x, int y, int align, const Style& st);
     int measure(Family f, int px, const std::wstring& s);
     void fill(int x0, int y0, int x1, int y1, uint32_t rgb, float alpha);
-    void band(int cx, int y0, int y1, int half_w, uint32_t rgb, float alpha);
     void triangle(int x, int y, int size, int dir, uint32_t rgb, float alpha);
     void blend(int x, int y, uint32_t rgb, float a);
     void saber(int cx, int y, int half_w);   // a glowing lightsaber-blue line
@@ -245,6 +250,26 @@ private:
     Glide glide_menu_, glide_tab_, glide_row_;
     bool gliding_ = false;            // one of them is moving (this picture)
     void glide(Glide& g, long key, int y, int h, int& gy, int& gh);
+    // RESTART NOW?: leaving the settings with a change that only applies on a
+    // new start (RENDER SCALE, ANTI-ALIASING). LATER goes on as BACK would
+    bool restart_open_ = false;
+    int restart_button_ = 0;   // 0 RESTART NOW, 1 LATER
+    RECT restart_buttons_[2]{};
+    std::wstring restart_list() const;   // what waits for a restart, "" nothing
+    void restart_choose(int button);
+    void draw_restart();
+    // RESOLUTION's list: Enter or a click opens it over the description panel
+    bool drop_open_ = false;
+    int drop_sel_ = 0, drop_top_ = 0;     // the highlighted one, the first shown (resolutions, largest first)
+    std::vector<RECT> drop_rects_;
+    RECT panel_rect_{};                   // the settings page's description panel (draw_options_page)
+    // The entry of `resolutions` RESOLUTION stands on: the chosen mode (never
+    // the window's measured inside), else the nearest to what is in use
+    int resolution_index() const;
+    void open_drop();
+    void drop_pick(int i);
+    bool drop_key(int vk);
+    void draw_drop();
     void placeholder_backdrop();      // no background picture: a drawn one (Sega Rally 2)
     void shade_backdrop();            // darker at the right and the bottom, the logo: on px_
     // UPDATE AVAILABLE: the window over the main menu with the entries of
@@ -320,7 +345,6 @@ private:
     static constexpr int RECORD_TAB_COUNT = 2;
     static const wchar_t* const RECORD_TAB_NAMES[RECORD_TAB_COUNT];
     int tab_count() const { return screen_ == Screen::Records ? RECORD_TAB_COUNT : TAB_COUNT; }
-    const wchar_t* tab_name(int t) const { return screen_ == Screen::Records ? RECORD_TAB_NAMES[t] : TAB_NAMES[t]; }
     // Records: the rows of the open tab and the first one shown
     struct RecordRow {
         std::wstring label, detail, value;
@@ -328,8 +352,6 @@ private:
         int group = 0;     // its heading: 0 UNLOCKED, 1 LOCKED, 2 TOTALS, 3 BEST LAPS
     };
     std::vector<RecordRow> record_rows() const;
-    // The records show this many rows of the old settings card
-    static constexpr int VISIBLE_OPTIONS = 6;
     int scroll_ = 0;           // first option shown (the settings page scrolls only when its rows do not fit)
     bool options_scroll_ = false;   // the settings page's rows did not fit in the last draw
     // The settings page (Options, also from the pause menu): the sections in a
