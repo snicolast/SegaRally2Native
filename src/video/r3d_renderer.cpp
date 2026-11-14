@@ -92,6 +92,7 @@ ScreenLayout compute_layout(float win_w, float win_h, float max_aspect) {
     l.ox = (win_w - l.view_w * l.scale) / 2;
     l.oy = (win_h - SCREEN_H * l.scale) / 2;
     l.game_x0 = (l.view_w - SCREEN_W) / 2;
+    l.hud_x = std::min(l.game_x0, (SCREEN_H * 16.0f / 9.0f - SCREEN_W) / 2);
     return l;
 }
 
@@ -802,9 +803,12 @@ void R3DRenderer::set_layers(const uint32_t* back, const uint32_t* front) {
     memcpy(dst + BACK_W * SCREEN_H * 4, front, SCREEN_W * SCREEN_H * 4);
     layers_dirty_ = true;
     // Average colour of each row of the back layer, for the horizon colour
+    // (over the 200 columns past each side it always had, as before the
+    // margin grew for ultrawide views)
+    constexpr int AVG_FROM = BACK_MARGIN - 200, AVG_TO = BACK_MARGIN + SCREEN_W + 200;
     for (int y = 0; y < SCREEN_H; y++) {
         float sum[3] = {0, 0, 0}, n = 0;
-        for (int x = 0; x < BACK_W; x += 2) {
+        for (int x = AVG_FROM; x < AVG_TO; x += 2) {
             uint32_t p = back[y * BACK_W + x];
             float a = float(p >> 24);
             if (a < 128) continue;
@@ -1566,9 +1570,10 @@ void R3DRenderer::record_world(const Frame& f) {
                         const int* s = sr2_split_;
                         bool top = v.y + v.h <= SR2_HUD_TOP_ROWS, bottom = v.y >= SR2_HUD_BOTTOM_ROW - 8;
                         bool top_left = v.y + v.h <= SR2_HUD_LEFT_ROWS;
-                        if ((top_left && v.x + v.w <= s[0]) || (bottom && s[2] > 0 && v.x + v.w <= s[2])) vx = v.x;
+                        if ((top_left && v.x + v.w <= s[0]) || (bottom && s[2] > 0 && v.x + v.w <= s[2]))
+                            vx = v.x + lay.game_x0 - lay.hud_x;
                         else if ((top && s[1] > 0 && v.x >= s[1]) || (bottom && s[2] > 0 && v.x >= s[2]))
-                            vx = v.x + 2.0f * lay.game_x0;
+                            vx = v.x + lay.game_x0 + lay.hud_x;
                     }
                     VkViewport viewport{vx * sx + jitter_x, v.y * sy + jitter_y, vw * sx, v.h * sy, 0.0f, 1.0f};
                     vkCmdSetViewport(cmd, 0, 1, &viewport);
@@ -1814,7 +1819,7 @@ R3DRenderer::ComposePush R3DRenderer::compose_push(const Frame& f) const {
                    .window = {W, H},
                    .layer2d = {lay.game_x0 / lay.view_w, SCREEN_W / lay.view_w},
                    .filter2d = {smooth_2d_ ? 1.0f : 0.0f, lay.scale},
-                   .hud = {sr2_on ? lay.game_x0 : 0.0f, hdr_ ? 1.0f : 0.0f,
+                   .hud = {sr2_on ? lay.hud_x : 0.0f, hdr_ ? 1.0f : 0.0f,
                            overlay_brightness_, extend_back ? 1.0f : 0.0f},
                    .sky = {0, 0, 0, sr2_between_screens() ? 4.0f : 0.0f},
                    .effects = {bloom_strength_, saturation_, gamma_, 0},
