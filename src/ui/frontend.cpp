@@ -335,6 +335,8 @@ const wchar_t* Frontend::group_of(Id id) {
 }
 
 const wchar_t* const Frontend::RECORD_TAB_NAMES[Frontend::RECORD_TAB_COUNT] = {L"ACHIEVEMENTS", L"STATS"};
+static const wchar_t* const RECORD_TAB_ABOUT[] = {L"Unlocked and still to get", L"Totals and best laps"};
+static const wchar_t* const RECORD_GROUPS[] = {L"UNLOCKED", L"LOCKED", L"TOTALS", L"BEST LAPS"};
 
 int Frontend::tab_of(Id id) {
     for (const OptionTab& o : OPTION_TABS)
@@ -345,9 +347,8 @@ int Frontend::tab_of(Id id) {
 void Frontend::set_tab(int t) {
     tab_ = (t + tab_count()) % tab_count();
     scroll_ = 0;
-    record_scroll_ = 0;
-    // the settings page: its first option (the column of sections is not a row)
-    selected_ = screen_ == Screen::Options ? 1 : std::min(selected_, int(items().size()) - 1);
+    // the settings page and the records: their first row (the column of sections is not a row)
+    selected_ = screen_ == Screen::Options || screen_ == Screen::Records ? 1 : std::min(selected_, int(items().size()) - 1);
     hovered_ = -1;
     dirty_ = true;
 }
@@ -549,9 +550,11 @@ std::vector<Frontend::Item> Frontend::items() const {
         int got = 0;
         for (int64_t t : records.unlocked) got += t != 0;
         std::wstring summary = std::to_wstring(got) + L" of " + std::to_wstring(achievement_table().size()) +
-                               (pad_prompts ? L" achievements unlocked.  Up / Down scrolls, LB / RB changes the tab"
-                                            : L" achievements unlocked.  Up / Down scrolls, Q / E changes the tab");
-        return {{TABS, L"", L"", summary}, {BACK, L"BACK", L"", L"Return to the main menu"}};
+                               L" achievements unlocked";
+        std::vector<Item> list = {{TABS, L"", L"", summary}};
+        for (const RecordRow& r : record_rows()) list.push_back({REC_ROW, r.label, r.value, r.detail, r.lit, r.group});
+        list.push_back({BACK, L"BACK", L"", L"Return to the main menu"});
+        return list;
     }
     default:
         return {};
@@ -635,7 +638,8 @@ void Frontend::activate(const Item& it, int dir) {
     case ARCADE: push(Action::StartArcade); break;   // the arcade game as it was
     case GHOST: break;                               // coming soon
     case OPTIONS: options_from_pause_ = false; tab_ = 0; open(Screen::Options); selected_ = 1; break;
-    case RECORDS: tab_ = 0; record_scroll_ = 0; open(Screen::Records); break;
+    case RECORDS: tab_ = 0; open(Screen::Records); selected_ = 1; break;
+    case REC_ROW: break;   // a record: nothing to change
     case QUIT: push(Action::Quit); break;
     case QUIT_TO_MENU: push(Action::QuitToMenu); break;
     case DEBUG: open(Screen::Debug); break;
@@ -840,12 +844,14 @@ bool Frontend::key(int vk) {
                                         list[selected_].id == DEBUG_CAR || list[selected_].id == DEBUG_GEARS ||
                                         list[selected_].id == DEBUG_TIME);
     bool tabs_row = selected_ < n && list[selected_].id == TABS;
-    if (screen_ == Screen::Records) switch (vk) {   // two tabs and a list to scroll
+    if (screen_ == Screen::Records) switch (vk) {   // sections and rows as on the settings page; nothing to change
         case 'Q': case VK_PRIOR: case VK_LEFT: case 'A': set_tab(tab_ - 1); return true;
-        case 'E': case VK_NEXT: case VK_RIGHT: case 'D': case VK_TAB: set_tab(tab_ + 1); return true;
-        case VK_UP: case 'W': scroll_records(-1); return true;
-        case VK_DOWN: case 'S': scroll_records(+1); return true;
-        case VK_RETURN: case VK_SPACE: case VK_ESCAPE: case VK_BACK: back(); return true;
+        case 'E': case VK_NEXT: case VK_RIGHT: case 'D': set_tab(tab_ + 1); return true;
+        case VK_TAB: set_tab(tab_ + ((GetKeyState(VK_SHIFT) & 0x8000) ? -1 : 1)); return true;
+        case VK_UP: case 'W': if (n > 1) select(selected_ <= 1 ? n - 1 : selected_ - 1); return true;
+        case VK_DOWN: case 'S': if (n > 1) select(selected_ >= n - 1 ? 1 : selected_ + 1); return true;
+        case VK_RETURN: case VK_SPACE: if (selected_ == n - 1) back(); return true;
+        case VK_ESCAPE: case VK_BACK: back(); return true;
         default: return false;
         }
     if (screen_ == Screen::Options) switch (vk) {   // tab keys
@@ -1102,10 +1108,6 @@ void Frontend::click(int x, int y) {
             if (PtInRect(&news_buttons_[b], p)) news_choose(b);
         return;
     }
-    if (screen_ == Screen::Records && (PtInRect(&more_up_, p) || PtInRect(&more_down_, p))) {
-        scroll_records(PtInRect(&more_up_, p) ? -1 : 1);
-        return;
-    }
     if (PtInRect(&more_up_, p) || PtInRect(&more_down_, p)) {   // the scroll arrows of a long settings tab
         int n = int(items().size());
         int k = std::clamp(selected_ - 1, 0, n - 3) + (PtInRect(&more_up_, p) ? -1 : 1);
@@ -1122,7 +1124,7 @@ void Frontend::click(int x, int y) {
     }
     if (list[hovered_].id == TABS) {   // the tab under the pointer (the settings page: the section)
         for (int t = 0; t < int(tab_rects_.size()); t++)
-            if (screen_ == Screen::Options ? PtInRect(&tab_rects_[t], p) != FALSE
+            if (screen_ == Screen::Options || screen_ == Screen::Records ? PtInRect(&tab_rects_[t], p) != FALSE
                                            : x >= tab_rects_[t].left && x < tab_rects_[t].right)
                 set_tab(t);
         return;
@@ -1145,14 +1147,10 @@ void Frontend::wheel(int x, int y, int delta) {
         return;
     }
     mouse_move(x, y);
-    if (screen_ == Screen::Records) {
-        scroll_records(delta > 0 ? -1 : 1);
-        return;
-    }
     auto list = items();
     bool on_value = hovered_ >= 0 && hovered_ < int(values_.size()) && values_[hovered_].left >= 0 &&
                     x >= values_[hovered_].left;
-    bool scrolls = screen_ == Screen::Options && options_scroll_;
+    bool scrolls = (screen_ == Screen::Options || screen_ == Screen::Records) && options_scroll_;
     if (hovered_ >= 0 && hovered_ < int(list.size()) && list[hovered_].id >= OPT_QUALITY && (on_value || !scrolls)) {
         int keep = hovered_;   // over a value: change it
         hovered_ = -1;   // no wrap-around from the wheel
@@ -1218,7 +1216,7 @@ std::vector<Frontend::RecordRow> Frontend::record_rows() const {
         });
         for (int i : order) {
             const AchievementInfo& a = table[size_t(i)];
-            RecordRow r{a.name, a.text, L"", when(i) != 0};
+            RecordRow r{a.name, a.text, L"", when(i) != 0, when(i) != 0 ? 0 : 1};
             if (r.lit) {
                 time_t t = time_t(when(i));
                 wchar_t b[32];
@@ -1236,8 +1234,9 @@ std::vector<Frontend::RecordRow> Frontend::record_rows() const {
         }
         return rows;
     }
+    int group = 2;   // TOTALS, then BEST LAPS
     auto row = [&](const std::wstring& label, const std::wstring& value, const std::wstring& detail = L"") {
-        rows.push_back({label, detail, value, true});
+        rows.push_back({label, detail, value, true, group});
     };
     row(L"GAMES PLAYED", grouped(s.games));
     row(L"TIME PLAYED", hours(s.play_frames));
@@ -1247,6 +1246,7 @@ std::vector<Frontend::RecordRow> Frontend::record_rows() const {
         s.championships ? L"Best position " + ordinal(s.best_champ_position) + L",  best total time " +
                               race_time(s.best_champ_time)
                         : L"Not finished yet");
+    group = 3;
     for (int i = 0; i < STAT_COURSES; i++) {   // the best lap of either mode on the right
         const Stats::Course& c = s.course[i];
         int64_t lap = c.best_lap[0] && (!c.best_lap[1] || c.best_lap[0] < c.best_lap[1]) ? c.best_lap[0] : c.best_lap[1];
@@ -1256,45 +1256,9 @@ std::vector<Frontend::RecordRow> Frontend::record_rows() const {
                 detail += std::wstring(detail.empty() ? L"Best time: " : L",  ") + (m ? L"practice " : L"championship ") +
                           race_time(c.best_time[m]);
         if (detail.empty()) detail = L"Not finished yet";
-        row(std::wstring(STAT_COURSE_NAMES[i]) + L"  BEST LAP", race_time(lap), detail);
+        row(STAT_COURSE_NAMES[i], race_time(lap), detail);   // (under the BEST LAPS heading)
     }
     return rows;
-}
-
-void Frontend::scroll_records(int by) {
-    int n = int(record_rows().size());
-    int k = std::clamp(record_scroll_ + by, 0, std::max(0, n - VISIBLE_RECORDS));
-    if (k != record_scroll_) dirty_ = true;
-    record_scroll_ = k;
-}
-
-// The rows of the open records tab between x0 and x1, from y0 down
-void Frontend::draw_records(int x0, int x1, int y0, int row_h) {
-    auto U = [&](float v) { return int(v * u_ + 0.5f); };
-    auto rows = record_rows();
-    record_scroll_ = std::clamp(record_scroll_, 0, std::max(0, int(rows.size()) - VISIBLE_RECORDS));
-    const Style lit{PALE_TOP, PALE_BOTTOM, 0x080806, U(2), 0.95f};
-    const Style dark{DIM, DIM, 0x080806, U(2), 0.9f};
-    const Style value{0xF4D27A, 0xE0A848, 0x080806, U(2), 0.95f};
-    int label_px = U(32), detail_px = U(19);
-    for (int k = 0; k < VISIBLE_RECORDS && record_scroll_ + k < int(rows.size()); k++) {
-        const RecordRow& r = rows[size_t(record_scroll_ + k)];
-        int y = y0 + k * row_h;
-        if (k % 2 == 0) fill(x0 - U(20), y - U(4), x1 + U(20), y + row_h - U(4), 0xFFFFFF, 0.03f);
-        text(ITEM, label_px, r.label, x0, y, 0, r.lit ? lit : dark);
-        if (!r.detail.empty())
-            text(MONO, detail_px, r.detail, x0, y + label_px + U(4), 0, {r.lit ? HINT : DIM, r.lit ? HINT : DIM});
-        text(ITEM, label_px, r.value, x1, y + U(6), 2, r.lit ? value : dark);
-    }
-    if (record_scroll_ > 0) {   // more above / below: arrows that also scroll on a click
-        triangle(x1 + U(36), y0 + U(10), U(20), -2, GOLD_BOTTOM, 1);
-        more_up_ = {x1 + U(10), y0 - U(16), x1 + U(64), y0 + U(36)};
-    }
-    if (record_scroll_ + VISIBLE_RECORDS < int(rows.size())) {
-        int yb = y0 + VISIBLE_RECORDS * row_h - U(20);
-        triangle(x1 + U(36), yb, U(20), 2, GOLD_BOTTOM, 1);
-        more_down_ = {x1 + U(10), yb - U(26), x1 + U(64), yb + U(26)};
-    }
 }
 
 // ---- KEEP THESE SETTINGS? ----
@@ -2306,6 +2270,10 @@ void Frontend::draw_options_page(const std::vector<Item>& list, bool over_game) 
     auto U = [&](float v) { return int(v * u_ + 0.5f); };
     const int w = w_, h = h_, n = int(list.size());
     const int n_opts = n - 2;   // list: the sections, the options of the open one, BACK
+    const bool rec = screen_ == Screen::Records;   // the records: their sections and rows, nothing to change
+    const int tabs = rec ? RECORD_TAB_COUNT : TAB_COUNT;
+    auto tab_label = [&](int t) { return rec ? RECORD_TAB_NAMES[t] : TAB_NAMES[t]; };
+    auto tab_about = [&](int t) { return rec ? RECORD_TAB_ABOUT[t] : TAB_ABOUT[t]; };
     // The page darkens what is behind it: the blurred backdrop, or the paused game
     // (the game's HUD must not show through: blurred under the pause settings, else nearly black)
     fill(0, 0, w, h, over_game && !pause_blur ? 0x000000 : PANEL, over_game && !pause_blur ? 0.9f : 0.6f);
@@ -2319,10 +2287,10 @@ void Frontend::draw_options_page(const std::vector<Item>& list, bool over_game) 
     const int top = U(196), bottom = h - U(100);   // the columns, between the title and the key help
 
     // Title, the red mark under it, where this is, and the logo at the top right
-    text(TITLE, U(80), over_game ? L"SETTINGS" : L"OPTIONS", mx, U(34), 0, {0xFFFFFF, 0xE2EAF4, 0, 0, 1, U(3)});
+    text(TITLE, U(80), rec ? L"RECORDS" : over_game ? L"SETTINGS" : L"OPTIONS", mx, U(34), 0, {0xFFFFFF, 0xE2EAF4, 0, 0, 1, U(3)});
     fill(mx + U(2), U(134), mx + U(74), U(139), SABER, 1);
     std::wstring crumb = std::wstring(over_game ? L"Pause" : L"Main menu") + L"  ›  " +
-                         (over_game ? L"Settings" : L"Options") + L"  ›  " + title_case(TAB_NAMES[tab_]);
+                         (rec ? L"Records" : over_game ? L"Settings" : L"Options") + L"  ›  " + title_case(tab_label(tab_));
     text(ROW_MEDIUM, U(24), crumb, mx + U(92), U(120), 0, {PAGE_DIM, PAGE_DIM});
     if (logo_.w > 0) {
         int lw = U(wide ? 300.0f : 240.0f), lh = lw * logo_.h / logo_.w;
@@ -2338,13 +2306,13 @@ void Frontend::draw_options_page(const std::vector<Item>& list, bool over_game) 
     {   // the open section's ribbon, gliding there from the last one
         int ty = top + tab_ * sec_h;
         int gy, gh;
-        glide(glide_tab_, long(options_from_pause_) * 100003 + h_, ty - U(8), sec_h - U(8), gy, gh);
+        glide(glide_tab_, (long(screen_) * 2 + long(options_from_pause_)) * 100003 + h_, ty - U(8), sec_h - U(8), gy, gh);
         RECT r{rail_x - U(20), gy, rail_x + rail_w, gy + gh};
         int sl = gh * 30 / 100;
         ribbon(r.left - sl / 2, r.top, r.right, r.bottom, sl, 0.85f, 0.0f, U(10), U(8), 1);
         if (!gliding_) triangle(rail_x + U(8), ty + U(28), U(18), +1, 0xFFE08A, 0.95f);
     }
-    for (int t = 0; t < TAB_COUNT; t++) {
+    for (int t = 0; t < tabs; t++) {
         int y = top + t * sec_h;
         bool open_tab = t == tab_;
         RECT r{rail_x - U(20), y - U(8), rail_x + rail_w, y + sec_h - U(16)};
@@ -2352,15 +2320,15 @@ void Frontend::draw_options_page(const std::vector<Item>& list, bool over_game) 
         } else if (selected_ == 0 && hovered_ == 0 && mouse_y_ >= r.top && mouse_y_ < r.bottom) {
             hgrad(r.left, r.top, r.right, r.bottom, 0xFFFFFF, 0.08f, 0.0f);   // under the pointer
         }
-        text(TITLE, U(44), TAB_NAMES[t], rail_x + U(26), y - U(6), 0,
+        text(TITLE, U(44), tab_label(t), rail_x + U(26), y - U(6), 0,
              {open_tab ? 0xFFFFFFu : PAGE_DIM, open_tab ? 0xE2EAF4u : PAGE_DIM, 0, 0, 1, U(2)});
-        text(BODY, U(17), TAB_ABOUT[t], rail_x + U(28), y + U(46), 0,
+        text(BODY, U(17), tab_about(t), rail_x + U(28), y + U(46), 0,
              {open_tab ? 0xD2DAE6u : PAGE_FAINT, open_tab ? 0xD2DAE6u : PAGE_FAINT});
         tab_rects_.push_back(r);
     }
-    hit_[0] = {rail_x - U(20), top - U(8), rail_x + rail_w, top + TAB_COUNT * sec_h - U(16)};
+    hit_[0] = {rail_x - U(20), top - U(8), rail_x + rail_w, top + tabs * sec_h - U(16)};
     {   // BACK, under the sections
-        int y = top + TAB_COUNT * sec_h + U(28);
+        int y = top + tabs * sec_h + U(28);
         bool sel = selected_ == n - 1;
         RECT r{rail_x - U(20), y - U(6), rail_x + rail_w, y + U(58)};
         if (sel) {
@@ -2379,7 +2347,9 @@ void Frontend::draw_options_page(const std::vector<Item>& list, bool over_game) 
     std::vector<const wchar_t*> group_name(size_t(std::max(0, n_opts)), L"");  // the group each row is in
     const wchar_t* current = L"";
     for (int k = 0; k < n_opts; k++) {
-        if (const wchar_t* g = group_of(list[1 + k].id)) current = group[k] = g;
+        const wchar_t* g = rec ? RECORD_GROUPS[std::clamp(list[1 + k].index, 0, 3)] : group_of(list[1 + k].id);
+        if (rec && k > 0 && list[k].index == list[1 + k].index) g = nullptr;   // (records: a heading where the group changes)
+        if (g) current = group[k] = g;
         group_name[k] = current;
     }
     auto height = [&](int k, bool first) {   // a row with its heading (the first one shown always has one)
@@ -2414,7 +2384,7 @@ void Frontend::draw_options_page(const std::vector<Item>& list, bool over_game) 
             ry -= row_h;
             const Item& it = list[1 + k_sel];
             int gy, gh;
-            glide(glide_row_, long(tab_) * 100003 + h_ + long(options_from_pause_) * 7, ry, row_h, gy, gh);
+            glide(glide_row_, (long(screen_) * 8 + long(tab_)) * 100003 + h_ + long(options_from_pause_) * 7, ry, row_h, gy, gh);
             int sl = row_h * 40 / 100;
             ribbon(rows_x0 - U(30) - sl / 2, gy, rows_x1 + U(18) - sl, gy + gh, sl, 0.45f, 0.75f, U(6), U(5), it.enabled ? 1.0f : 0.4f);
             if (!gliding_) triangle(rows_x0 - U(16), ry + row_h / 2, U(14), +1, 0xFFE08A, it.enabled ? 0.95f : 0.4f);
@@ -2464,7 +2434,7 @@ void Frontend::draw_options_page(const std::vector<Item>& list, bool over_game) 
             uint32_t vc = it.enabled ? VALUE : PAGE_FAINT;
             vx0 = right - text(ROW, label_px, it.value, right, ty, 2, sel && it.enabled ? gold : Style{vc, vc, 0, 0, 1, U(2)});
         }
-        if (sel && it.enabled) {
+        if (sel && it.enabled && !rec) {   // (a record has nothing to change)
             triangle(vx0 - U(20), cy, U(14), -1, GOLD_BOTTOM, 1);
             triangle(right + U(13), cy, U(14), +1, GOLD_BOTTOM, 1);
         }
@@ -2495,7 +2465,7 @@ void Frontend::draw_options_page(const std::vector<Item>& list, bool over_game) 
         const wchar_t* kicker = section ? L"SECTION" : back || n_opts <= 0 ? L"" : group_name[std::clamp(selected_ - 1, 0, n_opts - 1)];
         if (kicker && *kicker) text(ROW_MEDIUM, U(20), kicker, x, py, 0, {GROUP_RED, GROUP_RED});
         py += U(30);
-        std::wstring title = section ? std::wstring(TAB_NAMES[tab_]) : it.label;
+        std::wstring title = section ? std::wstring(tab_label(tab_)) : it.label;
         int title_px = U(60);
         while (title_px > U(36) && measure(TITLE, title_px, title) > inner) title_px -= U(4);
         text(TITLE, title_px, title, x, py, 0, {0xFFFFFF, 0xE2EAF4, 0, 0, 1, U(3)});
@@ -2509,7 +2479,7 @@ void Frontend::draw_options_page(const std::vector<Item>& list, bool over_game) 
         }
         fill(x, py, px1 - pad, py + std::max(1, U(1)), PAGE_LINE, 1);
         py += U(24);
-        std::wstring about = section ? std::wstring(TAB_ABOUT[tab_]) + L".  " + it.hint : it.hint;
+        std::wstring about = section ? std::wstring(tab_about(tab_)) + L".  " + it.hint : it.hint;
         for (const std::wstring& line : wrap(BODY, U(24), about, inner)) {
             if (py + U(34) > bottom - U(16)) break;
             text(BODY, U(24), line, x, py, 0, {0xD6DEEA, 0xD6DEEA});
@@ -2522,10 +2492,11 @@ void Frontend::draw_options_page(const std::vector<Item>& list, bool over_game) 
     fill(0, h - U(76), w, h - U(76) + std::max(1, U(1)), PAGE_LINE, 1);
     struct Key { const wchar_t *pad, *key, *what; };
     std::vector<Key> keys = pad_prompts
-        ? std::vector<Key>{{L"LS", nullptr, L"SELECT / CHANGE"}, {L"LB", nullptr, L""}, {L"RB", nullptr, L"SECTION"},
+        ? std::vector<Key>{{L"LS", nullptr, rec ? L"SELECT" : L"SELECT / CHANGE"}, {L"LB", nullptr, L""}, {L"RB", nullptr, L"SECTION"},
                            {L"B", nullptr, L"BACK"}}
-        : std::vector<Key>{{nullptr, L"UP / DOWN", L"SELECT"}, {nullptr, L"LEFT / RIGHT", L"CHANGE"},
-                           {nullptr, L"Q / E", L"SECTION"}, {nullptr, L"ESC", L"BACK"}};
+        : rec ? std::vector<Key>{{nullptr, L"UP / DOWN", L"SELECT"}, {nullptr, L"Q / E", L"SECTION"}, {nullptr, L"ESC", L"BACK"}}
+              : std::vector<Key>{{nullptr, L"UP / DOWN", L"SELECT"}, {nullptr, L"LEFT / RIGHT", L"CHANGE"},
+                                 {nullptr, L"Q / E", L"SECTION"}, {nullptr, L"ESC", L"BACK"}};
     int kh = U(34), kx = mx;
     for (const Key& k : keys) prompt(kx, h - U(38) - kh / 2, kh, k.pad, k.key, k.what);
 }
@@ -2602,7 +2573,7 @@ bool Frontend::draw(int w, int h, std::vector<uint32_t>& out) {
         return true;
     }
     auto list = items();
-    if (screen_ == Screen::Options) {   // the settings page, over the backdrop or the paused game
+    if (screen_ == Screen::Options || screen_ == Screen::Records) {   // the settings page (and the records in its look)
         draw_options_page(list, over_game);
         dirty_ = gliding_;
         if (drop_open_) draw_drop();
@@ -2673,10 +2644,6 @@ bool Frontend::draw(int w, int h, std::vector<uint32_t>& out) {
             if (k < scroll_) scroll_ = k;
             if (k >= scroll_ + shown_opts) scroll_ = k - shown_opts + 1;
         }
-    }
-    if (on_records) {   // the list of records fills the rows of the options
-        shown_opts = VISIBLE_OPTIONS;
-        draw_records(cx - U(420), cx + U(400), y_items + spacing + U(24), VISIBLE_OPTIONS * spacing / VISIBLE_RECORDS);
     }
     auto slot_of = [&](int i) {   // screen row of list entry i, -1 when scrolled out of view
         if (!options || i == 0) return i;

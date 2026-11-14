@@ -150,6 +150,7 @@ private:
     enum Id {
         PLAY, OPTIONS, QUIT, BACK, RESUME, SETTINGS, QUIT_TO_MENU, TABS,
         RECORDS, ARCADE, GHOST,   // ARCADE, GHOST: PLAY's page
+        REC_ROW,                  // a row of RECORDS (nothing to change)
         DEBUG, DEBUG_COURSE, DEBUG_CAR, DEBUG_GEARS, DEBUG_TIME, DEBUG_GO,
         OPT_QUALITY,   // (no row: the first of the option ids, the ones >= it are options)
         OPT_DISPLAY, OPT_VOLUME, OPT_MUSIC, OPT_SPEAKERS, OPT_REAR, OPT_SAMPLES, OPT_AA, OPT_HAZE, OPT_BLOOM, OPT_AO, OPT_SUN, OPT_SHADOWS, OPT_SOFT, OPT_HDR, OPT_SHARPEN, OPT_HUD, OPT_LIVERIES,
@@ -362,12 +363,9 @@ private:
     struct RecordRow {
         std::wstring label, detail, value;
         bool lit = true;   // an achievement: unlocked
+        int group = 0;     // its heading: 0 UNLOCKED, 1 LOCKED, 2 TOTALS, 3 BEST LAPS
     };
     std::vector<RecordRow> record_rows() const;
-    static constexpr int VISIBLE_RECORDS = 7;
-    int record_scroll_ = 0;
-    void scroll_records(int by);
-    void draw_records(int x0, int x1, int y0, int row_h);
     // The records show this many rows of the old settings card
     static constexpr int VISIBLE_OPTIONS = 6;
     int scroll_ = 0;           // first option shown (the settings page scrolls only when its rows do not fit)
