@@ -57,8 +57,6 @@ struct FrontendSettings {
     int trigger_rumble = 100;   // the triggers' own motors (Xbox One / Series pads), % of VIBRATION's strength, steps of 10
     bool splash = true;     // the logo video at launch (splash_screens = 0: straight to the menu)
     bool menu_music = true; // the game's Main Title in the menus
-    std::string lost_world_path;   // MORE RECOMPS: where The Lost World is (its folder or LostWorld.exe; "" = look for it)
-    std::string star_wars_path;    // MORE RECOMPS: where Star Wars Trilogy is (its folder or StarWarsTrilogy.exe; "" = look for it)
     bool check_updates = true;     // at launch, news.txt on GitHub: a window with what is new and UPDATE NOW
     int news_seen = 0;             // the newest news.txt entry the player closed with LATER
 
@@ -75,8 +73,7 @@ struct FrontendSettings {
 
 class Frontend {
 public:
-    static constexpr int RECOMP_COUNT = 2;   // the games of MORE RECOMPS
-    enum class Screen { None, Splash, Main, Options, Pause, Records, More, Debug };
+    enum class Screen { None, Splash, Main, Options, Pause, Records, Debug, Play };
     enum class Action { None, StartArcade, Resume, Quit, ToggleFullscreen, SettingsChanged,
                         QuitToMenu, StartDebug };
 
@@ -133,7 +130,7 @@ public:
     // it out (transparent there) and only shades it. App sets it (SR2_MENU_STILL: off)
     void set_motion(bool on);
     // The backdrop under the picture draw() made: 0 the picture, 1 blurred
-    // (the settings), -1 none (the picture is opaque: the splash, the pause, MORE's art)
+    // (the settings), -1 none (the picture is opaque: the splash, the pause)
     int motion_backdrop() const;
     // The backdrop's pixels for the GPU (BGRA): 0 the picture, 1 blurred
     void backdrop_pixels(int slot, const uint32_t*& px, int& w, int& h);
@@ -142,8 +139,7 @@ public:
 private:
     enum Id {
         PLAY, OPTIONS, QUIT, BACK, RESUME, SETTINGS, QUIT_TO_MENU, TABS,
-        RECORDS, MORE_GAMES, LOST_WORLD, STAR_WARS,   // LOST_WORLD + g: the games of MORE RECOMPS, in order
-        COFFEE,   // MORE RECOMPS: the donation link
+        RECORDS, ARCADE, GHOST,   // ARCADE, GHOST: PLAY's page
         DEBUG, DEBUG_COURSE, DEBUG_CAR, DEBUG_GEARS, DEBUG_TIME, DEBUG_GO,
         OPT_QUALITY, OPT_DISPLAY, OPT_VOLUME, OPT_MUSIC, OPT_SPEAKERS, OPT_REAR, OPT_SAMPLES, OPT_AA, OPT_HAZE, OPT_BLOOM, OPT_AO, OPT_SUN, OPT_SHADOWS, OPT_SOFT, OPT_HDR, OPT_SHARPEN, OPT_HUD, OPT_LIVERIES,
         OPT_SAT, OPT_GAMMA, OPT_MOTION, OPT_VIBRATION, OPT_RT, OPT_MENU_MUSIC, OPT_REFLECT, OPT_GI, OPT_DUST, OPT_UPDATES,
@@ -190,6 +186,10 @@ private:
     void blend(int x, int y, uint32_t rgb, float a);
     void saber(int cx, int y, int half_w);   // a glowing lightsaber-blue line
     void hgrad(int x0, int y0, int x1, int y1, uint32_t rgb, float a0, float a1);
+    // A slanted red stripe, as on the cars: left edge leaning right by `slant`
+    // at the top (the right edge too), alpha a0 to a1 across, and a thin one
+    // (width sw) gap before it
+    void ribbon(int x0, int y0, int x1, int y1, int slant, float a0, float a1, int gap, int sw, float alpha);
     void vgrad(int x0, int y0, int x1, int y1, uint32_t rgb, float a0, float a1);
     void frame(int x0, int y0, int x1, int y1, int t, uint32_t rgb, float alpha);
     void pill(int x0, int y0, int x1, int y1, uint32_t rgb, float alpha);
@@ -216,20 +216,19 @@ private:
     void backdrop_background();
     // Main, Play, Boss, Survival and Debug on the backdrop: a column at the right under the logo
     void draw_side_menu(const std::vector<Item>& list);
-    // MORE RECOMPS: snicolast's other ports (The Lost World, Star Wars Trilogy).
-    // The chosen one's art (res/menu/more/) on the left of the backdrop; ENTER
-    // plays it when it is on this PC, else opens its page
-    struct RecompArt {
-        Picture backdrop, logo;
-        std::vector<uint32_t> bg;   // its backdrop of MORE RECOMPS for the current size
-        std::wstring exe;           // found on this PC ("" = not found)
-    };
-    RecompArt recomps_[RECOMP_COUNT];
-    int more_game_ = 0;               // the one whose art is shown (the chosen one, the last one on BACK)
-    void find_recomps();
-    void open_recomp_page(int g);
-    void play_recomp(int g);
-    RECT recomp_logo_rect(int g) const;   // where its logo goes on the backdrop
+    // PLAY's page and back: the entries go out to the right one after the
+    // other, then the new page's come in (as Windjammers' menus). Drawn every
+    // refresh meanwhile; keys and clicks wait
+    double slide_from_ = -1;          // menu_clock() when the current half began (-1: still)
+    bool slide_out_ = false;          // going out (else coming in)
+    bool slide_intro_ = false;        // the main menu coming up: only in, a little slower
+    Screen slide_to_ = Screen::Main;  // the page coming in
+    int slide_sel_ = 0;               // its entry chosen
+    uint64_t menu_frames_ = 0;        // draw() calls (SR2_MENU_FPS: the clock goes by them)
+    double menu_clock() const;
+    void slide_to(Screen s, int sel);
+    void finish_slide();              // a key or a click meanwhile: at once to the end
+    int slide_offset(int i) const;    // how far right entry i is, in pixels
     void placeholder_backdrop();      // no background picture: a drawn one (Sega Rally 2)
     void shade_backdrop();            // darker at the right and the bottom, the logo: on px_
     // UPDATE AVAILABLE: the window over the main menu with the entries of
@@ -253,8 +252,6 @@ private:
     bool news_key(int vk);
     void news_choose(int button);
     void start_update();
-
-    void open_coffee();   // the donation link (MORE RECOMPS)
 
     // The splash screens: their pictures, which one is on and since when
     std::vector<Picture> splash_;

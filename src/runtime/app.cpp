@@ -1167,7 +1167,25 @@ int main(int argc, char** argv) {
             static const char* menu_film = getenv("LW_MENU_FILM");
             static int film_left = 0, film_every = 4, film_index = 0, film_wait = 0;
             static bool filming = false;
+            // LW_MENU_FILM_NOW=1: filming from the first picture (the menu coming up), keys not waited for
+            static bool film_now = getenv("LW_MENU_FILM_NOW") && menu_film &&
+                                   sscanf(menu_film, "%d,%d", &film_left, &film_every) >= 1 && film_left > 0;
+            if (film_now && !filming && film_index == 0) {
+                film_every = std::max(film_every, 2);
+                CreateDirectoryA("out/menu_film", nullptr);
+                filming = true;
+                menu_keys = nullptr;
+            }
+            // LW_MENU_FILM_KEYS="30:13,75:40": while filming, those keys at those pictures
+            static const char* film_keys = getenv("LW_MENU_FILM_KEYS");
             if (filming && ++film_wait % film_every == 0) {
+                for (const char* k = film_keys; k && *k;) {
+                    int at = 0, vk = 0, len = 0;
+                    if (sscanf(k, "%d:%d%n", &at, &vk, &len) < 2) break;
+                    if (at == film_index) frontend.key(vk);
+                    k += len;
+                    if (*k == ',') k++;
+                }
                 char path[64];
                 snprintf(path, sizeof(path), "out/menu_film/%03d.bmp", film_index++);
                 presenter.capture_next(path);
