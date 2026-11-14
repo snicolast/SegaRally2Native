@@ -200,7 +200,24 @@ std::vector<std::pair<int, int>> VkPresenter::display_modes() const {
             modes.push_back({int(dm.dmPelsWidth), int(dm.dmPelsHeight)});
     std::sort(modes.begin(), modes.end());
     modes.erase(std::unique(modes.begin(), modes.end()), modes.end());
-    return modes;
+    if (getenv("LW_ALL_MODES")) return modes;   // debugging aid: the list before the filter below
+    // Only the usual shapes (4:3, 5:4, 16:10, 16:9, the 21:9 ones, 32:9; within 0.2 %,
+    // even sizes), plus the desktop's mode and the largest (the monitor's own)
+    DEVMODEA cur{};
+    cur.dmSize = sizeof(cur);
+    EnumDisplaySettingsA(mi.szDevice, ENUM_CURRENT_SETTINGS, &cur);
+    std::pair<int, int> desktop{int(cur.dmPelsWidth), int(cur.dmPelsHeight)}, largest = modes.empty() ? desktop : modes.back();
+    for (const auto& m : modes)
+        if (m.first * m.second > largest.first * largest.second) largest = m;
+    static const double SHAPES[] = {4.0 / 3, 5.0 / 4, 16.0 / 10, 16.0 / 9, 64.0 / 27, 43.0 / 18, 12.0 / 5, 32.0 / 9};
+    std::vector<std::pair<int, int>> usual;
+    for (const auto& m : modes) {
+        double a = double(m.first) / m.second;
+        bool shape = false;
+        for (double s : SHAPES) shape = shape || std::abs(a / s - 1) < 0.002;
+        if ((shape && m.first % 2 == 0 && m.second % 2 == 0) || m == desktop || m == largest) usual.push_back(m);
+    }
+    return usual;
 }
 
 bool VkPresenter::init(const char* title, int width, int height, bool with_ngx) {
