@@ -246,7 +246,7 @@ private:
     // Measurement (SR2_GPUTIME, or LW_GPUTIME): GPU time of each pass of the
     // frame, averaged over 300 frames and printed. Timestamps in this order
     enum GpuMark : uint32_t {
-        GPU_START, GPU_UPLOADS, GPU_RT, GPU_SHADOWS, GPU_AO_FROM, GPU_AO_TO, GPU_WORLD, GPU_DLAA, GPU_BLOOM,
+        GPU_START, GPU_UPLOADS, GPU_RT, GPU_SHADOWS, GPU_AO_FROM, GPU_AO_TO, GPU_WORLD, GPU_DLAA_COLOR, GPU_DLAA, GPU_BLOOM,
         GPU_DIFFUSION, GPU_EXPOSURE, GPU_COMPOSE, GPU_MARKS
     };
     VkQueryPool gpu_times_ = VK_NULL_HANDLE;
@@ -254,6 +254,7 @@ private:
     double gpu_sum_[GPU_MARKS] = {};   // ms of the pass that ends at each mark, summed
     int gpu_frames_ = 0;
     bool gpu_pending_ = false;
+    bool gpu_dlaa_marked_ = false;   // GPU_DLAA_COLOR written by record_dlaa this frame
     double gpu_worst_ms_ = 0;
     std::string gpu_worst_;
     std::mutex gpu_worst_mutex_;

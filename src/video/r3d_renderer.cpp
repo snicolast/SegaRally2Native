@@ -4,6 +4,7 @@
 #include <mutex>
 #include <cmath>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 
 #include "ao.frag.h"
@@ -162,6 +163,19 @@ void R3DRenderer::transition(VkCommandBuffer cmd, Image& img, VkImageLayout to, 
     if (img.layout == to) return;
     vk_image_barrier(cmd, img.image, img.layout, to, img.barrier_aspect ? img.barrier_aspect : aspect);
     img.layout = to;
+}
+
+// Study (issue #14): how the alpha of the DLAA image is made. SR2_DLAA_ALPHA=
+// dlss (default): a second DLAA over the alpha; flag: DLSS's own alpha
+// upscaling in the colour pass (NVSDK_NGX_DLSS_Feature_Flags_AlphaUpscaling,
+// dlss.cpp); off: the jittered alpha as it is (no anti-aliasing)
+static int dlaa_alpha_mode() {
+    static const int mode = [] {
+        const char* e = getenv("SR2_DLAA_ALPHA");
+        if (!e) return 0;
+        return strcmp(e, "flag") == 0 ? 1 : strcmp(e, "off") == 0 ? 2 : 0;
+    }();
+    return mode;
 }
 
 bool R3DRenderer::init(VkPresenter& vk, float supersample, int msaa, int aniso, bool dlaa, bool dlss_quality) {
@@ -709,6 +723,8 @@ void R3DRenderer::ensure_targets(uint32_t w, uint32_t h, uint32_t up_w, uint32_t
                      VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, VK_IMAGE_ASPECT_COLOR_BIT);
         create_image(dlaa_alpha_, up_w, up_h, VK_FORMAT_R8G8B8A8_UNORM,
                      VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, VK_IMAGE_ASPECT_COLOR_BIT);
+        avi.image = dlaa_out_.image;   // its alpha as grey (SR2_DLAA_ALPHA=flag)
+        vkCreateImageView(dev_, &avi, nullptr, &dlaa_out_.alpha_view);
     }
     // Bloom: glow written by the 3D pass, then reduced to a quarter and blurred
     const VkImageUsageFlags target = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
@@ -757,7 +773,10 @@ void R3DRenderer::ensure_targets(uint32_t w, uint32_t h, uint32_t up_w, uint32_t
         vkUpdateDescriptorSets(dev_, 3, dw, 0, nullptr);
     }
     composed_view_ = VK_NULL_HANDLE;
-    if (dlaa_.ready()) bind_scene_image(dlaa_out_.view, dlaa_alpha_.view);
+    if (dlaa_.ready())
+        bind_scene_image(dlaa_out_.view, dlaa_alpha_mode() == 1   ? dlaa_out_.alpha_view
+                                         : dlaa_alpha_mode() == 2 ? color_.alpha_view
+                                                                  : dlaa_alpha_.view);
     else bind_scene_image(color_.view, color_.alpha_view);
     VkDescriptorImageInfo infos[3] = {
         {linear_, color_.view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL},
@@ -1761,6 +1780,13 @@ void R3DRenderer::record_dlaa(const Frame& f) {
                                  {motion_.image, motion_.view, VK_FORMAT_R16G16_SFLOAT},
                                  {dlaa_out_.image, dlaa_out_.view, VK_FORMAT_R16G16B16A16_SFLOAT}, out_w, out_h, f.up_w,
                                  f.up_h, jitter_x, jitter_y, false);
+        if (gpu_times_) gpu_time_mark(cmd, GPU_DLAA_COLOR);
+        gpu_dlaa_marked_ = true;
+        transition(cmd, dlaa_out_, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+        if (dlaa_alpha_mode() != 0) {   // study: no second DLAA (alpha from the colour pass, or none)
+            if (!ok) bind_scene_image(color_.view, color_.alpha_view);
+            return;
+        }
         // Its alpha separately: where the 3D image is partly transparent the
         // 2D background shows through, and a jittered alpha would make every
         // edge against it shimmer (the ammo counter over the sky)
@@ -1771,7 +1797,6 @@ void R3DRenderer::record_dlaa(const Frame& f) {
                                   {motion_.image, motion_.view, VK_FORMAT_R16G16_SFLOAT},
                                   {dlaa_alpha_.image, dlaa_alpha_.view, VK_FORMAT_R8G8B8A8_UNORM}, out_w, out_h,
                                   f.up_w, f.up_h, jitter_x, jitter_y, false, 1);
-        transition(cmd, dlaa_out_, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
         transition(cmd, dlaa_alpha_, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
         if (!ok) bind_scene_image(color_.view, color_.alpha_view);   // stopped working: plain image from now on
     }
@@ -2088,7 +2113,9 @@ void R3DRenderer::record(VkCommandBuffer cmd, VkImageView target, VkExtent2D ext
         gpu_time_mark(cmd, GPU_AO_TO);
     }
     if (gpu_times_) gpu_time_mark(cmd, GPU_WORLD);
+    gpu_dlaa_marked_ = false;
     record_dlaa(f);
+    if (gpu_times_ && !gpu_dlaa_marked_) gpu_time_mark(cmd, GPU_DLAA_COLOR);
     if (gpu_times_) gpu_time_mark(cmd, GPU_DLAA);
     ComposePush pc = compose_push(f);
     record_bloom(f, pc);
@@ -2128,9 +2155,9 @@ void R3DRenderer::gpu_time_report(uint32_t out_w, uint32_t out_h) {
     // occlusion, DLAA; polygons)
     static FILE* each = getenv("SR2_GPULOG") ? fopen(getenv("SR2_GPULOG"), "w") : nullptr;
     if (each)
-        fprintf(each, "%llu %.2f %.2f %.2f %.2f %.2f %zu\n", (unsigned long long)(scene_ ? scene_->frame : 0), total,
+        fprintf(each, "%llu %.2f %.2f %.2f %.2f %.2f %zu %.2f\n", (unsigned long long)(scene_ ? scene_->frame : 0), total,
                 ms(GPU_UPLOADS, GPU_RT), ms(GPU_SHADOWS, GPU_AO_FROM) + ms(GPU_AO_TO, GPU_WORLD), ms(GPU_AO_FROM, GPU_AO_TO),
-                ms(GPU_WORLD, GPU_DLAA), scene_ ? scene_->polygons : size_t(0));
+                ms(GPU_WORLD, GPU_DLAA), scene_ ? scene_->polygons : size_t(0), ms(GPU_DLAA_COLOR, GPU_DLAA));
     static const bool print = getenv("SR2_GPUTIME") || getenv("LW_GPUTIME");
     if (!print) return;
     for (uint32_t i = 1; i < GPU_MARKS; i++) gpu_sum_[i] += ms(i - 1, i);
@@ -2140,8 +2167,8 @@ void R3DRenderer::gpu_time_report(uint32_t out_w, uint32_t out_h) {
     // The 3D pass runs from the shadows to its end, around the occlusion
     double world = avg(GPU_AO_FROM) + avg(GPU_WORLD);
     printf("[gpu] ms/image %ux%u: total %.2f | uploads %.2f  rt build %.2f  shadows %.2f  3D %.2f  AO %.2f  "
-           "DLAA %.2f  bloom %.2f  diffusion %.2f  exposure %.2f  compose %.2f  (%zu traced triangles)\n",
-           out_w, out_h, avg(0), avg(GPU_UPLOADS), avg(GPU_RT), avg(GPU_SHADOWS), world, avg(GPU_AO_TO), avg(GPU_DLAA),
+           "DLAA %.2f (alpha %.2f)  bloom %.2f  diffusion %.2f  exposure %.2f  compose %.2f  (%zu traced triangles)\n",
+           out_w, out_h, avg(0), avg(GPU_UPLOADS), avg(GPU_RT), avg(GPU_SHADOWS), world, avg(GPU_AO_TO), avg(GPU_DLAA_COLOR) + avg(GPU_DLAA), avg(GPU_DLAA),
            avg(GPU_BLOOM), avg(GPU_DIFFUSION), avg(GPU_EXPOSURE), avg(GPU_COMPOSE),
            rt_frame_ ? rt_.triangles() : size_t(0));
     fflush(stdout);

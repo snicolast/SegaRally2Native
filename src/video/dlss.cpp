@@ -1,6 +1,8 @@
 #include "dlss.h"
 
 #include <cstdio>
+#include <cstdlib>
+#include <cstring>
 
 #include "nvsdk_ngx_helpers_vk.h"
 #include "nvsdk_ngx_vk.h"
@@ -138,6 +140,11 @@ bool Dlaa::ensure_feature(VkCommandBuffer cmd, uint32_t width, uint32_t height, 
     // The image itself is HDR (16-bit float, highlights above 1); its alpha is not
     if (channel == 0)
         create.InFeatureCreateFlags |= NVSDK_NGX_DLSS_Feature_Flags_IsHDR | NVSDK_NGX_DLSS_Feature_Flags_AutoExposure;
+    // Study (issue #14, r3d_renderer.cpp dlaa_alpha_mode): the alpha upscaled
+    // by the colour pass itself instead of a second instance
+    const char* alpha_mode = getenv("SR2_DLAA_ALPHA");
+    if (channel == 0 && alpha_mode && strcmp(alpha_mode, "flag") == 0)
+        create.InFeatureCreateFlags |= NVSDK_NGX_DLSS_Feature_Flags_AlphaUpscaling;
     NVSDK_NGX_Result r = NGX_VULKAN_CREATE_DLSS_EXT1(device_, cmd, 1, 1, &feature, params_, &create);
     if (NVSDK_NGX_FAILED(r) || !feature) {
         LOG_ERROR("[dlaa] could not create DLSS %ux%u -> %ux%u (0x%08X)\n", width, height, out_width, out_height,
