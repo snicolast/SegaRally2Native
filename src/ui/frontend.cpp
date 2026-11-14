@@ -184,7 +184,8 @@ void FrontendSettings::load(const char* path) {
         else if (k == "soft_particles") soft = on;
         else if (k == "hdr") hdr = on;
         else if (k == "rt_reflections") reflections = on;
-        else if (k == "global_illumination") gi = v == "high" ? 2 : v == "off" || v == "0" ? 0 : 1;
+        // (on or off: a "high" saved before that level was dropped turns into on)
+        else if (k == "global_illumination") gi = v == "off" || v == "0" ? 0 : 1;
         else if (k == "dust") dust = v != "original" && v != "0";
         else if (k == "sharpen") sharpen = on;
         else if (k == "hd_hud" || k == "hd_text") hd_hud = on;
@@ -222,7 +223,7 @@ std::string FrontendSettings::text() const {
             BLOOM[vibration], RT_MODES[ray_tracing],
             splash, menu_music);
     out += buf;
-    snprintf(buf, sizeof(buf), "check_updates = %d\nnews_seen = %d\nrt_reflections = %d\nglobal_illumination = %s\ndust = %s\ndifficulty = %s\nhd_liveries = %d\ntrigger_rumble = %d\n", check_updates, news_seen, reflections, gi == 2 ? "high" : gi ? "low" : "off", dust ? "enhanced" : "original", DIFFICULTY_KEYS[std::clamp(difficulty, 0, 4)], hd_liveries, trigger_rumble);
+    snprintf(buf, sizeof(buf), "check_updates = %d\nnews_seen = %d\nrt_reflections = %d\nglobal_illumination = %s\ndust = %s\ndifficulty = %s\nhd_liveries = %d\ntrigger_rumble = %d\n", check_updates, news_seen, reflections, gi ? "low" : "off", dust ? "enhanced" : "original", DIFFICULTY_KEYS[std::clamp(difficulty, 0, 4)], hd_liveries, trigger_rumble);
     out += buf;
     return out;
 }
@@ -448,11 +449,9 @@ std::vector<Frontend::Item> Frontend::items() const {
             L"Fast cards: ray traced sun shadows and every effect",
             L"Everything on: ray traced sun shadows and ambient occlusion",
             L"Your own mix of the options.  Pick a level to set the costly ones at once"};
-        static const wchar_t* const GI_LEVELS[3] = {L"OFF", L"LOW", L"HIGH"};
-        static const wchar_t* const GI_HINTS[3] = {
+        static const wchar_t* const GI_HINTS[2] = {
             L"Only the sun's direct light and the light of the sky",
-            L"Sunlight bounces off the ground, the walls and the banks and tints the cars, the dust and what is next to them (with ray tracing on)",
-            L"The bounced light finer and from twice as far: rock faces and far banks too (heavier on the graphics card)"};
+            L"Sunlight bounces off the ground, the walls and the banks and tints the cars, the dust and what is next to them (with ray tracing on)"};
         static const wchar_t* const RT_HINTS[3] = {
             L"Shadows from a shadow map and occlusion from the depth, as without ray tracing",
             L"Sun shadows traced through the world: every car and tree, soft with distance",
@@ -497,9 +496,9 @@ std::vector<Frontend::Item> Frontend::items() const {
                  !rt_available ? L"Needs a graphics card with ray tracing (NVIDIA RTX, AMD RX 6000 or newer)"
                                : L"The scenery, the stands and the other cars mirrored on the cars' paint and glass (with ray tracing on)",
                  rt_available},
-                {OPT_GI, L"GLOBAL ILLUMINATION", !rt_available ? L"N/A" : GI_LEVELS[settings.gi],
+                {OPT_GI, L"GLOBAL ILLUMINATION", !rt_available ? L"N/A" : on_off(settings.gi != 0),
                  !rt_available ? L"Needs a graphics card with ray tracing (NVIDIA RTX, AMD RX 6000 or newer)"
-                               : GI_HINTS[settings.gi],
+                               : GI_HINTS[settings.gi ? 1 : 0],
                  rt_available},
                 {OPT_DUST, L"DUST", settings.dust ? L"ENHANCED" : L"ORIGINAL",
                  settings.dust ? L"Clouds of dust that billow and hang over the road, and stones thrown up by the wheels"
@@ -698,7 +697,7 @@ void Frontend::activate(const Item& it, int dir) {
     case OPT_SOFT: settings.soft = !settings.soft; push(Action::SettingsChanged); break;
     case OPT_HDR: settings.hdr = !settings.hdr; push(Action::SettingsChanged); break;
     case OPT_REFLECT: settings.reflections = !settings.reflections; push(Action::SettingsChanged); break;
-    case OPT_GI: settings.gi = (settings.gi + dir + 3) % 3; push(Action::SettingsChanged); break;
+    case OPT_GI: settings.gi = settings.gi ? 0 : 1; push(Action::SettingsChanged); break;
     case OPT_DUST: settings.dust = !settings.dust; push(Action::SettingsChanged); break;
     case OPT_SHARPEN: settings.sharpen = !settings.sharpen; push(Action::SettingsChanged); break;
     case OPT_HUD: settings.hd_hud = !settings.hd_hud; push(Action::SettingsChanged); break;

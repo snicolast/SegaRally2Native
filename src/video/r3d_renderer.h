@@ -111,7 +111,7 @@ public:
     // SUN: a stronger, warmer sunlight in clear outdoor scenes (not in the original)
     void set_sun(bool on) { sun_ = on; }
     void set_reflections(bool on) { reflections_ = on; }   // the cars mirror the world (with ray tracing)
-    void set_global_illumination(int level) { gi_ = level; }   // the sun's light bounced once off the world (with ray tracing): 0 off, 1 low, 2 high
+    void set_global_illumination(int level) { gi_ = level ? 1 : 0; }   // the sun's light bounced once off the world (with ray tracing): 0 off, 1 on
     // The slowest image on the GPU since the last call, pass by pass (out/slow.log)
     std::string worst_gpu_frame();
     // Contrast adaptive sharpening of the 3D image: 0 = off, 1 = strongest
@@ -241,7 +241,7 @@ private:
     int ray_tracing_ = 2;
     bool rt_frame_ = false;            // something is traced this frame (the structures are built)
     bool rt_ao_ = false;               // the ambient occlusion is traced this frame
-    int gi_ = 1;                       // GLOBAL ILLUMINATION: 0 off, 1 low, 2 high
+    int gi_ = 1;                       // GLOBAL ILLUMINATION: 0 off, 1 on
     bool rt_gi_ = false;               // ... and traced this frame
     struct GiTune { float strength, rays, reach; };
     GiTune gi_tune() const;

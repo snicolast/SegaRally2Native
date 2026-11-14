@@ -41,7 +41,7 @@ struct FrontendSettings {
     bool soft = true;      // soft particles
     bool hdr = true;       // HDR lighting
     bool reflections = true;   // the world mirrored on the cars (ray tracing)
-    int gi = 1;                // global illumination, the sun's light bounced off the world (ray tracing): 0 off, 1 low, 2 high
+    int gi = 1;                // global illumination, the sun's light bounced off the world (ray tracing): 0 off, 1 on
     bool dust = true;      // Sega Rally 2: dust and stones as particles (false: the game's own flat fans)
     bool sharpen = true;   // contrast adaptive sharpening
     bool hd_hud = true;    // redrawn HUD and game screens (false: the ROM's own graphics)

@@ -57,6 +57,10 @@ int main() {
         CHECK(o.wav_path == "out/a.wav" && o.data_dir == "roms");
         Options r;
         CHECK(parse(r, {"--rom", "D:\\roms\\srally2.zip"}) && r.rom_zip == "D:\\roms\\srally2.zip");
+        Options gi;   // global illumination is on or off (the old "high" is on, "low" too)
+        CHECK(gi.gi == 1 && parse(gi, {"--gi", "off"}) && gi.gi == 0);
+        CHECK(parse(gi, {"--gi", "high"}) && gi.gi == 1);
+        CHECK(parse(gi, {"--gi", "low"}) && gi.gi == 1 && parse(gi, {"--no-gi"}) && gi.gi == 0);
         Options sp;
         CHECK(sp.speakers == 0 && sp.cubic_samples && sp.rear_boost == 6);
         CHECK(parse(sp, {"--speakers", "headphones", "--linear-samples"}));

@@ -1290,7 +1290,7 @@ void R3DRenderer::update_atmosphere(const ScreenLayout& lay, uint32_t target_w, 
     u.mirror[0] = car_fill[1];
     if (rt_gi_ && gi_tune().strength > 0) {   // the player's car's and the dust's share of the global illumination (r3d.frag, r3d.vert)
         u.gi[1] = gi_tune().strength;
-        u.gi[2] = 2.0f * gi_tune().rays;   // the car's rays: four, eight on HIGH
+        u.gi[2] = 2.0f * gi_tune().rays;   // the car's rays: four
         u.gi[3] = gi_tune().reach;
     }
     memcpy(atmosphere_uniform_.mapped, &u, sizeof(u));
@@ -1360,13 +1360,14 @@ void R3DRenderer::record_uploads(const Frame& f) {
 
 // Global illumination: the rays for every pixel of the half-size image (16
 // times as many for each block of 4x4 put together, ao_apply.frag) and how
-// far they reach. LOW: two, 30 units (the walls, the banks and the trees
-// beside the road); HIGH: four, 60 units (the rock faces and the far banks
-// too). SR2_GI="strength,rays,reach": debugging aid (a negative strength
-// shows the bounced light alone)
+// far they reach: two, 30 units (the walls, the banks and the trees beside
+// the road). (A HIGH level, four rays reaching 60 units, cost a lot more on
+// the graphics card for little to see: dropped, GitHub issue #14.)
+// SR2_GI="strength,rays,reach": debugging aid (a negative strength shows the
+// bounced light alone)
 R3DRenderer::GiTune R3DRenderer::gi_tune() const {
     static const char* env = getenv("SR2_GI");
-    GiTune t = gi_ >= 2 ? GiTune{1.0f, 4.0f, 60.0f} : GiTune{1.0f, 2.0f, 30.0f};
+    GiTune t{1.0f, 2.0f, 30.0f};
     if (env) sscanf(env, "%f,%f,%f", &t.strength, &t.rays, &t.reach);
     return t;
 }
