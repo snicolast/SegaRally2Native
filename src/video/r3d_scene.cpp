@@ -798,9 +798,9 @@ void R3DSceneBuilder::link_previous(R3DScene& out) {
     // is drawn at the next one, under the same key. Paired with last frame's
     // as any other model, each slid from lamp to lamp between frames, the
     // faster the car went the more (they seemed to flicker, or to run along
-    // the street). They stand still in the world: they go back as the camera
-    // moved, unless they were paired with a place close to that (another
-    // car's exhaust flames, which move with it)
+    // the street). They stand still in the world: each moves as the scenery
+    // beside it did (or, with none near, as the camera did), except one on
+    // another car (its exhaust's flames), left paired to move with the car
     static const bool no_glow_fix = getenv("SR2_GLOW_LINK") != nullptr;   // as before, to compare
     const R3DViewport* wv = nullptr;
     for (const R3DViewport& v : out.viewports)
