@@ -42,7 +42,7 @@ struct Options {
     float gamma = 1;                 // --gamma: 1 = original, higher = brighter
     bool hdr = true;                 // --no-hdr: the original's clipped lighting
     bool reflections = true;         // --no-reflections: no ray traced reflections on the cars
-    int gi = 1;                      // --gi off|low|high: global illumination (the sun's light bounced off the world, ray traced)
+    int gi = 1;                      // --gi off|on: global illumination (the sun's light bounced off the world, ray traced)
     bool dust = true;                // --classic-dust: the game's own flat fans of dust, no particles
     bool sharpen = true;             // --no-sharpen: no sharpening of the 3D image
     bool soft = true;                // --no-soft: hard edges where translucent effects meet geometry
