@@ -57,7 +57,8 @@
 #include "settings_bridge.h"
 
 Options g_opt;   // command line and menu settings (options.h)
-int g_frame_rate = 0;   // the menu's FRAME RATE: 0 every refresh, 1 every other, 2 about 60
+int g_max_fps = 0;             // MAX FPS: 0 the monitor's refresh rate, -1 unlimited
+bool g_background_fps = true;   // BACKGROUND FPS: 30 a second at most without the focus
 
 // When the image being recorded will be on screen: with vsync the images go
 // out once per refresh, evenly, while this thread wakes up for them at uneven
@@ -625,7 +626,9 @@ int main(int argc, char** argv) {
         frontend.rt_available = renderer.ray_tracing_available();
         frontend.resolutions = presenter.display_modes();
         frontend.scale_at_launch = s.render_scale;
-        g_frame_rate = s.frame_rate;
+        g_max_fps = s.max_fps;
+        g_background_fps = s.background_fps;
+        presenter.set_vsync(s.vsync);
         if (s.display_mode != 0 || (s.res_w > 0 && s.res_h > 0)) presenter.set_mode(s.display_mode, s.res_w, s.res_h);
         // the logo first (not when a debugging aid drives the menu)
         if (getenv("LW_MENU_KEYS") || getenv("LW_MENU_SHOT")) frontend.open(Frontend::Screen::Main);
@@ -993,19 +996,26 @@ int main(int argc, char** argv) {
     double parts_from = 0;   // when the previous present call returned
     int parts_skip = 0;      // turns left out: a refresh skipped on purpose (the queue made shorter)
     for (;;) {
-        {   // FRAME RATE, and always a limit of its own: never more pictures than the
-            // monitor's refreshes, even when the driver has turned vsync off (it
-            // sleeps to a millisecond: with vsync the present then waits for the refresh)
+        {   // MAX FPS (with VSYNC in whole refreshes), never over the monitor's refresh rate
+            // unless UNLIMITED without VSYNC (even when the driver has turned vsync off),
+            // BACKGROUND FPS: 30 without the focus. Sleeps to the millisecond, then waits the rest
             static double due = 0;
             double period = std::clamp(display_clock.period, 1.0 / 500, 1.0 / 20);
-            int every = 1;
-            if (g_opt.interp && g_frame_rate == 1) every = 2;
-            else if (g_opt.interp && g_frame_rate == 2) every = std::max(1, int(std::lround(1.0 / 60 / period)));
-            double step = every * period, now = qpc_seconds();
+            bool vsync = frontend.settings.vsync || !g_opt.menu;
+            double step = period;   // MONITOR, and MOTION ORIGINAL
+            if (g_opt.interp && g_max_fps > 0)
+                step = vsync ? period * std::max(1.0, std::round(1.0 / g_max_fps / period)) : std::max(1.0 / g_max_fps, 1.0 / 1000);
+            else if (g_opt.interp && g_max_fps < 0 && !vsync)
+                step = 0;   // UNLIMITED, chosen by the player
+            if (g_background_fps && g_opt.menu && GetForegroundWindow() != presenter.hwnd()) step = std::max(step, 1.0 / 30);
             static const bool no_limit = getenv("LW_NO_LIMIT") != nullptr;   // debugging aid: without it (to compare)
-            if (!no_limit && due > 0 && due - now > 0.002) Sleep(DWORD((due - now) * 1000) - 1);
+            double now = qpc_seconds();
+            if (!no_limit && step > 0 && due > 0 && due > now) {
+                if (due - now > 0.002) Sleep(DWORD((due - now) * 1000) - 1);
+                if (!vsync) while (qpc_seconds() < due) YieldProcessor();   // (without vsync nothing else paces it)
+            }
             now = qpc_seconds();
-            due = due > 0 && now - due < step ? std::max(due + step, now + 0.25 * step) : now + step;
+            due = step <= 0 ? 0 : due > 0 && now - due < step ? std::max(due + step, now + 0.25 * step) : now + step;
         }
         double wait_from = qpc_seconds();
         {   // before the inputs are read
@@ -1082,6 +1092,18 @@ int main(int argc, char** argv) {
             play_waits = false;
             frontend.starting = false;
             close_menu();
+        }
+        {   // the window's inside and the desktop, for RESOLUTION
+            RECT c, m = presenter.monitor_rect();
+            GetClientRect(presenter.hwnd(), &c);
+            int hz = int(std::lround(1.0 / std::max(display_clock.period, 1.0 / 1000)));
+            if (c.right != frontend.client_w || c.bottom != frontend.client_h || m.right - m.left != frontend.desktop_w ||
+                m.bottom - m.top != frontend.desktop_h || hz != frontend.refresh_hz) {
+                frontend.client_w = c.right, frontend.client_h = c.bottom;
+                frontend.desktop_w = m.right - m.left, frontend.desktop_h = m.bottom - m.top;
+                frontend.refresh_hz = hz;
+                frontend.invalidate();
+            }
         }
         {   // the 3D view's width (widescreen culling and sight, runtime.cpp)
             RECT wrc;
@@ -1172,7 +1194,9 @@ int main(int argc, char** argv) {
                     renderer.set_picture(s.saturation / 100.0f, s.gamma / 100.0f);
                     g_pad_rumble = s.vibration;
                     g_trigger_share = s.trigger_rumble / 100.0f;
-                    g_frame_rate = s.frame_rate;
+                    g_max_fps = s.max_fps;
+                    g_background_fps = s.background_fps;
+                    presenter.set_vsync(s.vsync);
                     save_settings(s);
                     break;
                 default: break;

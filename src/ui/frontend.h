@@ -29,7 +29,9 @@ struct FrontendSettings {
     bool display_mode_saved = false;   // load() found it (else from fullscreen: borderless, as before)
     int res_w = 0, res_h = 0;  // RESOLUTION: the window's inside, or the full-screen mode (0: default window / the desktop's)
     int render_scale = 100;    // RENDER SCALE, %: the 3D drawn at this share of the screen's size (--scale; next launch)
-    int frame_rate = 0;        // FRAME RATE: 0 every refresh, 1 every other refresh, 2 about 60 (whole refreshes)
+    bool vsync = true;         // VSYNC: on (no tearing) / off (MAILBOX, else IMMEDIATE)
+    int max_fps = 0;           // MAX FPS: 0 the monitor's refresh rate, -1 UNLIMITED, else pictures a second at most
+    bool background_fps = true;   // BACKGROUND FPS: 30 a second at most while another window has the focus
     int volume = 5;    // 0..10 (output gain): the sound effects and voices
     int music = 5;     // 0..10: the music board's gain
     int speakers = 0;  // 0 stereo, 1 surround 4.0, 2 headphones (AudioStream::Speakers)
@@ -113,6 +115,8 @@ public:
     int aa_at_launch = 0;   // anti-aliasing the renderer was started with
     int scale_at_launch = 100;   // RENDER SCALE the renderer was started with
     std::vector<std::pair<int, int>> resolutions;   // the monitor's (app.cpp, VkPresenter::display_modes)
+    int client_w = 0, client_h = 0, desktop_w = 0, desktop_h = 0;   // the window's inside, the desktop (app.cpp)
+    int refresh_hz = 60;                            // the monitor's (MAX FPS MONITOR)
     bool rt_available = false;   // the GPU can trace rays (RAY TRACING option)
     std::wstring gamepads;  // the pads connected, for the CONTROLS tab ("" = none)
     bool pad_prompts = false;   // a gamepad drives the menu: its buttons in the key help and hints, not the keyboard's
@@ -154,7 +158,7 @@ private:
         DEBUG, DEBUG_COURSE, DEBUG_CAR, DEBUG_GEARS, DEBUG_TIME, DEBUG_GO,
         OPT_QUALITY, OPT_DISPLAY, OPT_VOLUME, OPT_MUSIC, OPT_SPEAKERS, OPT_REAR, OPT_SAMPLES, OPT_AA, OPT_HAZE, OPT_BLOOM, OPT_AO, OPT_SUN, OPT_SHADOWS, OPT_SOFT, OPT_HDR, OPT_SHARPEN, OPT_HUD, OPT_LIVERIES,
         OPT_SAT, OPT_GAMMA, OPT_MOTION, OPT_VIBRATION, OPT_RT, OPT_MENU_MUSIC, OPT_REFLECT, OPT_GI, OPT_DUST, OPT_UPDATES,
-        OPT_DIFFICULTY, OPT_CONNECTED, OPT_TRIGGERS, OPT_RESOLUTION, OPT_SCALE, OPT_FRAMERATE,
+        OPT_DIFFICULTY, OPT_CONNECTED, OPT_TRIGGERS, OPT_RESOLUTION, OPT_SCALE, OPT_VSYNC, OPT_MAXFPS, OPT_BGFPS,
     };
     struct Item {
         Id id;
@@ -262,6 +266,15 @@ private:
     void keep_choose(int button);
     bool keep_key(int vk);
     void draw_keep();
+    // RESOLUTION's list: Enter or a click opens it over the description panel
+    bool drop_open_ = false;
+    int drop_sel_ = 0, drop_top_ = 0;     // the highlighted one, the first shown (resolutions, largest first)
+    std::vector<RECT> drop_rects_;
+    RECT panel_rect_{};                   // the settings page's description panel (draw_options_page)
+    void open_drop();
+    void drop_pick(int i);
+    bool drop_key(int vk);
+    void draw_drop();
     void placeholder_backdrop();      // no background picture: a drawn one (Sega Rally 2)
     void shade_backdrop();            // darker at the right and the bottom, the logo: on px_
     // UPDATE AVAILABLE: the window over the main menu with the entries of

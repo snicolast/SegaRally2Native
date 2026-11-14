@@ -2093,6 +2093,13 @@ void R3DRenderer::record(VkCommandBuffer cmd, VkImageView target, VkExtent2D ext
     f.up_h = std::max(1u, uint32_t(SCREEN_H * f.lay.scale * supersample_));
     f.out_w = upscale_ > 1.0f ? std::max(1u, uint32_t(float(f.up_w) / upscale_ + 0.5f)) : f.up_w;
     f.out_h = upscale_ > 1.0f ? std::max(1u, uint32_t(float(f.up_h) / upscale_ + 0.5f)) : f.up_h;
+    {   // (once per size: the 3D's own resolution, RENDER SCALE / --scale)
+        static uint32_t logged_w = 0, logged_h = 0;
+        if (f.out_w != logged_w || f.out_h != logged_h) {
+            logged_w = f.out_w, logged_h = f.out_h;
+            printf("[video] 3D drawn at %ux%u (scale %.2f)\n", f.out_w, f.out_h, supersample_);
+        }
+    }
     ensure_targets(f.out_w, f.out_h, f.up_w, f.up_h);
     // Always timed: out/slow.log notes the slowest image of a slow second
     // (worst_gpu_frame); SR2_GPUTIME also prints the averages

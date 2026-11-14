@@ -141,11 +141,22 @@ void VkPresenter::set_mode(int mode, int w, int h) {
             SetWindowPos(hwnd_, nullptr, 0, 0, 0, 0,
                          SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOOWNERZORDER | SWP_FRAMECHANGED);
         }
-        if (w > 0 && h > 0) {   // RESOLUTION: the window's inside
-            RECT r{0, 0, w, h};
-            AdjustWindowRect(&r, WS_OVERLAPPEDWINDOW, FALSE);
-            SetWindowPos(hwnd_, nullptr, 0, 0, r.right - r.left, r.bottom - r.top, SWP_NOMOVE | SWP_NOZORDER | SWP_NOOWNERZORDER);
+        if (w > 0 && h > 0) {   // RESOLUTION: the window's inside; smaller (same shape) where it does not fit, centred
+            if (IsZoomed(hwnd_)) ShowWindow(hwnd_, SW_RESTORE);
+            RECT frame{0, 0, 100, 100};
+            AdjustWindowRect(&frame, WS_OVERLAPPEDWINDOW, FALSE);
+            int bw = frame.right - frame.left - 100, bh = frame.bottom - frame.top - 100;   // the borders and the title bar
+            RECT work = mi.rcWork;
+            int ww = work.right - work.left, wh = work.bottom - work.top;
+            double k = std::min({1.0, double(ww - bw) / w, double(wh - bh) / h});
+            int cw = std::max(320, int(w * k + 0.5)), ch = std::max(240, int(h * k + 0.5));
+            int x = work.left + (ww - cw - bw) / 2, y = work.top + (wh - ch - bh) / 2;
+            if (getenv("SR2_WINDOW_POS")) x = mi.rcWork.left - 30000, y = 0;   // (the test's: out of sight)
+            SetWindowPos(hwnd_, nullptr, x, y, cw + bw, ch + bh, SWP_NOZORDER | SWP_NOOWNERZORDER);
         }
+        RECT got;
+        GetClientRect(hwnd_, &got);
+        printf("[display] window: asked %dx%d, inside now %ldx%ld\n", w, h, got.right, got.bottom);
     } else {
         if (!fullscreen_) GetWindowPlacement(hwnd_, &placement_);
         if (mode == 2 && w > 0 && h > 0) {   // the monitor to that mode, for as long as the game runs (CDS_FULLSCREEN)
@@ -158,6 +169,10 @@ void VkPresenter::set_mode(int mode, int w, int h) {
             else printf("[display] the monitor did not take %dx%d (%ld): full screen at the desktop's resolution\n", w, h, r);
             GetMonitorInfoA(MonitorFromWindow(hwnd_, MONITOR_DEFAULTTOPRIMARY), &mi);
         }
+        if (const char* fake = getenv("SR2_FAKE_MONITOR")) {   // debugging aid: "x,y,w,h", full screen there (out of sight)
+            int x = 0, y = 0, fw = 0, fh = 0;
+            if (sscanf(fake, "%d,%d,%d,%d", &x, &y, &fw, &fh) == 4) mi.rcMonitor = RECT{x, y, x + fw, y + fh};
+        }
         SetWindowLongA(hwnd_, GWL_STYLE, style & ~WS_OVERLAPPEDWINDOW);
         SetWindowPos(hwnd_, HWND_TOP, mi.rcMonitor.left, mi.rcMonitor.top, mi.rcMonitor.right - mi.rcMonitor.left,
                      mi.rcMonitor.bottom - mi.rcMonitor.top, SWP_NOOWNERZORDER | SWP_FRAMECHANGED);
@@ -165,6 +180,12 @@ void VkPresenter::set_mode(int mode, int w, int h) {
     mode_ = mode;
     fullscreen_ = mode != 0;
     resized_ = true;
+}
+
+RECT VkPresenter::monitor_rect() const {
+    MONITORINFO mi{sizeof(mi)};
+    GetMonitorInfoA(MonitorFromWindow(hwnd_, MONITOR_DEFAULTTOPRIMARY), &mi);
+    return mi.rcMonitor;
 }
 
 std::vector<std::pair<int, int>> VkPresenter::display_modes() const {
@@ -202,6 +223,10 @@ bool VkPresenter::init(const char* title, int width, int height, bool with_ngx) 
     if (!hwnd_) return false;
     if (background)
         SetWindowPos(hwnd_, HWND_BOTTOM, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_SHOWWINDOW);
+    if (const char* at = getenv("SR2_WINDOW_POS")) {   // debugging aid: the window there (e.g. -30000,0: out of sight)
+        int x = 0, y = 0;
+        if (sscanf(at, "%d,%d", &x, &y) == 2) SetWindowPos(hwnd_, nullptr, x, y, 0, 0, SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
+    }
     SetWindowLongPtrA(hwnd_, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(this));
 
     if (!check(volkInitialize(), "volkInitialize (is the Vulkan driver missing?)")) return false;
@@ -441,13 +466,15 @@ bool VkPresenter::create_swapchain() {
     ci.preTransform = caps.currentTransform;
     ci.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
     ci.presentMode = VK_PRESENT_MODE_FIFO_KHR;   // vsync at the monitor's refresh rate
-    if (getenv("LW_NO_VSYNC")) {   // debugging aid: as when the driver forces vsync off (the frame limit's test)
+    if (!vsync_ || getenv("LW_NO_VSYNC")) {   // VSYNC OFF (LW_NO_VSYNC=1: as when the driver forces it off)
         uint32_t pn = 0;
         vkGetPhysicalDeviceSurfacePresentModesKHR(gpu_, surface_, &pn, nullptr);
         std::vector<VkPresentModeKHR> pm(pn);
         vkGetPhysicalDeviceSurfacePresentModesKHR(gpu_, surface_, &pn, pm.data());
         for (VkPresentModeKHR m : pm)
-            if (m == VK_PRESENT_MODE_IMMEDIATE_KHR) ci.presentMode = m;
+            if (m == VK_PRESENT_MODE_IMMEDIATE_KHR && ci.presentMode == VK_PRESENT_MODE_FIFO_KHR) ci.presentMode = m;
+        for (VkPresentModeKHR m : pm)   // MAILBOX first: no tearing, the newest picture at each refresh
+            if (m == VK_PRESENT_MODE_MAILBOX_KHR && !getenv("LW_NO_VSYNC")) ci.presentMode = m;
     }
     ci.clipped = VK_TRUE;
     std::unique_lock<std::shared_mutex> lock(swapchain_mutex_);
