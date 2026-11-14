@@ -56,9 +56,17 @@ public:
     // Thread-safe sources are read by the caller; these just stage data
     // Called once per new game frame
     void set_scene(const R3DScene* scene) {
+        if (frozen_ || (freeze_at() && scene && scene->frame >= freeze_at() && freeze(scene))) return;
         scene_ = scene;
         scene_serial_++;
     }
+    // Study (issue #14): SR2_FREEZE_AT=N keeps drawing game frame N (a copy of
+    // its scene, layers and textures as they were) while the game runs on, so
+    // only DLAA's sub-pixel jitter changes from image to image
+    static unsigned long long freeze_at();
+    bool freeze(const R3DScene* scene);
+    bool frozen_ = false;
+    R3DScene frozen_scene_;
     void set_layers(const uint32_t* back, const uint32_t* front);   // 496x384 BGRA each
     // High-resolution text: the glyph atlas (once) and, with every set_layers,
     // the text cells (TextHD::CELLS_X x CELLS_Y x CELL_TEXELS BGRA texels)
@@ -85,7 +93,9 @@ public:
     // false while the top of the 2D screen is a picture rather than a HUD
     void set_hud_band(bool hud) { hud_band_ = hud; }
     // Position between the previous (0) and the current (1) game frame
-    void set_interpolation(float t) { interp_ = t; }
+    void set_interpolation(float t) {
+        if (!frozen_) interp_ = t;
+    }
     // Fraction of their scroll since the previous game frame (the second extra
     // row of the sky coordinates) by which the back layers are drawn back
     // towards where they were: 1 - interpolation, 0 = as composed

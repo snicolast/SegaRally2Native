@@ -848,7 +848,22 @@ void R3DRenderer::bind_scene_image(VkImageView view, VkImageView alpha) {
     composed_view_ = view;
 }
 
+unsigned long long R3DRenderer::freeze_at() {
+    static const unsigned long long at = getenv("SR2_FREEZE_AT") ? strtoull(getenv("SR2_FREEZE_AT"), nullptr, 10) : 0;
+    return at;
+}
+
+bool R3DRenderer::freeze(const R3DScene* scene) {
+    frozen_scene_ = *scene;
+    scene_ = &frozen_scene_;
+    scene_serial_++;
+    frozen_ = true;
+    printf("[video] frozen at game frame %llu (SR2_FREEZE_AT)\n", (unsigned long long)scene->frame);
+    return true;
+}
+
 void R3DRenderer::set_layers(const uint32_t* back, const uint32_t* front) {
+    if (frozen_) return;
     uint8_t* dst = static_cast<uint8_t*>(layer_staging_.mapped);
     memcpy(dst, back, BACK_W * SCREEN_H * 4);
     memcpy(dst + BACK_W * SCREEN_H * 4, front, SCREEN_W * SCREEN_H * 4);
@@ -879,11 +894,13 @@ void R3DRenderer::set_layers(const uint32_t* back, const uint32_t* front) {
 }
 
 void R3DRenderer::set_text_cells(const uint32_t* cells) {
+    if (frozen_) return;
     memcpy(static_cast<uint8_t*>(layer_staging_.mapped) + (BACK_W + SCREEN_W) * SCREEN_H * 4, cells,
            TEXT_CELLS_BYTES);
 }
 
 void R3DRenderer::set_sky_coords(const uint32_t* coords) {
+    if (frozen_) return;
     memcpy(static_cast<uint8_t*>(layer_staging_.mapped) + (BACK_W + SCREEN_W) * SCREEN_H * 4 + TEXT_CELLS_BYTES, coords,
            SKY_COORDS_BYTES);
 }
@@ -894,6 +911,7 @@ void R3DRenderer::set_text_atlas(const TextHD& text) {
 }
 
 void R3DRenderer::upload_texture_rows(const std::vector<uint16_t>& rows, int y0, int y1) {
+    if (frozen_) return;
     memcpy(static_cast<uint8_t*>(texture_staging_.mapped) + size_t(y0) * 2048 * 2, rows.data(), rows.size() * 2);
     if (tex_y0_ >= tex_y1_) {
         tex_y0_ = y0;
