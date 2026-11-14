@@ -31,6 +31,7 @@
 #include "../video/tilegen.h"
 #include "../audio/audio_out.h"
 #include "../audio/sound_board.h"
+#include "../video/r3d_dust.h"
 #include "../video/r3d_state.h"
 #include "stats.h"
 #include "options.h"
@@ -1384,6 +1385,9 @@ void rt_event(Ctx& c) {
             attract_guard_frame();   // before the frame's picture is taken
             g_in_attract = in_attract();
             stats_frame();
+            // The course of the race being run (round = course id + 6 x kind: championship,
+            // practice, attract; docs/game_ram.md): 5 is SWEDISH, the Snowy course
+            r3d_set_sr2_snowy(int32_t(rd32(0x22CF48)) % 6 == 5);
             video_snapshot();
             bool boot_done = g_arcade_entry ? arcade_entry_frame() : (g_frame % 4 == 0 && boot_logo_up()) || g_frame > 3000;
             if (g_boot_skip && boot_done) {
