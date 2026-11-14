@@ -92,7 +92,6 @@ public:
     bool splash() const { return screen_ == Screen::Splash; }
     // The menu is over the frozen game (pause and its settings)
     bool over_game() const { return screen_ == Screen::Pause || (screen_ == Screen::Options && options_from_pause_); }
-    bool pause_settings() const { return screen_ == Screen::Options && options_from_pause_; }
     // The pause settings stand on the game blurred on the GPU (ui_overlay): a
     // lighter shade then, as OPTIONS over the blurred backdrop. App sets it
     bool pause_blur = false;
@@ -193,7 +192,6 @@ private:
     int text(Family f, int px, const std::wstring& s, int x, int y, int align, const Style& st);
     int measure(Family f, int px, const std::wstring& s);
     void fill(int x0, int y0, int x1, int y1, uint32_t rgb, float alpha);
-    void band(int cx, int y0, int y1, int half_w, uint32_t rgb, float alpha);
     void triangle(int x, int y, int size, int dir, uint32_t rgb, float alpha);
     void blend(int x, int y, uint32_t rgb, float a);
     void saber(int cx, int y, int half_w);   // a glowing lightsaber-blue line
@@ -358,7 +356,6 @@ private:
     static constexpr int RECORD_TAB_COUNT = 2;
     static const wchar_t* const RECORD_TAB_NAMES[RECORD_TAB_COUNT];
     int tab_count() const { return screen_ == Screen::Records ? RECORD_TAB_COUNT : TAB_COUNT; }
-    const wchar_t* tab_name(int t) const { return screen_ == Screen::Records ? RECORD_TAB_NAMES[t] : TAB_NAMES[t]; }
     // Records: the rows of the open tab and the first one shown
     struct RecordRow {
         std::wstring label, detail, value;
@@ -366,8 +363,6 @@ private:
         int group = 0;     // its heading: 0 UNLOCKED, 1 LOCKED, 2 TOTALS, 3 BEST LAPS
     };
     std::vector<RecordRow> record_rows() const;
-    // The records show this many rows of the old settings card
-    static constexpr int VISIBLE_OPTIONS = 6;
     int scroll_ = 0;           // first option shown (the settings page scrolls only when its rows do not fit)
     bool options_scroll_ = false;   // the settings page's rows did not fit in the last draw
     // The settings page (Options, also from the pause menu): the sections in a

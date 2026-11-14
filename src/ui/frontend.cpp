@@ -25,7 +25,6 @@ constexpr uint32_t GOLD_TOP = 0xFFF06A, GOLD_BOTTOM = 0xF5C400, EDGE = 0x020308;
 constexpr uint32_t PALE_TOP = 0xEAF2FF, PALE_BOTTOM = 0xAFC2DA, DIM = 0x56606E;
 constexpr uint32_t HINT = 0xC4CAD2, FOOT = 0x7A8088;   // Sega Rally 2: neutral greys (the mock-up)
 constexpr uint32_t SABER = 0xC8241E, PANEL = 0x040914;   // Sega Rally 2: the accent is the logo's red
-constexpr uint32_t WHITE_TOP = 0xFFFFFF, WHITE_BOTTOM = 0xD8E6F6;   // the selected entry of the side menu
 
 // UPDATE AVAILABLE: news.txt on the public repository's main branch (news.h)
 constexpr const wchar_t* NEWS_HOST = L"raw.githubusercontent.com";
@@ -452,7 +451,6 @@ std::vector<Frontend::Item> Frontend::items() const {
         if (mode == 0 && settings.res_w > 0 && (std::abs(client_w - settings.res_w) > 2 || std::abs(client_h - settings.res_h) > 2))
             res_hints[0] = L"The size of the window's picture: shown at " + size_text(client_w, client_h) +
                            L", the same shape, to fit on the desktop.  Enter: the list";
-        static const wchar_t* const RATES[3] = {L"MONITOR", L"HALF", L"60"};
         std::wstring scale_hint = L"The 3D drawn at this share of the picture's size: above 100% sharper and slower, below faster and softer";
         scale_hint += settings.render_scale != scale_at_launch ? L".  Applies after a restart (offered when you leave the settings)"
                                                                : L".  Applies after a restart";
@@ -619,7 +617,7 @@ void Frontend::open(Screen s) {
     }
     // The pause coming up over the game (its look as the main menu's when the
     // game can be blurred under it): its entries in from the right too
-    if (s == Screen::Pause && was != Screen::Options && pause_blur) {
+    if (s == Screen::Pause && was != Screen::Options) {
         slide_from_ = menu_clock() + PAUSE_AFTER;
         slide_out_ = false;
         slide_intro_ = true;
@@ -656,8 +654,7 @@ void Frontend::activate(const Item& it, int dir) {
     case SETTINGS:
         options_from_pause_ = true;
         tab_ = 0;
-        if (pause_blur) slide_to(Screen::Options, 1);   // the pause's entries out to the right, then the page
-        else open(Screen::Options), selected_ = 1;
+        slide_to(Screen::Options, 1);   // the pause's entries out to the right, then the page
         break;
     case OPT_DISPLAY: {
         int mode = settings.display_mode, w = settings.res_w, h = settings.res_h;
@@ -798,7 +795,7 @@ void Frontend::back() {
         restart_open_ = false;
         open(options_from_pause_ ? Screen::Pause : Screen::Main);
         selected_ = options_from_pause_ ? 1 : index_of(OPTIONS);   // where the options were opened from
-        if (options_from_pause_ && pause_blur) {   // the pause's entries in from the right again
+        if (options_from_pause_) {   // the pause's entries in from the right again
             slide_from_ = menu_clock();
             slide_out_ = slide_intro_ = false;
         }
@@ -1349,7 +1346,7 @@ void Frontend::draw_restart() {
     constexpr uint32_t PAGE_TEXT = 0xEEF3FA, PAGE_LINE = 0x3A4458;   // (as the settings page's, below)
     const int w = w_, h = h_;
     fill(0, 0, w, h, 0x000000, 0.55f);
-    int pw = std::min(U(900), w - U(80)), ph = U(over_game() ? 360 : 320);
+    int pw = std::min(U(900), w - U(80)), ph = U(over_game() ? 360.0f : 320.0f);
     int x0 = (w - pw) / 2, y0 = (h - ph) / 2, x1 = x0 + pw, y1 = y0 + ph, cx = w / 2;
     fill(x0, y0, x1, y1, PANEL, 1);
     frame(x0, y0, x1, y1, std::max(1, U(1)), PAGE_LINE, 1);
@@ -1479,15 +1476,6 @@ void Frontend::fill(int x0, int y0, int x1, int y1, uint32_t rgb, float alpha) {
     for (int y = y0; y < y1; y++) {
         uint32_t* row = px_ + size_t(y) * w_;
         for (int x = x0; x < x1; x++) row[x] = over(row[x], rgb, a);
-    }
-}
-
-// Horizontal band that fades out towards both ends
-void Frontend::band(int cx, int y0, int y1, int half_w, uint32_t rgb, float alpha) {
-    for (int x = std::max(cx - half_w, 0); x < std::min(cx + half_w, w_); x++) {
-        float t = 1 - std::abs(float(x - cx)) / float(half_w);
-        float a = alpha * std::min(1.0f, t * 2.5f);
-        for (int y = std::max(y0, 0); y < std::min(y1, h_); y++) blend(x, y, rgb, a);
     }
 }
 
@@ -2093,7 +2081,7 @@ void Frontend::draw_side_menu(const std::vector<Item>& list) {
             int vw = text(ITEM, U(30), it.value, vx - U(22), vy - U(19), 2, {GOLD_TOP, GOLD_BOTTOM, EDGE, U(2)});
             triangle(vx - U(44) - vw, vy, U(18), -1, sel ? 0xFFE08A : 0xB0B8C8, 0.9f);
         } else if (!it.value.empty())   // e.g. COMING SOON
-            text(MONO, U(20), it.value, ix - tw - U(sel && on_main ? 40 : 28), y + sp / 2 - U(12), 2, {0x7FB0D8, 0x6090B8});
+            text(MONO, U(20), it.value, ix - tw - U(sel && on_main ? 40.0f : 28.0f), y + sp / 2 - U(12), 2, {0x7FB0D8, 0x6090B8});
         hit_.push_back({band0, y, band1, y + sp});
         values_.push_back({-1, 0});
         y += sp;
@@ -2553,7 +2541,6 @@ bool Frontend::draw(int w, int h, std::vector<uint32_t>& out) {
     px_ = out.data();
     hit_.clear();
     values_.clear();
-    int cx = w / 2;
     // After the splash: the whole picture towards black, less every refresh
     auto fade_in = [&] {
         if (menu_in_from_ < 0) return;
@@ -2585,192 +2572,14 @@ bool Frontend::draw(int w, int h, std::vector<uint32_t>& out) {
         fade_in();
         return true;
     }
-    bool on_records = screen_ == Screen::Records;
-    bool options = screen_ == Screen::Options || on_records;   // records use the settings' card and tab row
-    const bool pause_side = screen_ == Screen::Pause && pause_blur;   // the pause as the main menu, over the blurred game
-    if ((!over_game || pause_side) && !options) {   // Main, Play, Debug on the backdrop; the pause over the game
-        if (pause_side) shade_backdrop();   // the main menu's shade and logo, over the blurred game
-        draw_side_menu(list);
-        if (news_open_ && screen_ == Screen::Main) draw_news();
-        dirty_ = slide_from_ >= 0 || gliding_;   // moving: drawn again every refresh
-        fade_in();
-        return true;
+    // Main, Play, Debug on the backdrop; the pause over the frozen game (blurred, else darkened)
+    if (over_game) {
+        if (!pause_blur) fill(0, 0, w, h, 0x000000, 0.8f);
+        shade_backdrop();   // the main menu's shade and logo
     }
-    const Style gold{GOLD_TOP, GOLD_BOTTOM, EDGE, U(3)};
-    const Style pale{PALE_TOP, PALE_BOTTOM, 0x080806, U(2), 0.95f};
-    const Style dim{DIM, DIM, 0x080806, U(2), 0.9f};
-
-    int y_items, spacing, item_px, hint_y, foot_y;
-    int hint_room = 0;   // room for a second hint line below hint_y (else it grows upwards)
-    if (!over_game) {   // the options (or the records): a card over the blurred backdrop
-        int top = U(70), bottom = h - U(70), half = U(580);
-        fill(cx - half, top, cx + half, bottom, PANEL, 0.74f);
-        saber(cx, top, half);
-        saber(cx, bottom, half);
-        text(TITLE, U(96), on_records ? L"RECORDS" : L"OPTIONS", cx, top + U(34), 1,
-             {GOLD_TOP, GOLD_BOTTOM, EDGE, U(5), 1, U(5)});
-        y_items = top + U(196);
-        spacing = U(70);
-        item_px = U(46);
-        hint_y = bottom - U(116);
-        foot_y = bottom - U(62);
-    } else {
-        fill(0, 0, w, h, 0x000000, 0.62f);   // the frozen game shows through, darkened
-        int n = options ? VISIBLE_OPTIONS + 2 : int(list.size());   // same panel for every settings tab
-        spacing = options ? U(56) : U(80);
-        item_px = options ? U(44) : U(58);
-        hint_room = U(34);   // BACK sits right above the hint: two lines grow down, not into it
-        int panel_h = U(170) + n * spacing + U(130) + hint_room;   // title, items, hint and key help
-        int top = (h - panel_h) / 2;
-        int half = options ? U(560) : U(460);
-        fill(cx - half, top, cx + half, top + panel_h, PANEL, 0.92f);
-        saber(cx, top, half);
-        saber(cx, top + panel_h, half);
-        text(TITLE, U(110), options ? L"SETTINGS" : L"PAUSED", cx, top + U(22), 1,
-             {GOLD_TOP, GOLD_BOTTOM, EDGE, U(5), 1, U(5)});
-        y_items = top + U(170);
-        hint_y = top + panel_h - U(96) - hint_room;
-        foot_y = top + panel_h - U(46);
-    }
-    // Settings tabs show at most VISIBLE_OPTIONS rows; longer ones scroll (the
-    // tab row and BACK stay put), keeping the selected row in view
-    int n_opts = options ? int(list.size()) - 2 : 0, shown_opts = n_opts;
-    more_up_ = more_down_ = RECT{};
-    if (options) {
-        shown_opts = std::min(n_opts, VISIBLE_OPTIONS);
-        scroll_ = std::clamp(scroll_, 0, std::max(0, n_opts - shown_opts));
-        int k = selected_ - 1;   // selected option (0-based), if it is one
-        if (k >= 0 && k < n_opts) {
-            if (k < scroll_) scroll_ = k;
-            if (k >= scroll_ + shown_opts) scroll_ = k - shown_opts + 1;
-        }
-    }
-    auto slot_of = [&](int i) {   // screen row of list entry i, -1 when scrolled out of view
-        if (!options || i == 0) return i;
-        if (i == int(list.size()) - 1) return shown_opts + 1;   // BACK
-        int k = i - 1 - scroll_;
-        return k >= 0 && k < shown_opts ? k + 1 : -1;
-    };
-
-    for (int i = 0; i < int(list.size()); i++) {
-        const Item& it = list[i];
-        bool sel = i == selected_;
-        int slot = slot_of(i);
-        int y = y_items + slot * spacing + (options && slot > 0 ? U(24) : 0);   // room under the tabs
-        int row_h = spacing;
-        int half_w = options ? U(470) : U(320);
-        if (slot < 0) {   // scrolled out of view: no hit area
-            hit_.push_back(RECT{});
-            values_.push_back({-1, 0});
-            continue;
-        }
-        hit_.push_back({cx - half_w, y - (row_h - item_px) / 2 - U(6), cx + half_w, y + item_px + (row_h - item_px) / 2});
-        values_.push_back({-1, 0});
-        if (options && slot == 1 && scroll_ > 0) {   // more rows above / below: arrows at the right edge
-            triangle(cx + half_w + U(16), y - U(4), U(20), -2, GOLD_BOTTOM, 1);
-            more_up_ = {cx + half_w - U(10), y - U(30), cx + half_w + U(44), y + U(16)};
-        }
-        if (options && slot == shown_opts && scroll_ + shown_opts < n_opts) {
-            triangle(cx + half_w + U(16), y + item_px + U(8), U(20), 2, GOLD_BOTTOM, 1);
-            more_down_ = {cx + half_w - U(10), y + item_px - U(8), cx + half_w + U(44), y + item_px + U(34)};
-        }
-        if (sel) band(cx, y - U(8), y + item_px + U(14), half_w, SABER, it.enabled ? 0.22f : 0.10f);
-        // DEBUG and its lists in red: not part of the game
-        const Style red{0xFF8A7A, 0xD8402E, EDGE, U(2), 0.95f};
-        bool debug_row = false;
-        const Style& st = !it.enabled ? dim : sel ? gold : debug_row ? red : pale;
-        if (it.id == TABS) {   // tab names side by side, the open one underlined
-            int gap = U(44), total = 0, tab_px = item_px * 17 / 20;
-            for (int t = 0; t < tab_count(); t++) total += measure(TITLE, tab_px, tab_name(t)) + gap;
-            if (total - gap > 2 * half_w - U(80)) {   // more tabs than fit: smaller names
-                tab_px = tab_px * (2 * half_w - U(80)) / (total - gap);
-                gap = gap * (2 * half_w - U(80)) / (total - gap);
-                total = 0;
-                for (int t = 0; t < tab_count(); t++) total += measure(TITLE, tab_px, tab_name(t)) + gap;
-            }
-            int x = cx - (total - gap) / 2;
-            tab_rects_.clear();
-            for (int t = 0; t < tab_count(); t++) {
-                bool open_tab = t == tab_;
-                const Style& ts = open_tab ? gold : Style{0x8A98AC, 0x6E7C90, 0x020308, U(2), 0.95f};
-                int ty0 = y + (item_px - tab_px) / 2;
-                int tw = text(TITLE, tab_px, tab_name(t), x, ty0, 0, ts);
-                if (open_tab) fill(x, ty0 + tab_px + U(6), x + tw, ty0 + tab_px + U(6) + std::max(2, U(4)), GOLD_BOTTOM, 1);
-                tab_rects_.push_back({x - gap / 2, y, x + tw + gap / 2, y + item_px});
-                x += tw + gap;
-            }
-            if (sel) {
-                int ty = y + item_px * 6 / 10;
-                triangle(tab_rects_.front().left - U(10), ty, U(18), -1, GOLD_BOTTOM, 1);
-                triangle(tab_rects_.back().right + U(10), ty, U(18), +1, GOLD_BOTTOM, 1);
-            }
-            continue;
-        }
-        if (!options || it.id == BACK) {
-            int tw = text(TITLE, item_px, it.label, cx, y, 1, st);
-            int ty = y + item_px * 6 / 10;
-            if (sel && it.enabled) {
-                triangle(cx - tw / 2 - U(34), ty, U(20), +1, GOLD_BOTTOM, 1);
-                triangle(cx + tw / 2 + U(34), ty, U(20), -1, GOLD_BOTTOM, 1);
-            }
-            if (!it.value.empty())   // e.g. COMING SOON
-                text(MONO, U(20), it.value, cx + tw / 2 + U(it.enabled ? 62.0f : 18.0f), y + item_px / 2 - U(6), 0,
-                     {0x7FB0D8, 0x6090B8});   // past the arrow of a selected entry
-            continue;
-        }
-        int left = cx - U(410), right = cx + U(410);   // symmetric about the centre
-        text(TITLE, item_px, it.label, left, y, 0, st);
-        int ty = y + item_px * 6 / 10;
-        int vx0;
-        if (it.id == OPT_VOLUME || it.id == OPT_MUSIC) {   // ten segments
-            int seg_w = U(20), gap = U(6), seg_h = U(26);
-            vx0 = right - 10 * seg_w - 9 * gap;
-            for (int s = 0; s < 10; s++) {
-                int x0 = vx0 + s * (seg_w + gap);
-                bool lit = s < (it.id == OPT_MUSIC ? settings.music : settings.volume);
-                uint32_t c = lit ? mix(0xBFE8FF, SABER, float(s) / 9) : 0x2A3240;
-                fill(x0 - 1, ty - seg_h / 2 - 1, x0 + seg_w + 1, ty + seg_h / 2 + 1, 0x000000, 0.8f);
-                fill(x0, ty - seg_h / 2, x0 + seg_w, ty + seg_h / 2, c, sel || !lit ? 1.0f : 0.8f);
-            }
-        } else {
-            const Style& vs = sel ? gold : Style{0xFFE87A, 0xE8BC2A, 0x020308, U(2), 0.95f};
-            vx0 = right - text(ITEM, item_px, it.value, right, y, 2, vs);
-        }
-        values_.back() = {vx0 - U(48), (vx0 + right) / 2};
-        if (sel) {
-            triangle(vx0 - U(24), ty, U(18), -1, GOLD_BOTTOM, 1);
-            triangle(right + U(24), ty, U(18), +1, GOLD_BOTTOM, 1);
-        }
-    }
-
-    if (selected_ < int(list.size()))
-    {   // wrapped to the card (two lines at most, the last one where a single line goes)
-        auto lines = wrap(MONO, U(24), list[selected_].hint, U(980));
-        if (lines.size() > 2) lines.resize(2);
-        int ly = lines.size() > 1 ? hint_y + hint_room - (int(lines.size()) - 1) * U(30)
-                                  : hint_y + hint_room / 2;   // one line: centred in the room
-        for (const std::wstring& line : lines) {
-            text(MONO, U(24), line, cx, ly, 1, {HINT, HINT});
-            ly += U(34);
-        }
-    }
-    if (pad_prompts) {   // the gamepad's buttons, centred
-        struct Key { const wchar_t *pad, *what; };
-        std::vector<Key> keys;
-        if (on_records) keys = {{L"LS", L"SCROLL"}, {L"LB", L""}, {L"RB", L"TAB"}, {L"B", L"BACK"}};
-        else if (options) keys = {{L"LS", L"SELECT / CHANGE"}, {L"LB", L""}, {L"RB", L"TAB"}, {L"B", L"BACK"}};
-        else keys = {{L"LS", L"SELECT"}, {L"A", L"CONFIRM"}, {L"B", L"BACK"}};
-        int kh = U(34), ky = foot_y + U(12) - kh / 2, x = cx + U(40) / 2;
-        for (const Key& k : keys) x -= prompt_width(kh, k.pad, nullptr, k.what) / 2;
-        for (const Key& k : keys) prompt(x, ky, kh, k.pad, nullptr, k.what);
-    } else {
-        const wchar_t* foot = on_records   ? L"ARROWS  SCROLL / TAB      WHEEL  SCROLL      ESC  BACK"
-                              : options ? L"ARROWS  SELECT / CHANGE      Q / E  TAB      ESC  BACK"
-                                      : L"ARROWS  SELECT      ENTER / CLICK  CONFIRM      ESC  BACK";
-        text(MONO, U(21), foot, cx, foot_y, 1, {FOOT, FOOT});
-    }
+    draw_side_menu(list);
     if (news_open_ && screen_ == Screen::Main) draw_news();
-    dirty_ = false;
+    dirty_ = slide_from_ >= 0 || gliding_;   // moving: drawn again every refresh
     fade_in();
     return true;
 }
