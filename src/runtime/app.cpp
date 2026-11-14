@@ -58,6 +58,7 @@
 
 Options g_opt;   // command line and menu settings (options.h)
 int g_max_fps = 0;             // MAX FPS: 0 the monitor's refresh rate, -1 unlimited
+double g_window_resized_at = -1;   // when the window's inside last changed size (the pointer's hover waits)
 bool g_background_fps = true;   // BACKGROUND FPS: 30 a second at most without the focus
 
 // When the image being recorded will be on screen: with vsync the images go
@@ -667,10 +668,15 @@ int main(int argc, char** argv) {
                 // Windows also sends it when nothing moved (a window or the
                 // pointer changing): those neither bring the pointer back nor
                 // take the highlight from the pad's choice
+                // Compared on the screen: a window resized or moved under a still
+                // pointer (RESOLUTION, MODE) puts it over another row without the
+                // player moving it; and none taken for a moment after a resize
                 static int last_x = INT_MIN, last_y = INT_MIN;
-                bool moved = x != last_x || y != last_y;
-                last_x = x, last_y = y;
-                if (!moved) return true;
+                POINT screen{x, y};
+                ClientToScreen(presenter.hwnd(), &screen);
+                bool moved = screen.x != last_x || screen.y != last_y;
+                last_x = screen.x, last_y = screen.y;
+                if (!moved || qpc_seconds() - g_window_resized_at < 0.3) return true;
                 pad_in_menu = false;
                 frontend.mouse_move(x, y);
                 return true;
@@ -1111,10 +1117,20 @@ int main(int argc, char** argv) {
             int hz = int(std::lround(1.0 / std::max(display_clock.period, 1.0 / 1000)));
             if (c.right != frontend.client_w || c.bottom != frontend.client_h || m.right - m.left != frontend.desktop_w ||
                 m.bottom - m.top != frontend.desktop_h || hz != frontend.refresh_hz) {
+                if (c.right != frontend.client_w || c.bottom != frontend.client_h) g_window_resized_at = qpc_seconds();
                 frontend.client_w = c.right, frontend.client_h = c.bottom;
                 frontend.desktop_w = m.right - m.left, frontend.desktop_h = m.bottom - m.top;
                 frontend.refresh_hz = hz;
                 frontend.invalidate();
+            }
+            // Debugging aid: LW_MENU_POINTER="sx,sy", a pointer resting there on the screen:
+            // every refresh the move Windows reports for it (after a resize: over another row)
+            static const char* rest = getenv("LW_MENU_POINTER");
+            int sx, sy;
+            if (rest && sscanf(rest, "%d,%d", &sx, &sy) == 2 && presenter.input_hook) {
+                POINT p{sx, sy};
+                ScreenToClient(presenter.hwnd(), &p);
+                presenter.input_hook(WM_MOUSEMOVE, 0, MAKELPARAM(p.x, p.y));
             }
         }
         {   // the 3D view's width (widescreen culling and sight, runtime.cpp)
@@ -1169,6 +1185,7 @@ int main(int argc, char** argv) {
                 case Frontend::Action::ToggleFullscreen: presenter.toggle_fullscreen(); break;
                 case Frontend::Action::DisplayChanged:   // MODE, RESOLUTION (or KEEP THESE SETTINGS? going back)
                     presenter.set_mode(s.display_mode, s.res_w, s.res_h);
+                    g_window_resized_at = qpc_seconds();   // (the pointer's hover waits: the rows moved under it)
                     s.fullscreen = s.display_mode != 0;
                     save_settings(s);
                     frontend.invalidate();
