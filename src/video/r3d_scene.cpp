@@ -792,6 +792,56 @@ void R3DSceneBuilder::link_previous(R3DScene& out) {
         memcpy(v.prev, p, sizeof(v.prev));
         out.moving += dx != 0 || dy != 0 || dz != 0;
     }
+    // The glow sprites of the world (the streetlights' halos at Riviera, the
+    // spectators' camera flashes): the game hands them out to the lamps
+    // nearest the camera from a pool of its own, so as a lamp goes by its halo
+    // is drawn at the next one, under the same key. Paired with last frame's
+    // as any other model, each slid from lamp to lamp between frames, the
+    // faster the car went the more (they seemed to flicker, or to run along
+    // the street). They stand still in the world: they go back as the camera
+    // moved, unless they were paired with a place close to that (another
+    // car's exhaust flames, which move with it)
+    static const bool no_glow_fix = getenv("SR2_GLOW_LINK") != nullptr;   // as before, to compare
+    const R3DViewport* wv = nullptr;
+    for (const R3DViewport& v : out.viewports)
+        if (v.world) wv = &v;
+    if (wv && prev_world_valid_ && !no_glow_fix) {
+        const float *ax = wv->world_axes, *cam = wv->camera, *pax = prev_world_axes_, *pcam = prev_world_camera_;
+        auto dot3 = [](const float* p, const float* q) { return p[0] * q[0] + p[1] * q[1] + p[2] * q[2]; };
+        float d[3] = {cam[0] - pcam[0], cam[1] - pcam[1], cam[2] - pcam[2]};
+        // (as R3DRenderer::world_pose: a camera cut is not interpolated)
+        bool cut = dot3(d, d) > 10.0f * 10.0f || dot3(ax + 6, pax + 6) < 0.9f || dot3(ax + 3, pax + 3) < 0.9f;
+        const uint32_t glow_mask = R3D_TEXTURED | R3D_ALPHA_TEST | R3D_LUMINOUS | R3D_TEX_ALPHA | R3D_SPECULAR;
+        const uint32_t glow = glow_mask & ~uint32_t(R3D_SPECULAR);
+        auto fix = [&](uint32_t first, uint32_t count) {
+            for (uint32_t i = first; i < first + count && i < out.vertices.size(); i++) {
+                R3DVertex& v = out.vertices[i];
+                if ((v.flags & glow_mask) != glow) continue;
+                float still[3];
+                if (cut) {
+                    memcpy(still, v.pos, sizeof(still));
+                } else {
+                    // Its place in the world (world axis k, in view space,
+                    // is ax[3k..3k+2]), then in last frame's view
+                    float w[3];
+                    for (int k = 0; k < 3; k++) w[k] = cam[k] + dot3(ax + k * 3, v.pos) - pcam[k];
+                    for (int c = 0; c < 3; c++) still[c] = w[0] * pax[c] + w[1] * pax[3 + c] + w[2] * pax[6 + c];
+                }
+                float e[3] = {v.prev[0] - still[0], v.prev[1] - still[1], v.prev[2] - still[2]};
+                bool linked = v.prev[0] != v.pos[0] || v.prev[1] != v.pos[1] || v.prev[2] != v.pos[2];
+                if (linked && dot3(e, e) <= 3.0f * 3.0f) continue;
+                if (!linked && (still[0] != v.pos[0] || still[1] != v.pos[1] || still[2] != v.pos[2])) out.moving++;
+                memcpy(v.prev, still, sizeof(v.prev));
+            }
+        };
+        fix(wv->opaque_first, wv->opaque_count);
+        fix(wv->trans_first, wv->trans_count);
+    }
+    prev_world_valid_ = wv != nullptr;
+    if (wv) {
+        memcpy(prev_world_axes_, wv->world_axes, sizeof(prev_world_axes_));
+        memcpy(prev_world_camera_, wv->camera, sizeof(prev_world_camera_));
+    }
     std::swap(prev_index_, index_);
     // Only the positions are kept (a copy of every whole vertex was most of
     // the rest); the vectors keep their room
