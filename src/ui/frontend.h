@@ -229,6 +229,17 @@ private:
     void slide_to(Screen s, int sel);
     void finish_slide();              // a key or a click meanwhile: at once to the end
     int slide_offset(int i) const;    // how far right entry i is, in pixels
+    // The chosen entry's ribbon gliding to the next one (0.13 s, easing
+    // out) instead of jumping; `key` changes (another page or section, a new
+    // window size): straight there. Drawn every refresh while it moves
+    struct Glide {
+        float from = 0, to = 0, from_h = 0, to_h = 0;
+        double t0 = -1;
+        long key = -1;
+    };
+    Glide glide_menu_, glide_tab_, glide_row_;
+    bool gliding_ = false;            // one of them is moving (this picture)
+    void glide(Glide& g, long key, int y, int h, int& gy, int& gh);
     void placeholder_backdrop();      // no background picture: a drawn one (Sega Rally 2)
     void shade_backdrop();            // darker at the right and the bottom, the logo: on px_
     // UPDATE AVAILABLE: the window over the main menu with the entries of

@@ -1688,6 +1688,29 @@ void Frontend::slide_to(Screen s, int sel) {
     dirty_ = true;
 }
 
+void Frontend::glide(Glide& g, long key, int y, int h, int& gy, int& gh) {
+    constexpr double GLIDE = 0.13;
+    double now = menu_clock();
+    auto at = [&](float& cy, float& ch) {
+        float k = g.t0 < 0 ? 1.0f : float(std::clamp((now - g.t0) / GLIDE, 0.0, 1.0));
+        float e = 1 - (1 - k) * (1 - k) * (1 - k);
+        cy = g.from + (g.to - g.from) * e;
+        ch = g.from_h + (g.to_h - g.from_h) * e;
+        return k;
+    };
+    if (g.key != key) {
+        g = Glide{float(y), float(y), float(h), float(h), -1, key};
+    } else if (float(y) != g.to || float(h) != g.to_h) {   // a new target: from where it is now (a fast repeat retargets)
+        float cy, ch;
+        at(cy, ch);
+        g.from = cy, g.from_h = ch, g.to = float(y), g.to_h = float(h), g.t0 = now;
+    }
+    float cy, ch;
+    if (at(cy, ch) >= 1) g.t0 = -1;
+    else gliding_ = true;
+    gy = int(std::lround(cy)), gh = int(std::lround(ch));
+}
+
 void Frontend::finish_slide() {
     if (slide_from_ < 0) return;
     if (slide_out_) {
@@ -1754,26 +1777,34 @@ void Frontend::draw_side_menu(const std::vector<Item>& list) {
     int item_px = std::min(U(58), spacing * 72 / 100);
     int y = y0;
     const bool on_main = screen_ == Screen::Main || screen_ == Screen::Play;
+    auto row_sp = [&](int i) {   // the main menu: PLAY big, the others smaller under it
+        return on_main && list[i].id == PLAY ? U(104) : on_main ? U(62) : spacing;
+    };
+    if (selected_ >= 0 && selected_ < n) {   // the chosen one's ribbon, gliding there from the last one
+        const Item& it = list[selected_];
+        int ty = y0;
+        for (int i = 0; i < selected_; i++) ty += row_sp(i);
+        int gy, gsp;
+        glide(glide_menu_, long(screen_) * 100003 + h_, ty, row_sp(selected_), gy, gsp);
+        const int off = slide_offset(selected_), ix = tx + off;
+        float a = it.enabled ? 0.85f : 0.3f;
+        int slant = gsp * 45 / 100, x0 = on_main ? ix - U(470) : band0 + U(120) + off;   // clear of the car
+        for (int yy = gy; yy < gy + gsp; yy++) {
+            int xs = x0 + (gy + gsp - yy) * slant / std::max(1, gsp);
+            fill(xs, yy, w, yy + 1, SABER, a * 0.55f);
+            hgrad(xs, yy, w, yy + 1, SABER, 0.0f, a * 0.45f);
+            fill(xs - U(30), yy, xs - U(18), yy + 1, SABER, a * 0.9f);
+        }
+        int edge = std::max(3, U(7));
+        fill(w - edge + off, gy, w + off, gy + gsp, 0xFF6A5A, it.enabled ? 1.0f : 0.5f);
+    }
     for (int i = 0; i < n; i++) {
         const Item& it = list[i];
         const int off = slide_offset(i), ix = tx + off;   // (sliding: further right)
         bool sel = i == selected_;
-        // The main menu: PLAY big, the others smaller under it
         const bool hero = on_main && it.id == PLAY;
-        const int sp = hero ? U(104) : on_main ? U(62) : spacing;
+        const int sp = row_sp(i);
         const int px = hero ? U(92) : on_main ? U(46) : item_px;
-        if (sel) {   // a slanted red stripe from the right edge, as on the cars, a thin one before it
-            float a = it.enabled ? 0.85f : 0.3f;
-            int slant = sp * 45 / 100, x0 = on_main ? ix - U(470) : band0 + U(120) + off;   // clear of the car
-            for (int yy = y; yy < y + sp; yy++) {
-                int xs = x0 + (y + sp - yy) * slant / sp;
-                fill(xs, yy, w, yy + 1, SABER, a * 0.55f);
-                hgrad(xs, yy, w, yy + 1, SABER, 0.0f, a * 0.45f);
-                fill(xs - U(30), yy, xs - U(18), yy + 1, SABER, a * 0.9f);
-            }
-            int edge = std::max(3, U(7));
-            fill(w - edge + off, y, w + off, y + sp, 0xFF6A5A, it.enabled ? 1.0f : 0.5f);
-        }
         bool debug_row = it.id >= DEBUG && it.id <= DEBUG_GO;   // DEBUG and its rows in red: not part of the game
         const Style st = !it.enabled ? Style{DIM, DIM, EDGE, U(2), 0.9f, U(3)}
                          : sel       ? Style{GOLD_TOP, GOLD_BOTTOM, EDGE, U(2), 1, U(3)}
@@ -1781,7 +1812,7 @@ void Frontend::draw_side_menu(const std::vector<Item>& list) {
                                      : Style{PALE_TOP, PALE_BOTTOM, EDGE, U(2), 0.95f, U(3)};
         int ty = y + sp / 2 - px * 75 / 100;   // the capitals centred in the row (TITLE: they start 0.42 down, 0.67 high)
         int tw = text(TITLE, px, it.label, ix, ty, 2, st);
-        if (sel && on_main && it.enabled)   // a chevron before the chosen one
+        if (sel && on_main && it.enabled && !gliding_)   // a chevron before the chosen one, once the ribbon is there
             triangle(ix - tw - U(28), y + sp / 2, U(22), +1, 0xFFE08A, 0.95f);
         if (!it.value.empty() && screen_ == Screen::Debug) {   // DEBUG's choices: between arrows, left of the name
             int vx = ix - tw - U(40), vy = y + sp / 2;
@@ -1994,14 +2025,20 @@ void Frontend::draw_options_page(const std::vector<Item>& list, bool over_game) 
     // The sections, one under the other; the open one with a red band
     const int sec_h = U(92);
     tab_rects_.clear();
+    {   // the open section's ribbon, gliding there from the last one
+        int ty = top + tab_ * sec_h;
+        int gy, gh;
+        glide(glide_tab_, long(options_from_pause_) * 100003 + h_, ty - U(8), sec_h - U(8), gy, gh);
+        RECT r{rail_x - U(20), gy, rail_x + rail_w, gy + gh};
+        int sl = gh * 30 / 100;
+        ribbon(r.left - sl / 2, r.top, r.right, r.bottom, sl, 0.85f, 0.0f, U(10), U(8), 1);
+        if (!gliding_) triangle(rail_x + U(8), ty + U(28), U(18), +1, 0xFFE08A, 0.95f);
+    }
     for (int t = 0; t < TAB_COUNT; t++) {
         int y = top + t * sec_h;
         bool open_tab = t == tab_;
         RECT r{rail_x - U(20), y - U(8), rail_x + rail_w, y + sec_h - U(16)};
-        if (open_tab) {   // the main menu's slanted stripe, fading to the right, and a chevron
-            int hh = r.bottom - r.top, sl = hh * 30 / 100;
-            ribbon(r.left - sl / 2, r.top, r.right, r.bottom, sl, 0.85f, 0.0f, U(10), U(8), 1);
-            triangle(rail_x + U(8), y + U(28), U(18), +1, 0xFFE08A, 0.95f);
+        if (open_tab) {   // (its ribbon drawn above)
         } else if (selected_ == 0 && hovered_ == 0 && mouse_y_ >= r.top && mouse_y_ < r.bottom) {
             hgrad(r.left, r.top, r.right, r.bottom, 0xFFFFFF, 0.08f, 0.0f);   // under the pointer
         }
@@ -2056,6 +2093,25 @@ void Frontend::draw_options_page(const std::vector<Item>& list, bool over_game) 
 
     const int text_h = mask(ROW, label_px, L"Ag", 0).text_h;
     const Style gold{GOLD_TOP, GOLD_BOTTOM, 0, 0, 1, U(2)};
+    bool row_ribbon = false;
+    if (k_sel >= scroll_ && k_sel < n_opts) {   // the chosen row's ribbon, gliding there from the last one
+        int ry = top, k = scroll_;
+        for (; k <= k_sel; k++) {
+            if (ry + height(k, k == scroll_) > bottom) break;
+            ry += height(k, k == scroll_);
+        }
+        if (k > k_sel) {   // shown
+            ry -= row_h;
+            const Item& it = list[1 + k_sel];
+            int gy, gh;
+            glide(glide_row_, long(tab_) * 100003 + h_ + long(options_from_pause_) * 7, ry, row_h, gy, gh);
+            int sl = row_h * 40 / 100;
+            ribbon(rows_x0 - U(30) - sl / 2, gy, rows_x1 + U(18) - sl, gy + gh, sl, 0.45f, 0.75f, U(6), U(5), it.enabled ? 1.0f : 0.4f);
+            if (!gliding_) triangle(rows_x0 - U(16), ry + row_h / 2, U(14), +1, 0xFFE08A, it.enabled ? 0.95f : 0.4f);
+            row_ribbon = true;
+        }
+    }
+    if (!row_ribbon) glide_row_.key = -1;   // next time straight there
     int y = top, last_shown = scroll_ - 1;
     for (int k = scroll_; k < n_opts; k++) {
         if (y + height(k, k == scroll_) > bottom) break;
@@ -2068,11 +2124,7 @@ void Frontend::draw_options_page(const std::vector<Item>& list, bool over_game) 
             y += head_h;
         }
         bool sel = 1 + k == selected_;
-        if (sel) {   // the main menu's slanted stripe and a chevron before the name
-            int sl = row_h * 40 / 100;
-            ribbon(rows_x0 - U(30) - sl / 2, y, rows_x1 + U(18) - sl, y + row_h, sl, 0.45f, 0.75f, U(6), U(5), it.enabled ? 1.0f : 0.4f);
-            triangle(rows_x0 - U(16), y + row_h / 2, U(14), +1, 0xFFE08A, it.enabled ? 0.95f : 0.4f);
-        }
+        // (the chosen one's ribbon drawn above)
         int ty = y + (row_h - text_h) / 2, cy = y + row_h / 2;
         uint32_t lc = it.enabled ? PAGE_TEXT : PAGE_FAINT;
         int lw = text(ROW, label_px, it.label, rows_x0, ty, 0, {lc, lc, 0, 0, 1, U(2)});
@@ -2186,6 +2238,7 @@ bool Frontend::draw(int w, int h, std::vector<uint32_t>& out) {
         news_hot_ = -1;
     }
     if (!dirty_ && w == w_ && h == h_ && out.size() == size_t(w) * h) return false;
+    gliding_ = false;
     if (w != w_ || h != h_) {
         w_ = w;
         h_ = h;
@@ -2234,7 +2287,7 @@ bool Frontend::draw(int w, int h, std::vector<uint32_t>& out) {
     auto list = items();
     if (screen_ == Screen::Options) {   // the settings page, over the backdrop or the paused game
         draw_options_page(list, over_game);
-        dirty_ = false;
+        dirty_ = gliding_;
         fade_in();
         return true;
     }
@@ -2243,7 +2296,7 @@ bool Frontend::draw(int w, int h, std::vector<uint32_t>& out) {
     if (!over_game && !options) {   // Main, Debug, More: on the backdrop
         draw_side_menu(list);
         if (news_open_ && screen_ == Screen::Main) draw_news();
-        dirty_ = slide_from_ >= 0;   // moving: drawn again every refresh
+        dirty_ = slide_from_ >= 0 || gliding_;   // moving: drawn again every refresh
         fade_in();
         return true;
     }
