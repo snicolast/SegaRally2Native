@@ -29,7 +29,7 @@ struct FrontendSettings {
     bool display_mode_saved = false;   // load() found it (else from fullscreen: borderless, as before)
     int res_w = 0, res_h = 0;  // RESOLUTION: the window's inside, or the full-screen mode (0: default window / the desktop's)
     int render_scale = 100;    // RENDER SCALE, %: the 3D drawn at this share of the screen's size (--scale; next launch)
-    bool vsync = true;         // VSYNC: on (no tearing) / off (MAILBOX, else IMMEDIATE)
+    int vsync = 1;             // VSYNC: 1 on (FIFO), 2 adaptive (FIFO_RELAXED), 0 off (MAILBOX, else IMMEDIATE)
     int max_fps = 0;           // MAX FPS: 0 the monitor's refresh rate, -1 UNLIMITED, else pictures a second at most
     bool background_fps = true;   // BACKGROUND FPS: 30 a second at most while another window has the focus
     int volume = 5;    // 0..10 (output gain): the sound effects and voices

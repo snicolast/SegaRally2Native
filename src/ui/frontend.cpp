@@ -177,7 +177,7 @@ void FrontendSettings::load(const char* path) {
         else if (k == "resolution") { if (sscanf(value, "%dx%d", &res_w, &res_h) != 2) res_w = res_h = 0; }
         else if (k == "render_scale") render_scale = std::clamp(atoi(value), 50, 200);
         else if (k == "frame_rate") max_fps = v == "half" || v == "60" ? 60 : 0;   // (an earlier test version's)
-        else if (k == "vsync") vsync = on;
+        else if (k == "vsync") vsync = v == "adaptive" ? 2 : on ? 1 : 0;
         else if (k == "max_fps") max_fps = v == "unlimited" ? -1 : v == "monitor" ? 0 : std::clamp(atoi(value), 0, 1000);
         else if (k == "background_fps") background_fps = on;
         else if (k == "volume") volume = std::clamp(atoi(value), 0, 10);
@@ -236,8 +236,8 @@ std::string FrontendSettings::text() const {
     out += buf;
     static const char* const MODES[3] = {"window", "borderless", "fullscreen"};
     std::string fps = max_fps < 0 ? "unlimited" : max_fps == 0 ? "monitor" : std::to_string(max_fps);
-    snprintf(buf, sizeof(buf), "display_mode = %s\nresolution = %dx%d\nrender_scale = %d\nvsync = %d\nmax_fps = %s\nbackground_fps = %d\n",
-             MODES[std::clamp(display_mode, 0, 2)], res_w, res_h, render_scale, vsync, fps.c_str(), background_fps);
+    snprintf(buf, sizeof(buf), "display_mode = %s\nresolution = %dx%d\nrender_scale = %d\nvsync = %s\nmax_fps = %s\nbackground_fps = %d\n",
+             MODES[std::clamp(display_mode, 0, 2)], res_w, res_h, render_scale, vsync == 2 ? "adaptive" : vsync ? "on" : "off", fps.c_str(), background_fps);
     out += buf;
     snprintf(buf, sizeof(buf), "check_updates = %d\nnews_seen = %d\nrt_reflections = %d\nglobal_illumination = %s\ndust = %s\ndifficulty = %s\nhd_liveries = %d\ntrigger_rumble = %d\n", check_updates, news_seen, reflections, gi ? "low" : "off", dust ? "enhanced" : "original", DIFFICULTY_KEYS[std::clamp(difficulty, 0, 4)], hd_liveries, trigger_rumble);
     out += buf;
@@ -499,9 +499,10 @@ std::vector<Frontend::Item> Frontend::items() const {
                  std::wstring(MODE_HINTS[mode]) + (pad_prompts ? L"" : L" (F11 or Alt+Enter: window / full screen)")},
                 {OPT_RESOLUTION, L"RESOLUTION", res, RES_HINTS[mode], mode != 1 && !resolutions.empty()},
                 {OPT_SCALE, L"RENDER SCALE", std::to_wstring(settings.render_scale) + L"%", scale_hint},
-                {OPT_VSYNC, L"VSYNC", on_off(settings.vsync),
-                 settings.vsync ? L"Pictures in step with the monitor's refreshes: no tearing"
-                                : L"Less latency; the picture may tear without G-SYNC or FreeSync"},
+                {OPT_VSYNC, L"VSYNC", settings.vsync == 2 ? L"ADAPTIVE" : settings.vsync ? L"ON" : L"OFF",
+                 settings.vsync == 2 ? L"In step with the refreshes while the game keeps up with them; when a picture is late it goes out at once (less stutter, it may tear then)"
+                 : settings.vsync    ? L"Pictures in step with the monitor's refreshes: no tearing"
+                                     : L"Less latency; the picture may tear without G-SYNC or FreeSync"},
                 {OPT_MAXFPS, L"MAX FPS",
                  settings.max_fps < 0    ? std::wstring(L"UNLIMITED")
                  : settings.max_fps == 0 ? L"MONITOR (" + std::to_wstring(refresh_hz) + L")"
@@ -725,7 +726,13 @@ void Frontend::activate(const Item& it, int dir) {
         push(Action::SettingsChanged);
         break;
     }
-    case OPT_VSYNC: settings.vsync = !settings.vsync; push(Action::SettingsChanged); break;
+    case OPT_VSYNC: {   // ON, ADAPTIVE, OFF
+        static const int ORDER[3] = {1, 2, 0};
+        int i = settings.vsync == 2 ? 1 : settings.vsync ? 0 : 2;
+        settings.vsync = ORDER[(i + dir + 3) % 3];
+        push(Action::SettingsChanged);
+        break;
+    }
     case OPT_BGFPS: settings.background_fps = !settings.background_fps; push(Action::SettingsChanged); break;
     case OPT_MAXFPS: {
         if (!settings.smooth) break;

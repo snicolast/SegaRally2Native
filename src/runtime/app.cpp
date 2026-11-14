@@ -1001,7 +1001,7 @@ int main(int argc, char** argv) {
             // BACKGROUND FPS: 30 without the focus. Sleeps to the millisecond, then waits the rest
             static double due = 0;
             double period = std::clamp(display_clock.period, 1.0 / 500, 1.0 / 20);
-            bool vsync = frontend.settings.vsync || !g_opt.menu;
+            bool vsync = frontend.settings.vsync != 0 || !g_opt.menu;   // (ADAPTIVE too)
             double step = period;   // MONITOR, and MOTION ORIGINAL
             if (g_opt.interp && g_max_fps > 0)
                 step = vsync ? period * std::max(1.0, std::round(1.0 / g_max_fps / period)) : std::max(1.0 / g_max_fps, 1.0 / 1000);

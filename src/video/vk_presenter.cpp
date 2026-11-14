@@ -466,6 +466,25 @@ bool VkPresenter::create_swapchain() {
     ci.preTransform = caps.currentTransform;
     ci.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
     ci.presentMode = VK_PRESENT_MODE_FIFO_KHR;   // vsync at the monitor's refresh rate
+    static int logged_mode = -1;
+    struct LogMode {   // (once per change: which present mode the swapchain got)
+        const VkSwapchainCreateInfoKHR& ci;
+        ~LogMode() {
+            if (int(ci.presentMode) != logged_mode) {
+                logged_mode = int(ci.presentMode);
+                printf("[video] present mode %d (0 immediate, 1 mailbox, 2 fifo, 3 fifo relaxed)\n", logged_mode);
+            }
+        }
+    } log_mode{ci};
+    if (vsync_ == 2 && !getenv("LW_NO_VSYNC")) {   // VSYNC ADAPTIVE
+        uint32_t pn = 0;
+        vkGetPhysicalDeviceSurfacePresentModesKHR(gpu_, surface_, &pn, nullptr);
+        std::vector<VkPresentModeKHR> pm(pn);
+        vkGetPhysicalDeviceSurfacePresentModesKHR(gpu_, surface_, &pn, pm.data());
+        for (VkPresentModeKHR m : pm)
+            if (m == VK_PRESENT_MODE_FIFO_RELAXED_KHR) ci.presentMode = m;
+        if (ci.presentMode != VK_PRESENT_MODE_FIFO_RELAXED_KHR) printf("[video] VSYNC ADAPTIVE: not offered by the driver, VSYNC ON instead\n");
+    }
     if (!vsync_ || getenv("LW_NO_VSYNC")) {   // VSYNC OFF (LW_NO_VSYNC=1: as when the driver forces it off)
         uint32_t pn = 0;
         vkGetPhysicalDeviceSurfacePresentModesKHR(gpu_, surface_, &pn, nullptr);

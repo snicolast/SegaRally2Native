@@ -48,8 +48,9 @@ public:
     int mode() const { return mode_; }
     // VSYNC: on, FIFO (no tearing); off, MAILBOX if the driver has it, else
     // IMMEDIATE (less latency, may tear without G-SYNC / FreeSync)
-    void set_vsync(bool on) {
-        if (on != vsync_) vsync_ = on, resized_ = true;   // the swapchain made again
+    // ADAPTIVE: FIFO_RELAXED (a late picture goes out at once), FIFO without it
+    void set_vsync(int mode) {   // 1 on, 2 adaptive, 0 off
+        if (mode != vsync_) vsync_ = mode, resized_ = true;   // the swapchain made again
     }
     // The monitor's whole area (the desktop's resolution) and the window's inside
     RECT monitor_rect() const;
@@ -119,7 +120,7 @@ private:
     bool quit_ = false, resized_ = false, fullscreen_ = false, show_cursor_ = false;
     int mode_ = 0, full_mode_ = 1, full_w_ = 0, full_h_ = 0;   // the mode on; the last full-screen one (F11)
     bool changed_display_ = false;   // the monitor is in another mode (exclusive full screen)
-    bool vsync_ = true;
+    int vsync_ = 1;
     void restore_display();
     WINDOWPLACEMENT placement_{sizeof(WINDOWPLACEMENT)};
 
