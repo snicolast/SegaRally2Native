@@ -90,6 +90,10 @@ public:
     bool splash() const { return screen_ == Screen::Splash; }
     // The menu is over the frozen game (pause and its settings)
     bool over_game() const { return screen_ == Screen::Pause || (screen_ == Screen::Options && options_from_pause_); }
+    bool pause_settings() const { return screen_ == Screen::Options && options_from_pause_; }
+    // The pause settings stand on the game blurred on the GPU (ui_overlay): a
+    // lighter shade then, as OPTIONS over the blurred backdrop. App sets it
+    bool pause_blur = false;
 
     // Window input; true when the menu used it
     bool key(int vk);

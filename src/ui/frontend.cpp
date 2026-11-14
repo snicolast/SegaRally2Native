@@ -580,7 +580,7 @@ namespace {
 // (after the splash, back from the game) a little slower, once the picture
 // is half in from black
 constexpr double SLIDE_OUT_GAP = 0.035, SLIDE_OUT = 0.25, SLIDE_IN_GAP = 0.06, SLIDE_IN = 0.4;
-constexpr double INTRO_GAP = 0.085, INTRO_IN = 0.55, INTRO_AFTER = 0.35;
+constexpr double INTRO_GAP = 0.085, INTRO_IN = 0.55, INTRO_AFTER = 0.35, PAUSE_AFTER = 0.05;
 }  // namespace
 
 void Frontend::open(Screen s) {
@@ -603,6 +603,13 @@ void Frontend::open(Screen s) {
     if (s == Screen::Main && was != Screen::Options && was != Screen::Records && was != Screen::Debug &&
         was != Screen::Play) {
         slide_from_ = menu_clock() + INTRO_AFTER;
+        slide_out_ = false;
+        slide_intro_ = true;
+    }
+    // The pause coming up over the game (its look as the main menu's when the
+    // game can be blurred under it): its entries in from the right too
+    if (s == Screen::Pause && was != Screen::Options && pause_blur) {
+        slide_from_ = menu_clock() + PAUSE_AFTER;
         slide_out_ = false;
         slide_intro_ = true;
     }
@@ -634,7 +641,12 @@ void Frontend::activate(const Item& it, int dir) {
         break;
     case BACK: back(); break;
     case RESUME: push(Action::Resume); break;
-    case SETTINGS: options_from_pause_ = true; tab_ = 0; open(Screen::Options); selected_ = 1; break;
+    case SETTINGS:
+        options_from_pause_ = true;
+        tab_ = 0;
+        if (pause_blur) slide_to(Screen::Options, 1);   // the pause's entries out to the right, then the page
+        else open(Screen::Options), selected_ = 1;
+        break;
     case OPT_DISPLAY: push(Action::ToggleFullscreen); break;
     case OPT_QUALITY: {
         int q = settings.quality();
@@ -732,6 +744,10 @@ void Frontend::back() {
     case Screen::Options:
         open(options_from_pause_ ? Screen::Pause : Screen::Main);
         selected_ = options_from_pause_ ? 1 : index_of(OPTIONS);   // where the options were opened from
+        if (options_from_pause_ && pause_blur) {   // the pause's entries in from the right again
+            slide_from_ = menu_clock();
+            slide_out_ = slide_intro_ = false;
+        }
         break;
     case Screen::Records: open(Screen::Main); selected_ = index_of(RECORDS); break;
     case Screen::Debug: open(Screen::Main); selected_ = index_of(DEBUG); break;
@@ -1746,6 +1762,10 @@ void Frontend::draw_side_menu(const std::vector<Item>& list) {
     int margin = U(110), col_w = U(720);
     int tx = w - margin, band0 = w - margin - col_w, band1 = w;
     int y0 = int((LOGO_TOP + LOGO_H) * h_) + U(36);
+    if (screen_ == Screen::Pause) {   // what this is, over the entries
+        text(TITLE, U(64), L"PAUSED", tx, y0 - U(6), 2, {GOLD_TOP, GOLD_BOTTOM, EDGE, U(3), 1, U(4)});
+        y0 += U(84);
+    }
     const wchar_t* sub = screen_ == Screen::Debug ? L"DEBUG:  PRACTICE RACE" : nullptr;
     if (sub) {
         text(MONO, U(24), sub, tx, y0, 2, Style{0xFF8A7A, 0xD8402E});
@@ -1776,7 +1796,7 @@ void Frontend::draw_side_menu(const std::vector<Item>& list) {
     int spacing = std::clamp((h - U(310) - y0) / std::max(1, n), U(44), U(76));   // room for the description under the chosen one
     int item_px = std::min(U(58), spacing * 72 / 100);
     int y = y0;
-    const bool on_main = screen_ == Screen::Main || screen_ == Screen::Play;
+    const bool on_main = screen_ == Screen::Main || screen_ == Screen::Play || screen_ == Screen::Pause;
     auto row_sp = [&](int i) {   // the main menu: PLAY big, the others smaller under it
         return on_main && list[i].id == PLAY ? U(104) : on_main ? U(62) : spacing;
     };
@@ -1998,7 +2018,8 @@ void Frontend::draw_options_page(const std::vector<Item>& list, bool over_game) 
     const int w = w_, h = h_, n = int(list.size());
     const int n_opts = n - 2;   // list: the sections, the options of the open one, BACK
     // The page darkens what is behind it: the blurred backdrop, or the paused game
-    fill(0, 0, w, h, over_game ? 0x000000 : PANEL, over_game ? 0.9f : 0.6f);   // (the game's HUD must not show through)
+    // (the game's HUD must not show through: blurred under the pause settings, else nearly black)
+    fill(0, 0, w, h, over_game && !pause_blur ? 0x000000 : PANEL, over_game && !pause_blur ? 0.9f : 0.6f);
 
     // Columns: as wide as the window allows, up to 1728 units (1080p: a 96 pixel margin)
     const int mx = std::max(U(56), (w - U(1728)) / 2);
@@ -2223,7 +2244,7 @@ bool Frontend::draw(int w, int h, std::vector<uint32_t>& out) {
             open(slide_to_);
             selected_ = slide_sel_;
             slide_out_ = false;
-            slide_from_ = menu_clock();
+            slide_from_ = screen_ == Screen::Options ? -1 : menu_clock();   // (the settings page: no entries to slide)
         } else if (!slide_out_ && t >= (slide_intro_ ? INTRO_GAP : SLIDE_IN_GAP) * std::max(0, n - 1) +
                                              (slide_intro_ ? INTRO_IN : SLIDE_IN)) {
             slide_from_ = -1;
@@ -2293,7 +2314,9 @@ bool Frontend::draw(int w, int h, std::vector<uint32_t>& out) {
     }
     bool on_records = screen_ == Screen::Records;
     bool options = screen_ == Screen::Options || on_records;   // records use the settings' card and tab row
-    if (!over_game && !options) {   // Main, Debug, More: on the backdrop
+    const bool pause_side = screen_ == Screen::Pause && pause_blur;   // the pause as the main menu, over the blurred game
+    if ((!over_game || pause_side) && !options) {   // Main, Play, Debug on the backdrop; the pause over the game
+        if (pause_side) shade_backdrop();   // the main menu's shade and logo, over the blurred game
         draw_side_menu(list);
         if (news_open_ && screen_ == Screen::Main) draw_news();
         dirty_ = slide_from_ >= 0 || gliding_;   // moving: drawn again every refresh

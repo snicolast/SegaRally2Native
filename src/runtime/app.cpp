@@ -602,6 +602,7 @@ int main(int argc, char** argv) {
     if (g_opt.menu) {
         if (!frontend.init("third_party/fonts")) printf("[menu] fonts missing: using the Windows ones\n");
         if (!ui.init(presenter)) g_opt.menu = false;
+        frontend.pause_blur = g_opt.menu && ui.can_freeze() && !getenv("SR2_PAUSE_DARK");   // SR2_PAUSE_DARK=1: the old nearly black shade
         // The backdrop moves under the menus (on the GPU); SR2_MENU_STILL=1: the still picture
         if (g_opt.menu && !getenv("SR2_MENU_STILL")) {
             for (int slot = 0; slot < UiOverlay::BACKDROPS; slot++) {
@@ -1182,7 +1183,13 @@ int main(int argc, char** argv) {
                 for (const char* k = film_keys; k && *k;) {
                     int at = 0, vk = 0, len = 0;
                     if (sscanf(k, "%d:%d%n", &at, &vk, &len) < 2) break;
-                    if (at == film_index) frontend.key(vk);
+                    if (at == film_index) {
+                        if (frontend.active()) frontend.key(vk);
+                        else if (vk == VK_ESCAPE) {   // the pause, as a player's Esc
+                            frontend.open(Frontend::Screen::Pause);
+                            g_menu_open = g_hold = true;
+                        }
+                    }
                     k += len;
                     if (*k == ',') k++;
                 }
@@ -1266,6 +1273,7 @@ int main(int argc, char** argv) {
                 }
             }
             ui.set_motion(frontend.active() ? frontend.motion_backdrop() : -1);
+            ui.set_freeze(frontend.active() && frontend.over_game() && frontend.pause_blur);
         }
         double input_from = qpc_seconds();
         parts.menu = input_from - loop_from;
