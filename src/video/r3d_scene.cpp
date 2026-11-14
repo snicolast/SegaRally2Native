@@ -848,8 +848,13 @@ void R3DSceneBuilder::link_previous(R3DScene& out) {
             }
             for (uint32_t i = wv->opaque_first; i < wv->opaque_first + wv->opaque_count && i < out.vertices.size(); i++) {
                 const R3DVertex& x = out.vertices[i];
-                if ((x.flags & glow_mask) == glow || (x.flags & (R3D_ACTOR | R3D_CAR))) continue;
-                if (x.prev[0] == x.pos[0] && x.prev[1] == x.pos[1] && x.prev[2] == x.pos[2]) continue;   // (not followed)
+                if ((x.flags & glow_mask) == glow) continue;
+                // (the other cars, by their shiny paint and glass, are kept to
+                // tell their exhaust flames; the people and the rest that turn
+                // their own way are not scenery)
+                bool car = (x.flags & R3D_CAR) || (x.flags & (R3D_ACTOR | R3D_SPECULAR)) == (R3D_ACTOR | R3D_SPECULAR);
+                if (!car && (x.flags & R3D_ACTOR)) continue;
+                if (!car && x.prev[0] == x.pos[0] && x.prev[1] == x.pos[1] && x.prev[2] == x.pos[2]) continue;   // (not followed)
                 uint64_t key = cell_key(x.pos);
                 if (near_cells.count(key)) grid[key].push_back(i);
             }
@@ -875,6 +880,8 @@ void R3DSceneBuilder::link_previous(R3DScene& out) {
                             }
                         }
             }
+            // On a car (its exhaust's flames): left as paired, it moves with the car
+            if (near && ((near->flags & R3D_CAR) || (near->flags & (R3D_ACTOR | R3D_SPECULAR)) == (R3D_ACTOR | R3D_SPECULAR))) continue;
             if (near)
                 for (int k = 0; k < 3; k++) move[k] = near->pos[k] - near->prev[k];
             for (uint32_t i = t; i < t + 3; i++) {
@@ -893,7 +900,10 @@ void R3DSceneBuilder::link_previous(R3DScene& out) {
                 }
                 float e[3] = {v.prev[0] - still[0], v.prev[1] - still[1], v.prev[2] - still[2]};
                 bool linked = v.prev[0] != v.pos[0] || v.prev[1] != v.pos[1] || v.prev[2] != v.pos[2];
-                if (linked && dot3(e, e) <= 3.0f * 3.0f) continue;
+                // (by the scenery beside it always: a halo handed to another
+                // lamp head a metre or two away slid there too; by the camera
+                // alone, only when paired far off)
+                if (!near && linked && dot3(e, e) <= 3.0f * 3.0f) continue;
                 if (!linked && (still[0] != v.pos[0] || still[1] != v.pos[1] || still[2] != v.pos[2])) out.moving++;
                 memcpy(v.prev, still, sizeof(v.prev));
             }
