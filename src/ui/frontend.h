@@ -82,7 +82,7 @@ class Frontend {
 public:
     enum class Screen { None, Splash, Main, Options, Pause, Records, Debug, Play };
     enum class Action { None, StartArcade, Resume, Quit, ToggleFullscreen, SettingsChanged,
-                        QuitToMenu, StartDebug, DisplayChanged };   // DisplayChanged: MODE / RESOLUTION to the window
+                        QuitToMenu, StartDebug, DisplayChanged, Restart };   // Restart: RESTART NOW   // DisplayChanged: MODE / RESOLUTION to the window
 
     bool init(const std::string& font_dir);
     void shutdown();
@@ -257,6 +257,14 @@ private:
     void glide(Glide& g, long key, int y, int h, int& gy, int& gh);
     // KEEP THESE SETTINGS?: after MODE FULLSCREEN or a new RESOLUTION, back
     // to the previous ones by itself after 10 s unless KEEP is chosen
+    // RESTART NOW?: leaving the settings with a change that only applies on a
+    // new start (RENDER SCALE, ANTI-ALIASING). LATER goes on as BACK would
+    bool restart_open_ = false;
+    int restart_button_ = 0;   // 0 RESTART NOW, 1 LATER
+    RECT restart_buttons_[2]{};
+    std::wstring restart_list() const;   // what waits for a restart, "" nothing
+    void restart_choose(int button);
+    void draw_restart();
     bool keep_open_ = false;
     double keep_from_ = 0;
     int keep_button_ = 0;   // 0 KEEP, 1 REVERT

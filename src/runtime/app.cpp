@@ -58,6 +58,7 @@
 
 Options g_opt;   // command line and menu settings (options.h)
 int g_max_fps = 0;             // MAX FPS: 0 the monitor's refresh rate, -1 unlimited
+bool g_restart = false;        // RESTART NOW: the game starts again once this one has closed
 double g_window_resized_at = -1;   // when the window's inside last changed size (the pointer's hover waits)
 bool g_background_fps = true;   // BACKGROUND FPS: 30 a second at most without the focus
 
@@ -644,7 +645,7 @@ int main(int argc, char** argv) {
         presenter.set_vsync(s.vsync);
         if (s.display_mode != 0 || (s.res_w > 0 && s.res_h > 0)) presenter.set_mode(s.display_mode, s.res_w, s.res_h);
         // the logo first (not when a debugging aid drives the menu)
-        if (getenv("LW_MENU_KEYS") || getenv("LW_MENU_SHOT")) frontend.open(Frontend::Screen::Main);
+        if (getenv("LW_MENU_KEYS") || getenv("LW_MENU_SHOT") || getenv("SR2_RESTARTED")) frontend.open(Frontend::Screen::Main);
         else {
             frontend.open_splash();
             frontend.check_for_news();   // news.txt on GitHub while the logo plays
@@ -1182,6 +1183,11 @@ int main(int argc, char** argv) {
                     frontend.open(Frontend::Screen::Main);
                     break;
                 case Frontend::Action::Quit: presenter.close(); break;
+                case Frontend::Action::Restart:   // RESTART NOW: saved, closed as on QUIT, started again (end of main)
+                    save_settings(s);
+                    g_restart = true;
+                    presenter.close();
+                    break;
                 case Frontend::Action::ToggleFullscreen: presenter.toggle_fullscreen(); break;
                 case Frontend::Action::DisplayChanged:   // MODE, RESOLUTION (or KEEP THESE SETTINGS? going back)
                     presenter.set_mode(s.display_mode, s.res_w, s.res_h);
@@ -1820,6 +1826,33 @@ int main(int argc, char** argv) {
     renderer.shutdown();
     presenter.shutdown();
     g_pads.shutdown();
+    if (g_restart) {   // RESTART NOW: the same exe, command line, folder and environment, straight to the main menu
+        SetEnvironmentVariableA("SR2_RESTARTED", "1");
+        for (const char* aid : {"LW_MENU_KEYS", "LW_MENU_SHOT", "LW_MENU_FILM", "LW_MENU_FILM_KEYS", "LW_MENU_FILM_NOW"})
+            SetEnvironmentVariableA(aid, nullptr);   // (debugging aids that drive one run only)
+        wchar_t exe[MAX_PATH];
+        GetModuleFileNameW(nullptr, exe, MAX_PATH);
+        std::wstring cmd = GetCommandLineW();
+        STARTUPINFOW si{sizeof(si)};
+        HANDLE out = GetStdHandle(STD_OUTPUT_HANDLE), err = GetStdHandle(STD_ERROR_HANDLE);
+        bool files = out && out != INVALID_HANDLE_VALUE && GetFileType(out) == FILE_TYPE_DISK;   // (a test's redirected log goes on)
+        if (files) {
+            si.dwFlags = STARTF_USESTDHANDLES;
+            si.hStdOutput = out, si.hStdError = err, si.hStdInput = GetStdHandle(STD_INPUT_HANDLE);
+            SetHandleInformation(out, HANDLE_FLAG_INHERIT, HANDLE_FLAG_INHERIT);
+            SetHandleInformation(err, HANDLE_FLAG_INHERIT, HANDLE_FLAG_INHERIT);
+        }
+        PROCESS_INFORMATION pi{};
+        printf("[menu] restarting\n");
+        fflush(stdout);
+        if (CreateProcessW(exe, cmd.data(), nullptr, nullptr, files, 0, nullptr, nullptr, &si, &pi)) {
+            CloseHandle(pi.hThread);
+            CloseHandle(pi.hProcess);
+        } else {
+            printf("[menu] could not start the game again (%lu)\n", GetLastError());
+        }
+        ExitProcess(0);
+    }
     console_prompt();
     ExitProcess(0);
 }

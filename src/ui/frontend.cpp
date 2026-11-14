@@ -498,7 +498,8 @@ std::vector<Frontend::Item> Frontend::items() const {
                            L", the same shape, to fit on the desktop.  Enter: the list";
         static const wchar_t* const RATES[3] = {L"MONITOR", L"HALF", L"60"};
         std::wstring scale_hint = L"The 3D drawn at this share of the picture's size: above 100% sharper and slower, below faster and softer";
-        if (settings.render_scale != scale_at_launch) scale_hint += L".  Takes effect the next time the game starts";
+        scale_hint += settings.render_scale != scale_at_launch ? L".  Applies after a restart (offered when you leave the settings)"
+                                                               : L".  Applies after a restart";
         std::vector<Item> all = {{OPT_DISPLAY, L"MODE", MODES[mode],
                  std::wstring(MODE_HINTS[mode]) + (pad_prompts ? L"" : L" (F11 or Alt+Enter: window / full screen)")},
                 {OPT_RESOLUTION, L"RESOLUTION", res, res_hints[mode], mode != 1 && !resolutions.empty()},
@@ -837,6 +838,13 @@ int Frontend::index_of(Id id) const {
 void Frontend::back() {
     switch (screen_) {
     case Screen::Options:
+        if (!restart_open_ && !restart_list().empty()) {   // RESTART NOW? first (LATER: back as here)
+            restart_open_ = true;
+            restart_button_ = 0;
+            dirty_ = true;
+            return;
+        }
+        restart_open_ = false;
         open(options_from_pause_ ? Screen::Pause : Screen::Main);
         selected_ = options_from_pause_ ? 1 : index_of(OPTIONS);   // where the options were opened from
         if (options_from_pause_ && pause_blur) {   // the pause's entries in from the right again
@@ -864,6 +872,14 @@ bool Frontend::key(int vk) {
     if (news_open_ && screen_ == Screen::Main) return news_key(vk);
     if (keep_open_) return keep_key(vk);
     if (drop_open_) return drop_key(vk);
+    if (restart_open_) {
+        switch (vk) {
+        case VK_LEFT: case 'A': case VK_RIGHT: case 'D': case VK_TAB: restart_button_ ^= 1; dirty_ = true; break;
+        case VK_RETURN: case VK_SPACE: restart_choose(restart_button_); break;
+        case VK_ESCAPE: case VK_BACK: restart_choose(1); break;   // LATER
+        }
+        return true;
+    }
     if (screen_ == Screen::Options && (vk == VK_RETURN || vk == VK_SPACE)) {   // RESOLUTION: Enter opens its list
         auto l = items();
         if (selected_ > 0 && selected_ < int(l.size()) && l[selected_].id == OPT_RESOLUTION && l[selected_].enabled) {
@@ -1120,6 +1136,11 @@ void Frontend::click(int x, int y) {
     if (keep_open_) {
         for (int b = 0; b < 2; b++)
             if (PtInRect(&keep_buttons_[b], p)) keep_choose(b);
+        return;
+    }
+    if (restart_open_) {
+        for (int b = 0; b < 2; b++)
+            if (PtInRect(&restart_buttons_[b], p)) restart_choose(b);
         return;
     }
     if (drop_open_) {   // a resolution, or away from the list: closed
@@ -1388,6 +1409,60 @@ void Frontend::draw_keep() {
         text(TITLE, U(40), names[b], x + bw / 2, by + bh / 2 - U(40) * 75 / 100, 1,
              sel ? Style{GOLD_TOP, GOLD_BOTTOM, 0, 0, 1, U(2)} : Style{PAGE_TEXT, PAGE_TEXT, 0, 0, 1, U(2)});
         keep_buttons_[b] = {x, by, x + bw, by + bh};
+    }
+}
+
+// ---- RESTART NOW? ----
+
+std::wstring Frontend::restart_list() const {
+    static const wchar_t* const AA_NAMES[4] = {L"MSAA 4X", L"DLAA", L"OFF", L"DLSS QUALITY"};
+    std::wstring list;
+    if (settings.render_scale != scale_at_launch) list = L"RENDER SCALE " + std::to_wstring(settings.render_scale) + L"%";
+    if (settings.aa != aa_at_launch)
+        list += (list.empty() ? L"" : L" and ") + std::wstring(L"ANTI-ALIASING ") + AA_NAMES[std::clamp(settings.aa, 0, 3)];
+    return list;
+}
+
+void Frontend::restart_choose(int button) {
+    dirty_ = true;
+    if (button == 0) {   // RESTART NOW: app.cpp saves, closes and starts the game again
+        restart_open_ = false;
+        push(Action::Restart);
+        return;
+    }
+    back();   // LATER: on, as BACK (the prompt is not asked again)
+}
+
+void Frontend::draw_restart() {
+    auto U = [&](float v) { return int(v * u_ + 0.5f); };
+    constexpr uint32_t PAGE_TEXT = 0xEEF3FA, PAGE_LINE = 0x3A4458;   // (as the settings page's, below)
+    const int w = w_, h = h_;
+    fill(0, 0, w, h, 0x000000, 0.55f);
+    int pw = std::min(U(900), w - U(80)), ph = U(over_game() ? 360 : 320);
+    int x0 = (w - pw) / 2, y0 = (h - ph) / 2, x1 = x0 + pw, y1 = y0 + ph, cx = w / 2;
+    fill(x0, y0, x1, y1, PANEL, 1);
+    frame(x0, y0, x1, y1, std::max(1, U(1)), PAGE_LINE, 1);
+    fill(x0, y0, x1, y0 + std::max(2, U(4)), SABER, 1);
+    text(TITLE, U(52), L"RESTART THE GAME?", cx, y0 + U(30), 1, {0xFFFFFF, 0xE2EAF4, 0, 0, 1, U(3)});
+    int y = y0 + U(104);
+    for (const std::wstring& line : wrap(BODY, U(26), restart_list() + (restart_list().find(L" and ") != std::wstring::npos ? L" need a restart" : L" needs a restart"), pw - U(80))) {
+        text(BODY, U(26), line, cx, y, 1, {GOLD_TOP, GOLD_BOTTOM});
+        y += U(36);
+    }
+    if (over_game()) {
+        text(BODY, U(22), L"The race in progress will be lost.  LATER keeps it", cx, y + U(4), 1, {0xFF9A8E, 0xFF9A8E});
+        y += U(34);
+    }
+    const wchar_t* names[2] = {L"RESTART NOW", L"LATER"};
+    int bw = U(280), bh = U(64), gap = U(40), bx = cx - bw - gap / 2, by = y1 - U(36) - bh;
+    for (int b = 0; b < 2; b++) {
+        int x = bx + b * (bw + gap);
+        bool sel = b == restart_button_;
+        if (sel) ribbon(x, by, x + bw, by + bh, bh * 30 / 100, 0.85f, 0.6f, U(8), U(6), 1);
+        else frame(x, by, x + bw, by + bh, std::max(1, U(1)), PAGE_LINE, 1);
+        text(TITLE, U(38), names[b], x + bw / 2, by + bh / 2 - U(38) * 75 / 100, 1,
+             sel ? Style{GOLD_TOP, GOLD_BOTTOM, 0, 0, 1, U(2)} : Style{PAGE_TEXT, PAGE_TEXT, 0, 0, 1, U(2)});
+        restart_buttons_[b] = {x, by, x + bw, by + bh};
     }
 }
 
@@ -2416,6 +2491,12 @@ void Frontend::draw_options_page(const std::vector<Item>& list, bool over_game) 
         int ty = y + (row_h - text_h) / 2, cy = y + row_h / 2;
         uint32_t lc = it.enabled ? PAGE_TEXT : PAGE_FAINT;
         int lw = text(ROW, label_px, it.label, rows_x0, ty, 0, {lc, lc, 0, 0, 1, U(2)});
+        if ((it.id == OPT_SCALE && settings.render_scale != scale_at_launch) || (it.id == OPT_AA && settings.aa != aa_at_launch)) {
+            // changed, waiting for a restart
+            int tx = rows_x0 + lw + U(14), tw = measure(ROW, U(15), L"RESTART") + U(16);
+            fill(tx, cy - U(11), tx + tw, cy + U(11), 0x6A2A24, 1);
+            text(ROW, U(15), L"RESTART", tx + tw / 2, cy - U(10), 1, {0xFFD9D2, 0xFFD9D2});
+        }
         if (it.id == OPT_RT || it.id == OPT_REFLECT || it.id == OPT_GI) {   // needs a graphics card with ray tracing
             int tx = rows_x0 + lw + U(14), tw = measure(ROW, U(15), L"RT") + U(16);
             fill(tx, cy - U(11), tx + tw, cy + U(11), TAG, 1);
@@ -2578,6 +2659,7 @@ bool Frontend::draw(int w, int h, std::vector<uint32_t>& out) {
         draw_options_page(list, over_game);
         dirty_ = gliding_;
         if (drop_open_) draw_drop();
+        if (restart_open_) draw_restart();
         if (keep_open_) {   // KEEP THESE SETTINGS? over it, counting down
             if (now_seconds() - keep_from_ >= 10) keep_choose(1);
             else draw_keep(), dirty_ = true;
