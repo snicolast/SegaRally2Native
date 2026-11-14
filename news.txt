@@ -13,6 +13,11 @@
 #   # ...          a comment, never shown
 # Newest entry at the top. Keep each one short: about ten lines fit.
 
+[18] 14 November 2026
+- Snowy now throws white snow spray instead of dark gravel.
+- Your own car no longer throws dark clumps right in front of the camera, and its dust shows a bit more.
+- Streetlight glows in Riviera no longer flicker with motion smoothing on.
+
 [17] 14 November 2026
 - G29 and other wheels: pedals no longer read as pressed at rest, the wheel works in the menus, and force feedback should follow the road in the right direction.
 - Wheels with more than 64 buttons are now read in full, so H-shifters on some Moza and Fanatec bases can be set in save/wheel.ini.
