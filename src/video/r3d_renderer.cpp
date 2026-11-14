@@ -10,6 +10,7 @@
 #include "ao.frag.h"
 #include "ao_rt.frag.h"
 #include "ao_apply.frag.h"
+#include "alpha_taa.frag.h"
 #include "bloom.frag.h"
 #include "compose.frag.h"
 #include "compose.vert.h"
@@ -168,12 +169,13 @@ void R3DRenderer::transition(VkCommandBuffer cmd, Image& img, VkImageLayout to, 
 // Study (issue #14): how the alpha of the DLAA image is made. SR2_DLAA_ALPHA=
 // dlss (default): a second DLAA over the alpha; flag: DLSS's own alpha
 // upscaling in the colour pass (NVSDK_NGX_DLSS_Feature_Flags_AlphaUpscaling,
-// dlss.cpp); off: the jittered alpha as it is (no anti-aliasing)
+// dlss.cpp); off: the jittered alpha as it is (no anti-aliasing); taa: the
+// alpha smoothed over time by alpha_taa.frag
 static int dlaa_alpha_mode() {
     static const int mode = [] {
         const char* e = getenv("SR2_DLAA_ALPHA");
         if (!e) return 0;
-        return strcmp(e, "flag") == 0 ? 1 : strcmp(e, "off") == 0 ? 2 : 0;
+        return strcmp(e, "flag") == 0 ? 1 : strcmp(e, "off") == 0 ? 2 : strcmp(e, "taa") == 0 ? 3 : 0;
     }();
     return mode;
 }
@@ -345,15 +347,18 @@ bool R3DRenderer::init(VkPresenter& vk, float supersample, int msaa, int aniso, 
     // Ambient occlusion: world depth and the raw occlusion
     li.bindingCount = 2;
     vkCreateDescriptorSetLayout(dev_, &li, nullptr, &ao_set_layout_);
+    // Alpha over time (study): current alpha, motion, history
+    li.bindingCount = 3;
+    vkCreateDescriptorSetLayout(dev_, &li, nullptr, &taa_set_layout_);
 
     VkDescriptorPoolSize ps[4] = {
-        {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 36 + texture_slots_ + Pack2D::MAX_SLOTS},
+        {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 39 + texture_slots_ + Pack2D::MAX_SLOTS},
         {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 2},
         {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1},
         {VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR, 1},
     };
     VkDescriptorPoolCreateInfo pi{VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO};
-    pi.maxSets = 10;
+    pi.maxSets = 11;
     if (uab) pi.flags = VK_DESCRIPTOR_POOL_CREATE_UPDATE_AFTER_BIND_BIT;
     pi.poolSizeCount = rt_.ready() ? 4 : 2;
     pi.pPoolSizes = ps;
@@ -370,6 +375,8 @@ bool R3DRenderer::init(VkPresenter& vk, float supersample, int msaa, int aniso, 
     for (VkDescriptorSet& s : diff_sets_) vkAllocateDescriptorSets(dev_, &ai, &s);
     ai.pSetLayouts = &ao_set_layout_;
     vkAllocateDescriptorSets(dev_, &ai, &ao_set_);
+    ai.pSetLayouts = &taa_set_layout_;
+    vkAllocateDescriptorSets(dev_, &ai, &taa_set_);
 
     VkDescriptorImageInfo tex{nearest_, texture_ram_.view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
     VkWriteDescriptorSet w{VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET};
@@ -443,6 +450,8 @@ bool R3DRenderer::init(VkPresenter& vk, float supersample, int msaa, int aniso, 
     pli.pSetLayouts = &bloom_set_layout_;
     pli.pPushConstantRanges = &bpr;
     vkCreatePipelineLayout(dev_, &pli, nullptr, &bloom_layout_);
+    pli.pSetLayouts = &taa_set_layout_;
+    vkCreatePipelineLayout(dev_, &pli, nullptr, &taa_layout_);
     VkPushConstantRange apr{VK_SHADER_STAGE_FRAGMENT_BIT, 0, 96};
     // Traced, the ambient occlusion also sees the 3D pass's set (the world's rays)
     VkDescriptorSetLayout ao_sets[2] = {ao_set_layout_, r3d_set_layout_};
@@ -592,6 +601,7 @@ bool R3DRenderer::create_pipelines() {
     VkShaderModule ao_fs = rt_.ready() ? make_module(dev_, spv_ao_rt_frag, sizeof(spv_ao_rt_frag))
                                        : make_module(dev_, spv_ao_frag, sizeof(spv_ao_frag));
     VkShaderModule aoa_fs = make_module(dev_, spv_ao_apply_frag, sizeof(spv_ao_apply_frag));
+    VkShaderModule taa_fs = make_module(dev_, spv_alpha_taa_frag, sizeof(spv_alpha_taa_frag));
     bool motion = motion_pass_ = dlaa_.ready();
     // The world: 3D geometry into the HDR image, with the motion and glow slots
     PipelineDesc world{.vs = r3d_vs, .fs = r3d_fs, .layout = r3d_layout_, .color = VK_FORMAT_R16G16B16A16_SFLOAT,
@@ -637,7 +647,8 @@ bool R3DRenderer::create_pipelines() {
                                .samples = samples_, .multiply = true});
     ao_apply_glow_ = make_pipeline({.vs = c_vs, .fs = aoa_fs, .layout = ao_layout_, .color = VK_FORMAT_R8G8B8A8_UNORM,
                                     .samples = samples_, .multiply = true});
-    for (auto m : {r3d_vs, r3d_fs, c_vs, c_fs, b_fs, ao_fs, aoa_fs}) vkDestroyShaderModule(dev_, m, nullptr);
+    alpha_taa_ = make_pipeline({.vs = c_vs, .fs = taa_fs, .layout = taa_layout_, .color = VK_FORMAT_R8_UNORM});
+    for (auto m : {r3d_vs, r3d_fs, c_vs, c_fs, b_fs, ao_fs, aoa_fs, taa_fs}) vkDestroyShaderModule(dev_, m, nullptr);
     return opaque_ && translucent_ && blob_ && trans_depth_ && shadow_ && compose_measure_ && compose_ && bloom_ && ao_pass_ && ao_apply_ && ao_apply_glow_;
 }
 
@@ -652,6 +663,8 @@ void R3DRenderer::ensure_targets(uint32_t w, uint32_t h, uint32_t up_w, uint32_t
     destroy_image(motion_);
     destroy_image(dlaa_out_);
     destroy_image(dlaa_alpha_);
+    destroy_image(taa_out_);
+    destroy_image(taa_history_);
     for (Image* img : {&glow_, &glow_ms_, &bloom_a_, &bloom_b_, &bloom_c_, &depth_resolved_, &ao_, &diff_a_, &diff_b_})
         destroy_image(*img);
     create_image(color_, w, h, VK_FORMAT_R16G16B16A16_SFLOAT,
@@ -725,6 +738,25 @@ void R3DRenderer::ensure_targets(uint32_t w, uint32_t h, uint32_t up_w, uint32_t
                      VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, VK_IMAGE_ASPECT_COLOR_BIT);
         avi.image = dlaa_out_.image;   // its alpha as grey (SR2_DLAA_ALPHA=flag)
         vkCreateImageView(dev_, &avi, nullptr, &dlaa_out_.alpha_view);
+        create_image(taa_out_, up_w, up_h, VK_FORMAT_R8_UNORM,
+                     VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT,
+                     VK_IMAGE_ASPECT_COLOR_BIT);
+        create_image(taa_history_, up_w, up_h, VK_FORMAT_R8_UNORM,
+                     VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT, VK_IMAGE_ASPECT_COLOR_BIT);
+        taa_valid_ = false;
+        VkDescriptorImageInfo ti[3] = {{linear_, color_.alpha_view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL},
+                                       {nearest_, motion_.view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL},
+                                       {linear_, taa_history_.view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL}};
+        VkWriteDescriptorSet tw[3];
+        for (uint32_t i = 0; i < 3; i++) {
+            tw[i] = {VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET};
+            tw[i].dstSet = taa_set_;
+            tw[i].dstBinding = i;
+            tw[i].descriptorCount = 1;
+            tw[i].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+            tw[i].pImageInfo = &ti[i];
+        }
+        vkUpdateDescriptorSets(dev_, 3, tw, 0, nullptr);
     }
     // Bloom: glow written by the 3D pass, then reduced to a quarter and blurred
     const VkImageUsageFlags target = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
@@ -776,6 +808,7 @@ void R3DRenderer::ensure_targets(uint32_t w, uint32_t h, uint32_t up_w, uint32_t
     if (dlaa_.ready())
         bind_scene_image(dlaa_out_.view, dlaa_alpha_mode() == 1   ? dlaa_out_.alpha_view
                                          : dlaa_alpha_mode() == 2 ? color_.alpha_view
+                                         : dlaa_alpha_mode() == 3 ? taa_out_.view
                                                                   : dlaa_alpha_.view);
     else bind_scene_image(color_.view, color_.alpha_view);
     VkDescriptorImageInfo infos[3] = {
@@ -1765,6 +1798,48 @@ void R3DRenderer::record_world_depth(const Frame& f, const R3DViewport& w, bool 
     }
 }
 
+// Study (SR2_DLAA_ALPHA=taa): the alpha over time, alpha_taa.frag into
+// taa_out_ (which the composition reads), then kept in taa_history_
+void R3DRenderer::record_alpha_taa(const Frame& f) {
+    VkCommandBuffer cmd = f.cmd;
+    if (taa_history_.layout != VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL)
+        transition(cmd, taa_history_, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+    taa_out_.layout = VK_IMAGE_LAYOUT_UNDEFINED;   // fully rewritten
+    transition(cmd, taa_out_, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
+    VkRenderingAttachmentInfo ca{VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO};
+    ca.imageView = taa_out_.view;
+    ca.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+    ca.loadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+    ca.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+    VkRenderingInfo ri{VK_STRUCTURE_TYPE_RENDERING_INFO};
+    ri.renderArea = {{0, 0}, {taa_out_.w, taa_out_.h}};
+    ri.layerCount = 1;
+    ri.colorAttachmentCount = 1;
+    ri.pColorAttachments = &ca;
+    vkCmdBeginRendering(cmd, &ri);
+    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, alpha_taa_);
+    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, taa_layout_, 0, 1, &taa_set_, 0, nullptr);
+    VkViewport v{0, 0, float(taa_out_.w), float(taa_out_.h), 0, 1};
+    vkCmdSetViewport(cmd, 0, 1, &v);
+    VkRect2D sc{{0, 0}, {taa_out_.w, taa_out_.h}};
+    vkCmdSetScissor(cmd, 0, 1, &sc);
+    static const float weight = getenv("SR2_TAA_WEIGHT") ? float(atof(getenv("SR2_TAA_WEIGHT"))) : 0.1f;
+    float p[4] = {1.0f / float(f.out_w), 1.0f / float(f.out_h), taa_valid_ ? 0.0f : 1.0f, weight};
+    vkCmdPushConstants(cmd, taa_layout_, VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(p), p);
+    vkCmdDraw(cmd, 3, 1, 0, 0);
+    vkCmdEndRendering(cmd);
+    transition(cmd, taa_out_, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
+    transition(cmd, taa_history_, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
+    VkImageCopy c{};
+    c.srcSubresource = c.dstSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
+    c.extent = {taa_out_.w, taa_out_.h, 1};
+    vkCmdCopyImage(cmd, taa_out_.image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, taa_history_.image,
+                   VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &c);
+    transition(cmd, taa_history_, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+    transition(cmd, taa_out_, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+    taa_valid_ = true;
+}
+
 void R3DRenderer::record_dlaa(const Frame& f) {
     VkCommandBuffer cmd = f.cmd;
     const uint32_t out_w = f.out_w, out_h = f.out_h;
@@ -1783,7 +1858,8 @@ void R3DRenderer::record_dlaa(const Frame& f) {
         if (gpu_times_) gpu_time_mark(cmd, GPU_DLAA_COLOR);
         gpu_dlaa_marked_ = true;
         transition(cmd, dlaa_out_, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
-        if (dlaa_alpha_mode() != 0) {   // study: no second DLAA (alpha from the colour pass, or none)
+        if (dlaa_alpha_mode() == 3 && ok) record_alpha_taa(f);
+        if (dlaa_alpha_mode() != 0) {   // study: no second DLAA (alpha from the colour pass, over time, or none)
             if (!ok) bind_scene_image(color_.view, color_.alpha_view);
             return;
         }
@@ -2191,12 +2267,12 @@ void R3DRenderer::gpu_time_mark(VkCommandBuffer cmd, uint32_t index) {
 void R3DRenderer::shutdown() {
     if (!dev_) return;
     vkDeviceWaitIdle(dev_);
-    for (auto p : {opaque_, translucent_, blob_, trans_depth_, shadow_, compose_measure_, compose_, bloom_, compose_glow_, ao_pass_, ao_apply_, ao_apply_glow_})
+    for (auto p : {opaque_, translucent_, blob_, trans_depth_, shadow_, compose_measure_, compose_, bloom_, compose_glow_, ao_pass_, ao_apply_, ao_apply_glow_, alpha_taa_})
         if (p) vkDestroyPipeline(dev_, p, nullptr);
     dlaa_.shutdown();
     rt_.shutdown();
     if (gpu_times_) vkDestroyQueryPool(dev_, gpu_times_, nullptr);
-    for (Image* img : {&texture_ram_, &back_, &front_, &text_cells_, &sky_coords_, &color_, &color_ms_, &depth_, &motion_, &dlaa_out_, &dlaa_alpha_,
+    for (Image* img : {&texture_ram_, &back_, &front_, &text_cells_, &sky_coords_, &color_, &color_ms_, &depth_, &motion_, &dlaa_out_, &dlaa_alpha_, &taa_out_, &taa_history_,
                         &glow_, &glow_ms_, &bloom_a_, &bloom_b_, &bloom_c_, &depth_resolved_, &ao_, &shadow_map_, &exposure_, &diff_a_, &diff_b_})
         destroy_image(*img);
     for (Image& img : replacements_) destroy_image(img);

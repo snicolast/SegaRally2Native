@@ -194,6 +194,7 @@ private:
     void record_world(const Frame& f);
     void record_world_depth(const Frame& f, const R3DViewport& w, bool msaa, bool ao_on);
     void record_dlaa(const Frame& f);
+    void record_alpha_taa(const Frame& f);
     ComposePush compose_push(const Frame& f) const;
     static ComposePush reduced(const ComposePush& pc, const Image& to);
     void begin_quarter(VkCommandBuffer cmd, Image& to, VkAttachmentLoadOp load);
@@ -215,6 +216,10 @@ private:
     Image texture_ram_, back_, front_, color_, depth_, color_ms_;   // color_ms_: MSAA target, resolved into color_
     Image motion_, dlaa_out_;   // DLAA / DLSS: motion vectors (pixels, RG16F) and the anti-aliased (and upscaled) image
     Image dlaa_alpha_;          // DLAA of the 3D image's alpha (in red), which the composition uses
+    // Study (SR2_DLAA_ALPHA=taa): the alpha smoothed over time by alpha_taa.frag
+    // instead of a second DLAA; written to taa_out_, copied to taa_history_
+    Image taa_out_, taa_history_;
+    bool taa_valid_ = false;
     Image glow_, glow_ms_;      // bloom source written by the 3D pass (glow_ms_: MSAA, resolved into glow_)
     Image bloom_a_, bloom_b_, bloom_c_;   // bloom at a quarter of the size: reduced and blurred (wide in bloom_a_, tight in bloom_c_)
     float bloom_strength_ = 0;
@@ -318,6 +323,10 @@ private:
     VkDescriptorSet ao_set_ = VK_NULL_HANDLE;   // world depth + raw occlusion
     VkPipelineLayout ao_layout_ = VK_NULL_HANDLE;
     VkPipeline ao_pass_ = VK_NULL_HANDLE, ao_apply_ = VK_NULL_HANDLE, ao_apply_glow_ = VK_NULL_HANDLE;
+    VkDescriptorSetLayout taa_set_layout_ = VK_NULL_HANDLE;
+    VkDescriptorSet taa_set_ = VK_NULL_HANDLE;   // current alpha, motion, history
+    VkPipelineLayout taa_layout_ = VK_NULL_HANDLE;
+    VkPipeline alpha_taa_ = VK_NULL_HANDLE;
     VkFormat compose_format_ = VK_FORMAT_UNDEFINED;
     float max_aspect_ = 16.0f / 9.0f;
     bool smooth_2d_ = true;
