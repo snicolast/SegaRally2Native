@@ -1195,6 +1195,8 @@ static void attract_guard_frame() {
     g_game_over_menu = true;
 }
 
+static void trigger_frame(float shake);
+
 // The wheel's force feedback as gamepad rumble: the drive board drives two
 // motors (0x7F = no force). Their slow part is the spring that holds the
 // wheel to the middle (it follows the wheel); the quick changes on top are
@@ -1222,6 +1224,39 @@ static void ffb_frame() {
     static float force = 0;
     force += 0.5f * ((float(m[0]) - 128.0f) / 128.0f - force);
     wheel_set_force(std::clamp(force, -1.0f, 1.0f), shake);
+    trigger_frame(shake);
+}
+
+// The triggers' rumble (Xbox One / Series pads, app_input.cpp): each one
+// feels what its pedal does. The brake trembles while it slows the car,
+// harder the harder it brakes at speed; the accelerator trembles while the
+// wheels spin pulling away (full throttle, slow) and both carry the road's
+// bumps from the force feedback, as much as the pedal is pressed. From the
+// player's speed (0x22F3A8, m/s) and the pedals the game reads; nothing in
+// the attract
+static void trigger_frame(float shake) {
+    constexpr uint32_t SPEED = 0x22F3A8;
+    static float prev_speed = 0, decel = 0;
+    uint32_t bits = rd32(SPEED);
+    float speed;
+    memcpy(&speed, &bits, 4);
+    if (!std::isfinite(speed) || speed < 0 || speed > 150) speed = 0;
+    // Slowing down in m/s per second, smoothed over a few frames
+    float d = (prev_speed - speed) * float(FRAME_HZ);
+    prev_speed = speed;
+    decel += 0.3f * (std::clamp(d, -40.0f, 40.0f) - decel);
+    if (g_in_attract) return;
+    float gas = std::clamp(float(g_inputs.accel) / 255.0f, 0.0f, 1.0f);
+    float brake = std::clamp(float(g_inputs.brake) / 255.0f, 0.0f, 1.0f);
+    float bumps = std::min(1.0f, shake * 2.5f);
+    float left = 0, right = 0;
+    if (brake > 0.05f && speed > 3.0f)
+        left = brake * std::min(1.0f, speed / 25.0f) * (0.2f + 0.8f * std::clamp(decel / 15.0f, 0.0f, 1.0f));
+    left = std::max(left, 0.7f * brake * bumps);
+    if (gas > 0.8f && speed < 14.0f) right = 0.45f * (gas - 0.8f) / 0.2f * (1.0f - speed / 14.0f);
+    right = std::max(right, 0.7f * gas * bumps);
+    if (left > g_trigger_rumble[0].load()) g_trigger_rumble[0] = left;
+    if (right > g_trigger_rumble[1].load()) g_trigger_rumble[1] = right;
 }
 
 void rt_event(Ctx& c) {

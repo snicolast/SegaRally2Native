@@ -27,7 +27,8 @@ struct Options {
     int aniso = 8;                   // --aniso: anisotropic taps (0 = no mipmaps, original look)
     float max_aspect = 16.0f / 9.0f; // --aspect: widest 3D view (4:3 = original)
     bool pixel_2d = false;           // --pixel2d: 2D layers without xBR upscaling
-    bool hud_centre = false;         // --hud-centre: keep the HUD in the 4:3 area (otherwise its corners go to the window's)
+    bool hud_centre = false;         // --hud-centre: keep the HUD in the 4:3 area (otherwise its corners go out, up to a 16:9 view's edges)
+    bool trigger_rumble = true;      // --no-trigger-rumble: Xbox pads through XInput, no motors in the triggers
     bool letterbox = false;          // --letterbox: keep the black cutscene bars
     bool classic_hud = false;        // --classic-hud: the ROM's own HUD and screens (pixel letters, no redrawn dials, signs...)
     bool classic_liveries = false;   // --classic-liveries: the cars with the ROM's own paint (no texture pack in textures/)

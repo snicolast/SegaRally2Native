@@ -29,7 +29,7 @@ layout(push_constant) uniform Compose {
     vec2 window;      // window size in pixels
     vec2 layer2d;     // x offset and width of the 4:3 2D area inside the 3D view
     vec2 filter2d;    // x: 1 = xBR, 0 = plain pixels; y: window pixels per 2D pixel
-    vec4 hud;         // x: shift of the race HUD's corners to the screen edges (2D pixels, 0 = none); y: 1 = HDR lighting;
+    vec4 hud;         // x: shift of the race HUD's corners towards the screen edges (2D pixels, 0 = none; at most a 16:9 view's); y: 1 = HDR lighting;
                       // z: brightness offset of the foreground layers (fades), applied to the overlays;
                       // w: 1 = background layers continue beside the 4:3 area
     vec4 sky;         // y > 0: glow mode, for the bloom: only the bright part of the sky, times y;
@@ -44,7 +44,7 @@ layout(push_constant) uniform Compose {
 } pc;
 
 const ivec2 SIZE_2D = ivec2(496, 384);
-const int BACK_MARGIN = 200;   // tilegen.h: the back layers extend beyond both sides
+const int BACK_MARGIN = 440;   // tilegen.h: the back layers extend beyond both sides
 const ivec2 SIZE_BACK = ivec2(496 + 2 * BACK_MARGIN, 384);
 
 // ---- xBR-lv2 ---------------------------------------------------------------

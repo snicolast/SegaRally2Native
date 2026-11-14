@@ -381,8 +381,11 @@ int main(int argc, char** argv) {
     // Window: the game runs on its own thread at real speed; this thread draws
     // the latest image at the monitor's refresh rate (vsync)
     VkPresenter presenter;
-    if (!presenter.init("Sega Rally 2 Native by snicolast", int(SCREEN_H * 2 * std::max(g_opt.max_aspect, 4.0f / 3.0f)), SCREEN_H * 2,
-                        g_opt.dlaa)) {
+    // (no wider than 16:9 at first, whatever --aspect allows; debugging aid:
+    // SR2_WINDOW=WxH, the window's inside that size, e.g. 2560x720 for a 32:9 view)
+    int win_w = int(SCREEN_H * 2 * std::clamp(g_opt.max_aspect, 4.0f / 3.0f, 16.0f / 9.0f)), win_h = SCREEN_H * 2;
+    if (const char* e = getenv("SR2_WINDOW")) sscanf(e, "%dx%d", &win_w, &win_h);
+    if (!presenter.init("Sega Rally 2 Native by snicolast", win_w, win_h, g_opt.dlaa)) {
         fprintf(stderr, "Could not start Vulkan; try --headless\n");
         MessageBoxA(nullptr, "Could not start Vulkan. Update the graphics driver: the game needs Vulkan 1.3.",
                     "Sega Rally 2 Native", MB_OK | MB_ICONERROR);
@@ -390,6 +393,7 @@ int main(int argc, char** argv) {
     }
     printf("GPU: %s\n", presenter.device_name().c_str());
     if (aa_auto) g_opt.dlss = screen_height(presenter.hwnd()) > 1440;
+    g_pads.trigger_rumble = g_opt.trigger_rumble;
     g_pads.init();
     timeBeginPeriod(1);
     QueryPerformanceFrequency(&g_qpf);
