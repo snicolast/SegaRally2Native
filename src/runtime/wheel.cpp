@@ -16,6 +16,9 @@
 namespace {
 
 constexpr const char* INI_FILE = "save/wheel.ini";
+// Buttons read from the wheel: Moza and Fanatec bases go past 64 (a Moza HGP
+// shifter on the base gives its gears as buttons 112-119, issue #62)
+constexpr int MAX_BUTTONS = 128;
 constexpr int NO_REST = 100000;            // a pedal's resting value not given in wheel.ini
 constexpr int REST_END = 30000;            // a pedal's rest learnt late must be near one end of its axis
 
@@ -158,7 +161,7 @@ struct Wheel {
     bool rest_known[16] = {};   // false: rest is still SDL's first value, which can be a stray 0
     int menu_dir = -1;          // the hat in the menus, repeated while held
     double next_repeat = 0;
-    bool was_down[64] = {};
+    bool was_down[MAX_BUTTONS] = {};
     int16_t last_axis[16] = {};
     SDL_Haptic* haptic = nullptr;
     int constant = -1, spring = -1;
@@ -346,7 +349,7 @@ void wheels_added(uint32_t id) {
     w.id = id;
     w.score = score;
     w.axes = axes;
-    w.buttons = std::min(SDL_GetNumJoystickButtons(j), 64);
+    w.buttons = std::min(SDL_GetNumJoystickButtons(j), MAX_BUTTONS);
     for (int a = 0; a < std::min(axes, 16); a++) {
         int16_t v = 0;
         if (!SDL_GetJoystickAxisInitialState(j, a, &v)) v = SDL_GetJoystickAxis(j, a);
@@ -410,7 +413,7 @@ void wheels_poll(bool focused, bool menu, std::vector<PadKey>& keys) {
             }
         }
     }
-    bool down[64] = {};
+    bool down[MAX_BUTTONS] = {};
     for (int b = 0; b < w.buttons; b++) {
         down[b] = SDL_GetJoystickButton(w.joy, b);
         if (g_log && down[b] != w.was_down[b]) printf("[wheel] button %d %s\n", b, down[b] ? "down" : "up");
