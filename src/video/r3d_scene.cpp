@@ -792,6 +792,128 @@ void R3DSceneBuilder::link_previous(R3DScene& out) {
         memcpy(v.prev, p, sizeof(v.prev));
         out.moving += dx != 0 || dy != 0 || dz != 0;
     }
+    // The glow sprites of the world (the streetlights' halos at Riviera, the
+    // spectators' camera flashes): the game hands them out to the lamps
+    // nearest the camera from a pool of its own, so as a lamp goes by its halo
+    // is drawn at the next one, under the same key. Paired with last frame's
+    // as any other model, each slid from lamp to lamp between frames, the
+    // faster the car went the more (they seemed to flicker, or to run along
+    // the street). They stand still in the world: each moves as the scenery
+    // beside it did (or, with none near, as the camera did), except one on
+    // another car (its exhaust's flames), left paired to move with the car
+    static const bool no_glow_fix = getenv("SR2_GLOW_LINK") != nullptr;   // as before, to compare
+    const R3DViewport* wv = nullptr;
+    for (const R3DViewport& v : out.viewports)
+        if (v.world) wv = &v;
+    if (wv && prev_world_valid_ && !no_glow_fix) {
+        const float *ax = wv->world_axes, *cam = wv->camera, *pax = prev_world_axes_, *pcam = prev_world_camera_;
+        auto dot3 = [](const float* p, const float* q) { return p[0] * q[0] + p[1] * q[1] + p[2] * q[2]; };
+        float d[3] = {cam[0] - pcam[0], cam[1] - pcam[1], cam[2] - pcam[2]};
+        // (as R3DRenderer::world_pose: a camera cut is not interpolated)
+        bool cut = dot3(d, d) > 10.0f * 10.0f || dot3(ax + 6, pax + 6) < 0.9f || dot3(ax + 3, pax + 3) < 0.9f;
+        const uint32_t glow_mask = R3D_TEXTURED | R3D_ALPHA_TEST | R3D_LUMINOUS | R3D_TEX_ALPHA | R3D_SPECULAR;
+        const uint32_t glow = glow_mask & ~uint32_t(R3D_SPECULAR);
+        // The glow triangles of the world
+        std::vector<uint32_t> glows;
+        for (auto [first, count] : {std::pair{wv->opaque_first, wv->opaque_count}, std::pair{wv->trans_first, wv->trans_count}})
+            for (uint32_t i = first; i + 2 < first + count && i + 2 < out.vertices.size(); i += 3)
+                if ((out.vertices[i].flags & glow_mask) == glow) glows.push_back(i);
+        // The scenery round them (the lamp each halo is at), followed from last
+        // frame by its own model: a halo moves as the scenery next to it does.
+        // (The camera tracked from the scenery is a median of estimates a
+        // little apart, a few centimetres to a decimetre off: by it alone the
+        // halos shook against their lamps.) In a grid of 3-unit cells, only
+        // those round a glow
+        const float CELL = 3.0f;
+        auto cell_key = [&](const float* p) {
+            int64_t x = int64_t(std::floor(p[0] / CELL)), y = int64_t(std::floor(p[1] / CELL)), z = int64_t(std::floor(p[2] / CELL));
+            return uint64_t(x * 73856093) ^ uint64_t(y * 19349663) ^ uint64_t(z * 83492791);
+        };
+        auto centre = [&](uint32_t t, float* c) {
+            for (int k = 0; k < 3; k++)
+                c[k] = (out.vertices[t].pos[k] + out.vertices[t + 1].pos[k] + out.vertices[t + 2].pos[k]) * (1.0f / 3.0f);
+        };
+        std::unordered_set<uint64_t> near_cells;
+        std::unordered_map<uint64_t, std::vector<uint32_t>> grid;
+        if (!cut && !glows.empty()) {
+            for (uint32_t t : glows) {
+                float c[3];
+                centre(t, c);
+                for (int dx = -1; dx <= 1; dx++)
+                    for (int dy = -1; dy <= 1; dy++)
+                        for (int dz = -1; dz <= 1; dz++) {
+                            float q[3] = {c[0] + dx * CELL, c[1] + dy * CELL, c[2] + dz * CELL};
+                            near_cells.insert(cell_key(q));
+                        }
+            }
+            for (uint32_t i = wv->opaque_first; i < wv->opaque_first + wv->opaque_count && i < out.vertices.size(); i++) {
+                const R3DVertex& x = out.vertices[i];
+                if ((x.flags & glow_mask) == glow) continue;
+                // (the other cars, by their shiny paint and glass, are kept to
+                // tell their exhaust flames; the people and the rest that turn
+                // their own way are not scenery)
+                bool car = (x.flags & R3D_CAR) || (x.flags & (R3D_ACTOR | R3D_SPECULAR)) == (R3D_ACTOR | R3D_SPECULAR);
+                if (!car && (x.flags & R3D_ACTOR)) continue;
+                if (!car && x.prev[0] == x.pos[0] && x.prev[1] == x.pos[1] && x.prev[2] == x.pos[2]) continue;   // (not followed)
+                uint64_t key = cell_key(x.pos);
+                if (near_cells.count(key)) grid[key].push_back(i);
+            }
+        }
+        for (uint32_t t : glows) {
+            // How the scenery nearest its middle moved (none within 3 units:
+            // as the camera did)
+            float c[3], move[3] = {0, 0, 0};
+            centre(t, c);
+            const R3DVertex* near = nullptr;
+            if (!grid.empty()) {
+                float best = CELL * CELL;
+                for (int dx = -1; dx <= 1; dx++)
+                    for (int dy = -1; dy <= 1; dy++)
+                        for (int dz = -1; dz <= 1; dz++) {
+                            float q[3] = {c[0] + dx * CELL, c[1] + dy * CELL, c[2] + dz * CELL};
+                            auto it = grid.find(cell_key(q));
+                            if (it == grid.end()) continue;
+                            for (uint32_t n : it->second) {
+                                const float* p = out.vertices[n].pos;
+                                float e[3] = {p[0] - c[0], p[1] - c[1], p[2] - c[2]};
+                                if (dot3(e, e) < best) best = dot3(e, e), near = &out.vertices[n];
+                            }
+                        }
+            }
+            // On a car (its exhaust's flames): left as paired, it moves with the car
+            if (near && ((near->flags & R3D_CAR) || (near->flags & (R3D_ACTOR | R3D_SPECULAR)) == (R3D_ACTOR | R3D_SPECULAR))) continue;
+            if (near)
+                for (int k = 0; k < 3; k++) move[k] = near->pos[k] - near->prev[k];
+            for (uint32_t i = t; i < t + 3; i++) {
+                R3DVertex& v = out.vertices[i];
+                float still[3];
+                if (cut) {
+                    memcpy(still, v.pos, sizeof(still));
+                } else if (near) {
+                    for (int k = 0; k < 3; k++) still[k] = v.pos[k] - move[k];
+                } else {
+                    // Its place in the world (world axis k, in view space,
+                    // is ax[3k..3k+2]), then in last frame's view
+                    float w[3];
+                    for (int k = 0; k < 3; k++) w[k] = cam[k] + dot3(ax + k * 3, v.pos) - pcam[k];
+                    for (int k = 0; k < 3; k++) still[k] = w[0] * pax[k] + w[1] * pax[3 + k] + w[2] * pax[6 + k];
+                }
+                float e[3] = {v.prev[0] - still[0], v.prev[1] - still[1], v.prev[2] - still[2]};
+                bool linked = v.prev[0] != v.pos[0] || v.prev[1] != v.pos[1] || v.prev[2] != v.pos[2];
+                // (by the scenery beside it always: a halo handed to another
+                // lamp head a metre or two away slid there too; by the camera
+                // alone, only when paired far off)
+                if (!near && linked && dot3(e, e) <= 3.0f * 3.0f) continue;
+                if (!linked && (still[0] != v.pos[0] || still[1] != v.pos[1] || still[2] != v.pos[2])) out.moving++;
+                memcpy(v.prev, still, sizeof(v.prev));
+            }
+        }
+    }
+    prev_world_valid_ = wv != nullptr;
+    if (wv) {
+        memcpy(prev_world_axes_, wv->world_axes, sizeof(prev_world_axes_));
+        memcpy(prev_world_camera_, wv->camera, sizeof(prev_world_camera_));
+    }
     std::swap(prev_index_, index_);
     // Only the positions are kept (a copy of every whole vertex was most of
     // the rest); the vectors keep their room
