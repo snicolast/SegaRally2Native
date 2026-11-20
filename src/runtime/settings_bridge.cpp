@@ -53,6 +53,7 @@ void options_from_settings(Options& o, const FrontendSettings& ini) {
     o.supersample = ini.render_scale / 100.0f;   // RENDER SCALE (--scale wins)
     o.telemetry = ini.telemetry;
     o.telemetry_port = ini.telemetry_port;
+    o.telemetry_format = ini.telemetry_format;
 }
 
 void settings_from_options(FrontendSettings& s, const Options& o) {
@@ -88,4 +89,5 @@ void settings_from_options(FrontendSettings& s, const Options& o) {
     s.render_scale = std::clamp(int(o.supersample * 100 + 0.5f), 50, 200);
     s.telemetry = o.telemetry;
     s.telemetry_port = o.telemetry_port;
+    s.telemetry_format = o.telemetry_format;
 }

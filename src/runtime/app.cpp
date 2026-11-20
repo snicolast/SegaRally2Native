@@ -224,6 +224,7 @@ static void save_settings(const FrontendSettings& s) {
         top.news_seen = s.news_seen;
         top.telemetry = s.telemetry;
         top.telemetry_port = s.telemetry_port;
+        top.telemetry_format = s.telemetry_format;
         out = top.text(false) + "[arcade]\n" + out;
     }
     if (FILE* fp = fopen("save/settings.ini", "w")) {
@@ -1330,6 +1331,7 @@ int main(int argc, char** argv) {
                     renderer.set_picture(s.saturation / 100.0f, s.gamma / 100.0f);
                     g_opt.telemetry = s.telemetry;   // (telemetry_frame opens or closes the socket at the next frame)
                     g_opt.telemetry_port = s.telemetry_port;
+                    g_opt.telemetry_format = s.telemetry_format;
                     g_pad_rumble = s.vibration;
                     g_trigger_share = s.trigger_rumble / 100.0f;
                     g_max_fps = s.max_fps;

@@ -143,7 +143,7 @@ void FrontendSettings::load(const char* path, const char* section) {
         std::string k = key, v = value;
         bool on = v == "1" || v == "on" || v == "true";
         // (the keys of the whole game only in the first section)
-        if (!top && (k == "experience" || k == "check_updates" || k == "news_seen" || k == "telemetry" || k == "telemetry_port")) continue;
+        if (!top && (k == "experience" || k == "check_updates" || k == "news_seen" || k == "telemetry" || k == "telemetry_port" || k == "telemetry_format")) continue;
         if (k == "experience") experience = v == "arcade" ? 1 : 0;
         else if (k == "aspect") {
             static const char* const NAMES[5] = {"auto", "32:9", "21:9", "16:9", "4:3"};
@@ -204,6 +204,7 @@ void FrontendSettings::load(const char* path, const char* section) {
         else if (k == "news_seen") news_seen = std::max(0, atoi(value));
         else if (k == "telemetry") telemetry = on;
         else if (k == "telemetry_port") telemetry_port = std::clamp(atoi(value), 1, 65535);
+        else if (k == "telemetry_format") telemetry_format = v == "ogs-ts" || v == "ogs" ? 1 : 0;
     }
     fclose(f);
 }
@@ -234,8 +235,9 @@ std::string FrontendSettings::text(bool section) const {
     snprintf(buf, sizeof(buf), "dlss_model = %s\n", MODELS[std::clamp(dlss_model, 0, 3)]);
     out += buf;
     if (!section) {
-        snprintf(buf, sizeof(buf), "check_updates = %d\nnews_seen = %d\ntelemetry = %d\ntelemetry_port = %d\n", check_updates, news_seen,
-                 telemetry, telemetry_port);
+        static const char* const FORMATS[2] = {"dirt", "ogs-ts"};
+        snprintf(buf, sizeof(buf), "check_updates = %d\nnews_seen = %d\ntelemetry = %d\ntelemetry_format = %s\ntelemetry_port = %d\n",
+                 check_updates, news_seen, telemetry, FORMATS[std::clamp(telemetry_format, 0, 1)], telemetry_port);
         out += buf;
     }
     snprintf(buf, sizeof(buf), "rt_reflections = %d\nglobal_illumination = %s\ndust = %s\ndifficulty = %s\nhd_liveries = %d\ntrigger_rumble = %d\nobject_distance = %d\n", reflections, gi ? "low" : "off", dust ? "enhanced" : "original", DIFFICULTY_KEYS[std::clamp(difficulty, 0, 4)], hd_liveries, trigger_rumble, object_distance);
@@ -384,7 +386,7 @@ const wchar_t* const Frontend::TAB_NAMES[Frontend::TAB_COUNT] = {L"EXPERIENCE", 
 // camera flashes). A tab whose rows do not fit the page scrolls.
 const Frontend::OptionTab Frontend::OPTION_TABS[] = {
     {OPT_EXPERIENCE, EXPERIENCE_TAB, L"EDITION"}, {OPT_ARCADE_ASPECT, EXPERIENCE_TAB},
-    {OPT_TELEMETRY, EXPERIENCE_TAB, L"EXPERIMENTAL"},
+    {OPT_TELEMETRY, EXPERIENCE_TAB, L"EXPERIMENTAL"}, {OPT_TELEMETRY_FORMAT, EXPERIENCE_TAB},
     {OPT_DISPLAY, DISPLAY_TAB, L"SCREEN"}, {OPT_RESOLUTION, DISPLAY_TAB}, {OPT_ASPECT, DISPLAY_TAB}, {OPT_HUD_AREA, DISPLAY_TAB}, {OPT_SCALE, DISPLAY_TAB}, {OPT_MOTION, DISPLAY_TAB},
     {OPT_VSYNC, DISPLAY_TAB}, {OPT_MAXFPS, DISPLAY_TAB}, {OPT_BGFPS, DISPLAY_TAB}, {OPT_AA, DISPLAY_TAB},
     {OPT_SAT, DISPLAY_TAB, L"PICTURE"}, {OPT_GAMMA, DISPLAY_TAB}, {OPT_SHARPEN, DISPLAY_TAB},
@@ -641,8 +643,13 @@ std::vector<Frontend::Item> Frontend::items() const {
                 {OPT_UPDATES, L"CHECK FOR UPDATES", on_off(settings.check_updates),
                  L"At launch, look on GitHub for a new version and show what is new in it"},
                 {OPT_TELEMETRY, L"TELEMETRY", on_off(settings.telemetry),
-                 L"Sends the car's speed, RPM, gear and G-forces to SimHub or motion rig software on this PC "
-                 L"(UDP port " + std::to_wstring(settings.telemetry_port) + L", DiRT Rally format). Not tested on a real rig yet"},
+                 L"Enable telemetry for use with motion simulators and haptics"},
+                {OPT_TELEMETRY_FORMAT, L"TELEMETRY FORMAT",
+                 settings.telemetry_format == 1 ? L"OGS-TS" : L"DIRT RALLY",
+                 settings.telemetry_format == 1
+                     ? L"Open Game Standards Telemetry (speed, RPM, gear, pose, G-forces, crashes) for rigs and haptics that read it, by UDP multicast on port 40123"
+                     : L"Sends the car's speed, RPM, gear and G-forces to SimHub or motion rig software on this PC "
+                       L"(UDP port " + std::to_wstring(settings.telemetry_port) + L", DiRT Rally format). Not tested on a real rig yet"},
                 {OPT_HUD, L"HD HUD", on_off(settings.hd_hud),
                  settings.hd_hud ? L"Redrawn HUD: sharp fonts, rev counters, gear box and co-driver signs"
                                  : L"The arcade's original pixel HUD and screens"},
@@ -863,6 +870,7 @@ void Frontend::activate(const Item& it, int dir) {
         break;
     case OPT_UPDATES: settings.check_updates = !settings.check_updates; push(Action::SettingsChanged); break;
     case OPT_TELEMETRY: settings.telemetry = !settings.telemetry; push(Action::SettingsChanged); break;
+    case OPT_TELEMETRY_FORMAT: settings.telemetry_format = (settings.telemetry_format + 1) % 2; push(Action::SettingsChanged); break;
     case OPT_MENU_MUSIC: settings.menu_music = !settings.menu_music; push(Action::SettingsChanged); break;
     case OPT_SPEAKERS: settings.speakers = (settings.speakers + dir + 3) % 3; push(Action::SettingsChanged); break;
     case OPT_REAR: settings.rear_boost = (settings.rear_boost + 3 * dir + 15) % 15; push(Action::SettingsChanged); break;
