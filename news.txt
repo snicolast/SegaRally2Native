@@ -13,6 +13,9 @@
 #   # ...          a comment, never shown
 # Newest entry at the top. Keep each one short: about ten lines fit.
 
+[36] 21 November 2026
+- Fire, explosions and light halos should no longer show grain or a noisy edge with AO and soft particles on.
+
 [35] 20 November 2026
 - New TELEMETRY option (OPTIONS > EXPERIENCE > EXPERIMENTAL), off by default: sends car data over UDP in the DiRT Rally format, so SimHub, motion rigs and dashboards may be able to use it. Not tested on a real rig or in SimHub yet.
 - New HUD POSITION option (DISPLAY): keep the race HUD in its original 4:3 place with a wide picture.
