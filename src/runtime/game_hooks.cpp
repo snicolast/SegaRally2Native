@@ -199,3 +199,110 @@ uint32_t sr2_course_sound(uint32_t ea) {
 double sr2_object_distance() {
     return double(std::clamp(g_opt.object_distance, 100, 400));
 }
+
+// ---- SELECT CAR with all eight cars ----------------------------------------
+// SELECT CAR's scene (set up by 0x3C10) has eight cars: the six in a V
+// opening towards the camera, three a side, and the two hidden ones, the
+// Toyota Celica (6) and the Lancia Delta (7), parked to one side (x -7 / -9)
+// for the camera to slide over to. The arcade opened them with VIEW CHANGE +
+// HAND BRAKE on SELECT CAR, and only once the cabinet had run 100 games and
+// then 30 days (0x4BE60 starts the clock, 0x4BCF0 asks it); the port keeps no
+// backup RAM from one launch to the next, so that never came. Here the eight
+// stand in one V, four a side: the Delta below the 306, the Celica below the
+// Stratos (left and right, where the arcade's wheel picked them), and the wheel picks among
+// eight bands. The game's own drawing, lighting and race set-up take any of
+// the eight (its tables have eight). SR2_CAR_SLOTS=x,y,z;... (eight, by car)
+// tries other places without a build
+namespace {
+constexpr uint32_t SLOT_POS = 0x47D530, SLOT_ANGLES = 0x47D464, SLOT_BYTES = 12;
+constexpr int PLACES = 8;
+constexpr int CAR_AT[PLACES] = {7, 0, 1, 2, 3, 4, 5, 6};   // left to right
+// The ROM's V (x right, y up on the screen, z the distance; a card is about
+// 1.8 x 1.0 at its z of 1.5): 0 (-2.35, -1.15), 1 (-1.65, -0.075), 2 (-1.0,
+// 0.95) and the mirror, three rows that fill the height between the title and
+// the line at the bottom. Four rows a side only fit with the cards further
+// away (z 3.1: about 0.73 of their size, the sizes going as 1 / (z + 2.8)),
+// the rows 1.1 apart; the outer ones stay inside the 4:3 picture and above
+// the bottom line, the countdown in the middle of the V
+struct Place { float x, y, z; };
+Place g_places[PLACES] = {{-3.357f, -1.791f, 3.1f}, {-2.571f, -0.686f, 3.1f}, {-1.786f, 0.418f, 3.1f},
+                          {-1.0f, 1.523f, 3.1f},    {1.0f, 1.523f, 3.1f},     {1.786f, 0.418f, 3.1f},
+                          {2.571f, -0.686f, 3.1f},  {3.357f, -1.791f, 3.1f}};
+// The wheel's bands (the ADC, 0x80 the centre), four a side with a gap
+// between: up to 0x1C, 0x1E-0x37, 0x39-0x52, 0x54-0x6F | 0x91-0xAC,
+// 0xAE-0xC7, 0xC9-0xE2, from 0xE4. The centre keeps the car there is
+constexpr int BAND_LO[PLACES] = {0x00, 0x1E, 0x39, 0x54, 0x91, 0xAE, 0xC9, 0xE4};
+constexpr int BAND_HI[PLACES] = {0x1C, 0x37, 0x52, 0x6F, 0xAC, 0xC7, 0xE2, 0xFF};
+
+int slot_of(uint32_t ea) { return int(int32_t(ea - SLOT_POS) / int32_t(SLOT_BYTES)); }
+}  // namespace
+
+bool sr2_select_eight() {
+    return g_opt.hidden_cars;
+}
+
+void sr2_car_slots() {
+    if (!sr2_select_eight()) return;
+    static bool read_env = false;
+    if (!read_env) {
+        read_env = true;
+        if (const char* e = getenv("SR2_CAR_SLOTS")) {   // by car: x,y,z;x,y,z;...
+            for (int car = 0; car < PLACES && e && *e; car++) {
+                Place p;
+                if (sscanf(e, "%f,%f,%f", &p.x, &p.y, &p.z) == 3) g_places[sr2_select_place_of(car)] = p;
+                e = strchr(e, ';');
+                if (e) e++;
+            }
+        }
+    }
+    const uint32_t start_angle = rd32(SLOT_ANGLES);   // the set-up's first angle for all (-45: they turn in)
+    for (int place = 0; place < PLACES; place++) {
+        uint32_t car = uint32_t(CAR_AT[place]);
+        const Place& p = g_places[place];
+        wr32(SLOT_POS + SLOT_BYTES * car + 0, d2fbits(p.x));
+        wr32(SLOT_POS + SLOT_BYTES * car + 4, d2fbits(p.y));
+        wr32(SLOT_POS + SLOT_BYTES * car + 8, d2fbits(p.z));
+        wr32(SLOT_ANGLES + SLOT_BYTES * car, start_angle);   // the pair's was 0: they turn in like the others
+    }
+}
+
+// The pair comes in, turns and is drawn with the others by 0x40D0 (the
+// count goes to eight); 0x4224, its own drawing at one side, draws it far off
+double sr2_hidden_car_x(double x) {
+    return sr2_select_eight() ? x + 1000.0 : x;
+}
+
+uint32_t sr2_select_band(uint32_t adc, uint32_t car) {
+    if (!sr2_select_eight()) return 0;
+    int v = int(adc & 0xFF);
+    for (int place = 0; place < PLACES; place++)
+        if (v >= BAND_LO[place] && v <= BAND_HI[place]) return uint32_t(CAR_AT[place]);
+    return car;
+}
+
+int32_t sr2_car_goes_right(uint32_t ea, uint32_t slot2) {
+    if (!sr2_select_eight()) return int32_t(ea) > int32_t(slot2) ? 1 : 0;
+    return sr2_select_place_of(slot_of(ea)) >= PLACES / 2 ? 1 : 0;
+}
+
+int sr2_select_places() {
+    return sr2_select_eight() ? PLACES : 6;
+}
+
+int sr2_select_car_at(int place) {
+    return sr2_select_eight() ? CAR_AT[std::clamp(place, 0, PLACES - 1)] : std::clamp(place, 0, 5);
+}
+
+int sr2_select_place_of(int car) {
+    if (!sr2_select_eight()) return car;
+    for (int place = 0; place < PLACES; place++)
+        if (CAR_AT[place] == car) return place;
+    return 0;
+}
+
+int sr2_select_band_centre(int place) {
+    static constexpr int SIX[6] = {0x20, 0x50, 0x65, 0x9A, 0xAF, 0xE0};   // the ROM's six bands (0x3F30)
+    if (!sr2_select_eight()) return SIX[std::clamp(place, 0, 5)];
+    place = std::clamp(place, 0, PLACES - 1);
+    return (BAND_LO[place] + BAND_HI[place]) / 2;
+}

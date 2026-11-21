@@ -67,6 +67,7 @@ const std::vector<Entry>& table() {
                    for (int d = 0; d < 5; d++)
                        if (strcmp(v, NAMES[d]) == 0) o.difficulty = d;
                }),
+        off("--no-hidden-cars", &Options::hidden_cars, "SELECT CAR with the arcade's six cars (no Toyota Celica, no Lancia Delta)"),
         off("--no-forest", &Options::forest, "SELECT COURSE with the arcade's four courses (no FOREST, the unused fifth)"),
         section("Picture"),
         real("--scale", &Options::supersample, "internal 3D resolution multiplied by F (1)"),

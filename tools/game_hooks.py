@@ -93,3 +93,44 @@ _set([0x3E5B0], ["c.r[3] = sr2_course_sound(c.r[9] + 4);"])            # lwz r3,
 # (0x5D784, lfs f0 of 0xF54D0); out of the race, the kind-4 ones within 100 m
 # (0x5D888, lfs f0 of 0xF54DC). Both take the option (game_hooks.cpp)
 _set([0x5D7EC, 0x5D96C], ["c.f[0].d = sr2_object_distance();"])
+
+# SELECT CAR with all eight cars: the ROM's six in their V and the two hidden
+# ones (6 Toyota Celica, 7 Lancia Delta), which the arcade kept to one side of
+# the same scene (x -7 / -9) and slid the camera over to with VIEW CHANGE +
+# HAND BRAKE once the cabinet had run 100 games and 30 days (0x4BCF0). With
+# sr2_select_eight() the eight stand in one V, the wheel picks among eight
+# bands, and the hidden pair comes in, turns and leaves with the others
+# (game_hooks.cpp). Off, every hook does what the instruction did.
+#
+#   slots: position 0x47D530, angles 0x47D464 (12 bytes a car), lit 0x47D688
+#   0x3C10 sets the slots up; 0x40D0 draws cars 0..count-1 (count 0x224340,
+#   up to 6 as they come in); 0x4224 draws 6 and 7 (not while coming in)
+#   0x47754 (step 9) picks the car: 0x3F30 from the wheel (six bands)
+E8 = "sr2_select_eight()"
+# The set-up's last store (stfs f12, 4(r10)), then the eight slots placed
+_set([0x3E14], ["{ uint32_t ea = c.r[10] + 4; wr32(ea, d2fbits(c.f[12].d)); }", "sr2_car_slots();"])
+# Coming in (step 8, 0x475xx): all lit (li r0, 5 / li r11, 0x14: six words) ...
+_set([0x4761C], [f"c.r[0] = uint32_t({E8} ? 7 : 5);"])
+_set([0x47620], [f"c.r[11] = uint32_t({E8} ? 0x1C : 0x14);"])
+# ... one more car each time the last one has turned far enough, up to the
+# count (cmpwi r0, 5 / li r0, 6 / cmpwi r0, 5), the last one's angle
+# (lfs f0, 0x3C(r9): slot 5) and the loop that squares them all (li r0, 5 /
+# li r11, 0x3C)
+_set([0x476CC, 0x476E4], [f"cmps(c, 1, int32_t(c.r[0]), {E8} ? 7 : 5);"])
+_set([0x476D8], [f"c.r[0] = uint32_t({E8} ? 8 : 6);"])
+_set([0x476EC], [f"{{ uint32_t ea = c.r[9] + ({E8} ? 84 : 60); c.f[0].d = f2d(rd32(ea)); }}"])
+_set([0x47710], [f"c.r[0] = uint32_t({E8} ? 7 : 5);"])
+_set([0x47714], [f"c.r[11] = uint32_t({E8} ? 0x54 : 0x3C);"])
+# 0x40D0 draws the count, now up to eight (the coming in, step 8, draws
+# only with it); 0x4224, which draws the pair, puts it out of sight
+# (lfs f1, 0(r31): the slot's x)
+_set([0x4294], ["c.f[1].d = sr2_hidden_car_x(f2d(rd32(c.r[31])));"])
+# The wheel: cmpwi r9, 0x44 (the first band) made false, so li r0, 0 is
+# reached and takes the car of eight bands (or the car there was)
+_set([0x3F44], [f"cmps(c, 1, {E8} ? 0 : int32_t(c.r[9]), {E8} ? 1 : 68);"])
+_set([0x3F54], ["c.r[0] = sr2_select_band(c.r[9], c.r[10]);"])
+# Leaving (step after the transmission, 0x479B4): the six fly off left and
+# right (addi r0, r11, 0x3C: up to slot 5; cmpw r11, r10: slot 2 or less
+# goes left): the eight, the Delta with the left ones
+_set([0x47A38], [f"c.r[0] = c.r[11] + ({E8} ? 84 : 60);"])
+_set([0x47A50], ["cmps(c, 1, sr2_car_goes_right(c.r[11], c.r[10]), 0);"])
