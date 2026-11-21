@@ -208,8 +208,8 @@ double sr2_object_distance() {
 // HAND BRAKE on SELECT CAR, and only once the cabinet had run 100 games and
 // then 30 days (0x4BE60 starts the clock, 0x4BCF0 asks it); the port keeps no
 // backup RAM from one launch to the next, so that never came. Here the eight
-// stand in one V, four a side: the Delta at the far left, the Celica at the
-// far right (where the arcade's wheel picked them), and the wheel picks among
+// stand in one V, four a side: the Delta below the 306, the Celica below the
+// Stratos (left and right, where the arcade's wheel picked them), and the wheel picks among
 // eight bands. The game's own drawing, lighting and race set-up take any of
 // the eight (its tables have eight). SR2_CAR_SLOTS=x,y,z;... (eight, by car)
 // tries other places without a build
@@ -217,12 +217,17 @@ namespace {
 constexpr uint32_t SLOT_POS = 0x47D530, SLOT_ANGLES = 0x47D464, SLOT_BYTES = 12;
 constexpr int PLACES = 8;
 constexpr int CAR_AT[PLACES] = {7, 0, 1, 2, 3, 4, 5, 6};   // left to right
-// The ROM's V (x, depth, height): 0 (-2.35, -1.15), 1 (-1.65, -0.075), 2
-// (-1.0, 0.95) and the mirror; the four a side on the same lines, a little
-// closer together
+// The ROM's V (x right, y up on the screen, z the distance; a card is about
+// 1.8 x 1.0 at its z of 1.5): 0 (-2.35, -1.15), 1 (-1.65, -0.075), 2 (-1.0,
+// 0.95) and the mirror, three rows that fill the height between the title and
+// the line at the bottom. Four rows a side only fit with the cards further
+// away (z 3.1: about 0.73 of their size, the sizes going as 1 / (z + 2.8)),
+// the rows 1.1 apart; the outer ones stay inside the 4:3 picture and above
+// the bottom line, the countdown in the middle of the V
 struct Place { float x, y, z; };
-Place g_places[PLACES] = {{-2.55f, -1.45f, 1.5f}, {-2.0f, -0.6f, 1.5f}, {-1.45f, 0.25f, 1.5f}, {-0.9f, 1.1f, 1.5f},
-                          {0.9f, 1.1f, 1.5f},     {1.45f, 0.25f, 1.5f}, {2.0f, -0.6f, 1.5f},  {2.55f, -1.45f, 1.5f}};
+Place g_places[PLACES] = {{-3.357f, -1.791f, 3.1f}, {-2.571f, -0.686f, 3.1f}, {-1.786f, 0.418f, 3.1f},
+                          {-1.0f, 1.523f, 3.1f},    {1.0f, 1.523f, 3.1f},     {1.786f, 0.418f, 3.1f},
+                          {2.571f, -0.686f, 3.1f},  {3.357f, -1.791f, 3.1f}};
 // The wheel's bands (the ADC, 0x80 the centre), four a side with a gap
 // between: up to 0x1C, 0x1E-0x37, 0x39-0x52, 0x54-0x6F | 0x91-0xAC,
 // 0xAE-0xC7, 0xC9-0xE2, from 0xE4. The centre keeps the car there is
