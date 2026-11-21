@@ -8,6 +8,7 @@
 #include <cstdlib>
 
 #include "app_internal.h"
+#include "game_hooks.h"
 #include "inputs.h"
 #include "pad_rumble.h"
 #include "runtime.h"
@@ -23,20 +24,20 @@ static int adc(float v) { return std::clamp(int(std::lround(v)), 0, 255); }
 // SELECT CAR picks the car from where the wheel is (the game, 0x00003F30):
 // six bands of the steering ADC (up to 0x44 the first car, 0x46-0x59,
 // 0x5B-0x6F, 0x91-0xA4, 0xA6-0xB9, from 0xBB the sixth), the centre keeping
-// the car there is; the hidden pair (0x00004028) up to 0x6F the Delta, past
-// 0x90 the Celica. The arrows, turning the wheel over 0.3 s and back, went
-// through the middle bands in a frame or two and only ever stopped on the
-// outer cars (issue #105). There each press steps one car: the wheel is put in
-// the next car's band for a moment, then straight back to the centre (no
-// sweep back over the others); held, it repeats
+// the car there is; with the hidden cars, eight bands (game_hooks.cpp). The
+// arrows, turning the wheel over 0.3 s and back, went through the middle
+// bands in a frame or two and only ever stopped on the outer cars (issue
+// #105). There each press steps one car: the wheel is put in the next car's
+// band for a moment, then straight back to the centre (no sweep back over the
+// others); held, it repeats
 static int car_select_steer(int car, int dir, double now) {
-    static constexpr int BAND[6] = {0x20, 0x50, 0x65, 0x9A, 0xAF, 0xE0};
     static int last_dir = 0, held = 0x80, held_car = 0;
     static double held_until = 0, repeat_at = 0;
     if (dir != 0 && (dir != last_dir || now >= repeat_at)) {
         if (now < held_until) car = held_car;   // pressed again before the game took the last one
-        held_car = car >= 6 ? car : std::clamp(car + dir, 0, 5);
-        held = car >= 6 ? (dir < 0 ? 0x40 : 0xC0) : BAND[held_car];
+        int place = std::clamp(sr2_select_place_of(car) + dir, 0, sr2_select_places() - 1);
+        held_car = sr2_select_car_at(place);
+        held = sr2_select_band_centre(place);
         held_until = now + 0.1;   // the game reads the ADC at 57.5 Hz: a few frames
         repeat_at = now + (dir != last_dir ? 0.45 : 0.25);
     }
