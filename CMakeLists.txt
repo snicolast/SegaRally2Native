@@ -209,6 +209,7 @@ add_executable(SegaRally2 WIN32
     src/runtime/scsi53c810.cpp
     src/runtime/stats.cpp
     src/runtime/telemetry.cpp
+    src/runtime/telemetry_ogs.cpp
     src/runtime/game_hooks.cpp
     src/runtime/achievements_csv.cpp
     src/ui/achievement_toast.cpp
@@ -368,7 +369,8 @@ endif()
 
 # Unit tests (ctest): the 2D composition against golden hashes, the FNV-1a
 # hash of C++ and Python against the same vectors, the command-line table and
-# the audio queue, the ROM layout read from the zip and the capture viewer.
+# the audio queue, the ROM layout read from the zip, the capture viewer and the
+# OGS-TS telemetry sender over a fake game RAM.
 # build.bat runs them.
 option(LW_TESTS "Build the unit tests" ON)
 if(LW_TESTS)
@@ -394,9 +396,11 @@ if(LW_TESTS)
     target_link_libraries(viewer_test PRIVATE ole32 windowscodecs)
     # HD HUD pictures: more different ones in a session than GPU slots
     add_executable(pack2d_test tests/pack2d_test.cpp src/video/pack2d.cpp src/video/image_io.cpp)
+    add_executable(telemetry_test tests/telemetry_test.cpp src/runtime/telemetry_ogs.cpp src/runtime/inputs.cpp)
+    target_link_libraries(telemetry_test PRIVATE ws2_32)
     target_link_libraries(pack2d_test PRIVATE ole32 windowscodecs)
     foreach(t tilegen_test fnv_test options_test audio_stream_test rom_zip_test jtag_test r3d_state_test news_test menu_music_test
-            achievements_csv_test disk_writer_test viewer_test pack2d_test)
+            achievements_csv_test disk_writer_test viewer_test pack2d_test telemetry_test)
         target_include_directories(${t} PRIVATE src/video src/common src/runtime src/audio src/ui ${MINIZ_DIR})
         if(MSVC)
             target_compile_options(${t} PRIVATE /W4 /utf-8)
@@ -416,6 +420,7 @@ if(LW_TESTS)
     add_test(NAME disk_writer COMMAND disk_writer_test)
     add_test(NAME viewer COMMAND viewer_test)
     add_test(NAME pack2d COMMAND pack2d_test)
+    add_test(NAME telemetry COMMAND telemetry_test)
     # 3.10: the version the tools need, so an older Python in PATH is skipped (Star Wars Trilogy issue #51)
     find_package(Python3 3.10 COMPONENTS Interpreter)
     if(Python3_Interpreter_FOUND)

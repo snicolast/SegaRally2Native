@@ -36,6 +36,7 @@
 
 #include "inputs.h"
 #include "ppc_rt.h"
+#include "telemetry_ogs.h"
 
 namespace {
 
@@ -135,7 +136,7 @@ int g_last_laps = 0;
 
 }  // namespace
 
-void telemetry_frame(bool on, int port) {
+static void telemetry_dirt_frame(bool on, int port) {
     if (!on) {
         if (g_sender.ok()) g_sender.close();
         return;
@@ -215,4 +216,9 @@ void telemetry_frame(bool on, int port) {
     p[T_TRACK_SIZE] = 256.0f;
     p[T_LAST_LAP_TIME] = g_last_lap_time;
     g_sender.send(p, T_COUNT);
+}
+
+void telemetry_frame(bool on, int format, int dirt_port) {
+    telemetry_dirt_frame(on && format != TELEMETRY_OGS, dirt_port);   // (the other one is closed)
+    telemetry_ogs_frame(on && format != TELEMETRY_DIRT);
 }
