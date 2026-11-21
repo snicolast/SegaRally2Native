@@ -111,7 +111,8 @@ Running slow? In OPTIONS, try these in order:
 Untested on real hardware. Feedback welcome in the issues.
 
 - **Telemetry** (OPTIONS > EXPERIENCE > EXPERIMENTAL): sends speed, RPM, gear and G-forces for SimHub or a motion rig.
-  UDP `127.0.0.1:20777`, DiRT Rally format.
+  UDP `127.0.0.1:20777`, DiRT Rally format (default).
+  Or [OGS-TS](https://github.com/Open-Game-Standards/OGS-Telemetry-Standard) (TELEMETRY FORMAT), multicast `239.255.17.17:40123`. Thanks to Brian Gilbert.
 
 ## More
 
