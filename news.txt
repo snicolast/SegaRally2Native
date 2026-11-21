@@ -13,9 +13,6 @@
 #   # ...          a comment, never shown
 # Newest entry at the top. Keep each one short: about ten lines fit.
 
-[37] 22 November 2026
-- New TELEMETRY FORMAT option: telemetry can also be sent in the OGS-TS format (Open Game Standards), thanks to Brian Gilbert. Not tested on a real rig yet.
-
 [36] 21 November 2026
 - Fire, explosions and light halos should no longer show grain or a noisy edge with AO and soft particles on.
 
