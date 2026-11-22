@@ -146,10 +146,12 @@ uint32_t sr2_card_palette(uint32_t table, uint32_t offset) {
 // FOREST drives between DESERT (NOVICE) and MOUNTAIN (INTERMEDIATE), so its
 // clock gives the time per km halfway between theirs: practice, on NORMAL,
 // DESERT 16.8 s/km and MOUNTAIN 19.3 -> 18 s/km, 230 s for its three 4.25 km
-// laps; SPECIAL (10 laps) DESERT 15.6 and MOUNTAIN 18.4 -> 17 s/km, 719 s.
-// Shared out by the stretches' lengths (checkpoints at track points 45 and
-// 138, forest_checkpoints(): 747, 1544 and 1959 m), and the difficulty moves
-// the first extension as the arcade's own rows do
+// laps; SPECIAL (10 laps) DESERT 15.6 and MOUNTAIN 18.4 -> 17 s/km, 723 s.
+// The other courses start with 60 s (80 SPECIAL) for 1.5-1.7 km to their
+// first checkpoint; FOREST's is 747 m away, so it starts with 35 (55) and the
+// rest is shared out by the stretches' lengths (checkpoints at track points
+// 45 and 138, forest_checkpoints(): 747, 1544 and 1959 m). The difficulty
+// moves the first extension as the arcade's own rows do
 static void forest_practice_times() {
     constexpr uint32_t MODES = 0xE8348;   // per mode: ?, courses, words per row, table
     struct Times {
@@ -157,8 +159,8 @@ static void forest_practice_times() {
         int first[5];                          // the first CP1's by difficulty (NORMAL, HARD, VERY HARD, VERY EASY, EASY)
         int start_very_easy;
     };
-    static const Times practice = {60, 22, 28, 10, {22, 20, 15, 37, 27}, 60};
-    static const Times special = {80, 24, 30, 11, {24, 20, 14, 46, 40}, 90};
+    static const Times practice = {35, 25, 32, 12, {25, 23, 18, 40, 30}, 35};
+    static const Times special = {55, 25, 31, 12, {25, 21, 15, 47, 41}, 65};
     for (int sp = 0; sp < 2; sp++) {
         const Times& t = sp ? special : practice;
         uint32_t mode = MODES + 16 * uint32_t(2 + sp);   // practice, practice SPECIAL
