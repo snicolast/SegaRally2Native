@@ -13,22 +13,26 @@ layout(set = 0, binding = 1) uniform sampler2D motion;    // pixels to where eac
 layout(set = 0, binding = 2) uniform sampler2D history;   // last image's result
 
 layout(push_constant) uniform Taa {
-    vec4 p;   // xy: texel size of the 3D image; z: 1 = no history (start, resize); w: weight of the new value
+    vec4 p;   // xy: texel size of the 3D image; z: the share of it drawn, from its top left corner (dynamic
+              // resolution), negative: no history (start, resize); w: weight of the new value
 } pc;
 
 void main() {
     vec2 t = pc.p.xy;
-    float c = texture(current, uv).r;
+    float drawn = abs(pc.p.z);
+    vec2 at = uv * drawn;   // in the 3D image (uv: in the picture shown)
+    float c = texture(current, at).r;
     float lo = c, hi = c;
     for (int y = -1; y <= 1; y++)
         for (int x = -1; x <= 1; x++) {
             if (x == 0 && y == 0) continue;
-            float s = texture(current, uv + t * vec2(x, y)).r;
+            float s = texture(current, at + t * vec2(x, y)).r;
             lo = min(lo, s);
             hi = max(hi, s);
         }
-    vec2 back = uv + texture(motion, uv).rg * t;
-    if (pc.p.z > 0.5 || any(lessThan(back, vec2(0.0))) || any(greaterThan(back, vec2(1.0)))) {
+    // (motion in pixels of the image drawn: t / drawn is one of them across the picture shown)
+    vec2 back = uv + texture(motion, at).rg * t / drawn;
+    if (pc.p.z < 0.0 || any(lessThan(back, vec2(0.0))) || any(greaterThan(back, vec2(1.0)))) {
         color = vec4(c);
         return;
     }

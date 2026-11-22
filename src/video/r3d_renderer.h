@@ -82,6 +82,11 @@ public:
     void set_sky_coords(const uint32_t* coords);
 
     void record(VkCommandBuffer cmd, VkImageView target, VkExtent2D extent);
+    // Dynamic resolution (DLAA and DLSS): the graphics card's time for an
+    // image, in ms, it should stay within (a refresh of the screen; 0: none).
+    // Where an image takes nearly all of it the 3D is drawn a little smaller
+    // for a while, and DLSS brings it to the full size
+    void set_gpu_budget(float ms) { gpu_budget_ms_ = ms; }
     void set_max_aspect(float aspect) { max_aspect_ = aspect; }
     void set_pixel_aspect(float a) { px_aspect_ = a; }   // Options::pixel_aspect
     // true: 2D layers upscaled with xBR; false: plain square pixels
@@ -275,6 +280,13 @@ private:
     bool gpu_ao_marked_ = false;       // this frame's ambient occlusion has its two marks
     void gpu_time_mark(VkCommandBuffer cmd, uint32_t index);
     void gpu_time_report(uint32_t out_w, uint32_t out_h);
+    // Dynamic resolution: the share of the full 3D size drawn each way (1:
+    // all of it), from the graphics card's time for the last images
+    bool dynamic_resolution() const;
+    void update_dynamic_scale(double gpu_ms);
+    float gpu_budget_ms_ = 0.0f;
+    float dyn_scale_ = 1.0f;
+    int dyn_calm_ = 0;   // images in a row with room to spare
     Image diff_a_, diff_b_;            // diffusion (BLOOM): the picture behind the HUD, blurred, quarter size
     VkDescriptorSet diff_sets_[2] = {};   // sources: diff_a_, diff_b_
     bool soft_particles_ = false;
