@@ -49,6 +49,29 @@ struct CarSelectSteer {
     }
 };
 
+// NAME ENTRY turns a wheel of 29 letters (A-Z, '.', the rub out and END)
+// with the steering (the game, 0x00037BD4): up to 20 from the centre
+// nothing, 21-33 a letter every half or quarter second, beyond that it spins
+// freely, faster the further, and once let go it settles on the next letter
+// that way. The pedals pick (accelerator) and rub out (brake). The wheel's
+// small angles were a narrow part of a stick's travel and the arrows went
+// past them in a few frames: the letters spun by. There each press is a short
+// push past the free spin, a third of a letter's turn, and the game settles
+// on the next letter; held, it repeats (once the wheel has settled)
+struct NameEntrySteer {
+    int last_dir = 0, held = 0x80;
+    double held_until = 0, repeat_at = 0;
+    int operator()(int dir, double now) {
+        if (dir != 0 && (dir != last_dir || now >= repeat_at)) {
+            held = 0x80 + 40 * dir;   // 0.024 rad a frame (a letter is 0.217): 2-3 frames
+            held_until = now + 0.05;
+            repeat_at = now + (dir != last_dir ? 0.5 : 0.4);   // it settles at 0.01 rad a frame
+        }
+        last_dir = dir;
+        return now < held_until ? held : 0x80;
+    }
+};
+
 // The car on the keyboard: arrows steer (the wheel turns over ~0.3 s and
 // comes back by itself), Up / Down are the accelerator and the brake, A / Z
 // shift up / down, V is VIEW CHANGE and Space the hand brake. The pads and
@@ -65,6 +88,10 @@ static void poll_car_keys(Inputs& in, Down down) {
     if (int car = g_car_select; car >= 0) {   // SELECT CAR: a car a press
         static CarSelectSteer select;
         in.steer = select(car, dir, now);
+        steer = 0;
+    } else if (g_name_entry) {   // NAME ENTRY: a letter a press
+        static NameEntrySteer name;
+        in.steer = name(dir, now);
         steer = 0;
     } else {
         float target = float(dir);
@@ -170,6 +197,9 @@ bool poll_gamepads(HWND hwnd) {
             if (int car = g_car_select; car >= 0) {   // SELECT CAR: a car a press (d-pad or stick)
                 static CarSelectSteer select;
                 if (int held = select(car, pad.select_dir, qpc_seconds()); held != 0x80) in.steer = held;
+            } else if (g_name_entry) {   // NAME ENTRY: a letter a press (d-pad or stick)
+                static NameEntrySteer name;
+                if (int held = name(pad.select_dir, qpc_seconds()); held != 0x80) in.steer = held;
             } else if (std::fabs(pad.steer) > std::fabs(keyboard_steer())) {
                 in.steer = adc(128.0f + 127.0f * pad.steer);
             }

@@ -45,6 +45,10 @@ constexpr uint32_t SELECT_COURSE = SELECT + 0x08;  // 0 desert, 1 mountain, 2 ri
 constexpr uint32_t SELECT_MODE = SELECT + 0x0C;    // 0 championship, 1 practice
 constexpr uint32_t SELECT_GEARS = SELECT + 0x14;   // 0 automatic, 1 manual
 constexpr uint32_t SELECT_STEP = SELECT + 0x3C;    // 3 SELECT GAME ... 17 racing
+// NAME ENTRY (select step 15, 0x00047EFC; its controls 0x00037BD4): the
+// initials are the first 3 bytes of SELECT (0xFF empty, 0-25 A-Z, 26 '.'),
+// and this is 3 once END is taken (or the time is up)
+constexpr uint32_t NAME_DONE = SELECT + 0x64;
 
 // The HUD and the cars
 constexpr uint32_t HUD_POSITION = 0x13AB74;   // the player's position, 0 = 1st
