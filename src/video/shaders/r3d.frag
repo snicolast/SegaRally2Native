@@ -31,8 +31,8 @@ layout(push_constant) uniform Viewport {
     vec4 quality;
 } vp;
 
-layout(set = 0, binding = 4) uniform sampler2D shadow_map;     // sun shadows (depth seen from the sun)
-layout(set = 0, binding = 5) uniform sampler2D scene_depth;    // the opaque world's depth (soft particles)
+layout(set = 1, binding = 0) uniform sampler2D shadow_map;     // sun shadows (depth seen from the sun)
+layout(set = 1, binding = 1) uniform sampler2D scene_depth;    // the opaque world's depth (soft particles)
 
 #define ATMOSPHERE_BINDING 2
 #include "atmosphere.glsl"

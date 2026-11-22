@@ -16,12 +16,12 @@ layout(set = 0, binding = 3) uniform sampler2D overlays[256];   // 2D replacemen
 #include "atmosphere.glsl"
 layout(set = 0, binding = 5) uniform sampler2D text_atlas;   // high-resolution text (text_hd.h)
 layout(set = 0, binding = 6) uniform sampler2D text_cells;
-layout(set = 0, binding = 8) uniform sampler2D bloom;   // blurred glow of luminous surfaces (bloom.frag)
+layout(set = 1, binding = 0) uniform sampler2D bloom;   // blurred glow of luminous surfaces (bloom.frag)
 layout(set = 0, binding = 7) uniform sampler2D scene3d_alpha;   // alpha of the 3D image, in red
 layout(set = 0, binding = 9) uniform sampler2D sky_coords;   // backdrop replacements (sky_pack.h, tilegen.h)
-layout(set = 0, binding = 12) uniform sampler2D diffusion;   // the picture behind the HUD, blurred (bloom.frag)
-layout(set = 0, binding = 11) uniform sampler2D exposure_log;   // 1x1: average log brightness of the 3D image, eased
-layout(set = 0, binding = 13) uniform sampler2D bloom_tight;   // the same glow, blurred only a little (halos)
+layout(set = 1, binding = 2) uniform sampler2D diffusion;   // the picture behind the HUD, blurred (bloom.frag)
+layout(set = 1, binding = 1) uniform sampler2D exposure_log;   // 1x1: average log brightness of the 3D image, eased
+layout(set = 1, binding = 3) uniform sampler2D bloom_tight;   // the same glow, blurred only a little (halos)
 
 layout(push_constant) uniform Compose {
     vec2 scale;       // image size relative to the window

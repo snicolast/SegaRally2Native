@@ -37,6 +37,7 @@ public:
     bool ray_query() const { return ray_query_; }
     // Sampled images can be bound with update-after-bind (higher descriptor limits)
     bool update_after_bind() const { return update_after_bind_; }
+    bool independent_blend() const { return independent_blend_; }   // the device feature, on when the GPU has it
     HWND hwnd() const { return hwnd_; }
     void toggle_fullscreen();   // F11 / Alt+Enter: the window, or the last full-screen mode
     bool fullscreen() const { return fullscreen_; }
@@ -153,6 +154,7 @@ private:
     bool present_wait_ = false;
     bool ray_query_ = false;
     bool update_after_bind_ = false;
+    bool independent_blend_ = false;
     uint64_t present_id_ = 0, swapchain_first_id_ = 1;   // the first id presented to the current swapchain
     std::shared_mutex swapchain_mutex_;   // wait_present() against the swapchain being replaced
     VkBuffer capture_buffer_ = VK_NULL_HANDLE;
