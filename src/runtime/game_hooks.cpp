@@ -148,11 +148,10 @@ uint32_t sr2_card_palette(uint32_t table, uint32_t offset) {
 // DESERT 16.8 s/km and MOUNTAIN 19.3 -> 18 s/km, 225 s for its three 4.25 km
 // laps; SPECIAL (10 laps) DESERT 15.6 and MOUNTAIN 18.4 -> 17 s/km, 718 s.
 // The other courses start with 60 s (80 SPECIAL) for 1.5-1.7 km to their
-// first checkpoint; FOREST's is 747 m away, so it starts with 30 (50; Sergi's
-// pick, played) and the
-// rest is shared out by the stretches' lengths (checkpoints at track points
-// 45 and 138, forest_checkpoints(): 747, 1544 and 1959 m). The difficulty
-// moves the first extension as the arcade's own rows do
+// first checkpoint; FOREST's is 747 m away, so it starts with 30 (SPECIAL 50)
+// and the rest is shared out by the stretches' lengths (checkpoints at track
+// points 45 and 138, forest_checkpoints(): 747, 1544 and 1959 m). The
+// difficulty moves the first extension as the arcade's own rows do
 static void forest_practice_times() {
     constexpr uint32_t MODES = 0xE8348;   // per mode: ?, courses, words per row, table
     struct Times {
