@@ -70,7 +70,7 @@ const std::vector<AchievementInfo> TABLE = {
     {"snowy", L"SNOWY CLEARED", L"Clear the Snowy stage in the championship", 1},
     {"riviera", L"RIVIERA CLEARED", L"Clear the Riviera stage in the championship", 1},
     {"champion", L"CHAMPION", L"Finish the championship in 1st place", 1},
-    {"from_the_back", L"FROM THE BACK", L"Win a championship stage starting last", 1},
+    {"from_the_back", L"FROM THE BACK", L"Start last on the grid and win the championship", 1},
     {"stick_shift", L"STICK SHIFT", L"Finish the championship with the manual gearbox", 1},
     {"full_garage", L"FULL GARAGE", L"Finish a race with every car", STAT_OPEN_CARS},
     {"training_days", L"TRAINING DAYS", L"Finish a practice race on all four courses", STAT_COURSES},
@@ -237,6 +237,7 @@ struct Tracker {
     bool in_game = false, cheated = false, game_counted = false;
     Game was;
     int start_position = -1, start_cars = 0;   // of the race on: its place on the grid
+    bool started_last = false;   // this game started a championship race last on the grid (FROM THE BACK)
     bool was_extending = false;
     int finished_round = -1;   // of the race whose finish line was crossed last
     uint64_t saved_at = 0;
@@ -309,13 +310,11 @@ struct Tracker {
     // the race last finished)
     void stage_cleared() {
         int course = course_of(finished_round), rank = int32_t(rd32(G_RANK));
-        bool from_back = start_cars > 1 && start_position == start_cars - 1 && rank == 0;
         printf("[achievements] stage cleared: round %d, rank %d of %d (from %d)%s\n", finished_round, rank + 1,
                start_cars, start_position + 1, counting() ? "" : " (not counted)");
         if (!counting()) return;
         stats.stages_cleared++;
         if (course >= 0) stats.course[course].clears++;
-        if (from_back) stats.from_the_back++;
         dirty = true;
     }
 
@@ -330,6 +329,9 @@ struct Tracker {
         if (rank >= 1 && (stats.best_champ_position == 0 || rank < stats.best_champ_position)) stats.best_champ_position = rank;
         keep_best(stats.best_champ_time, total);
         if (rank == 1) stats.championships_won++;
+        // FROM THE BACK: last on the grid (only Desert starts you there; it can't
+        // be won, so the climb is to 1st over the whole championship)
+        if (rank == 1 && started_last) stats.from_the_back++;
         if (gears == 1) stats.manual_championships++;
         dirty = true;
     }
@@ -345,7 +347,7 @@ struct Tracker {
         }
         if (was.sequence != 1 && g.sequence == 1) {   // a credit taken: a new game
             in_game = true;
-            cheated = game_counted = false;
+            cheated = game_counted = started_last = false;
         }
         if (g.racing() && counting()) {
             stats.play_frames++;
@@ -354,6 +356,7 @@ struct Tracker {
         if (g.racing() && g.clock == CLOCK_COUNTING && was.clock != CLOCK_COUNTING) {   // a race starts
             start_position = g.position;
             start_cars = int32_t(rd32(CARS));
+            if (g.mode == MODE_CHAMPIONSHIP && start_cars > 1 && start_position == start_cars - 1) started_last = true;
             printf("[achievements] race start: round %d, mode %d, %d of %d on the grid%s\n", g.round, g.mode,
                    start_position + 1, start_cars, counting() ? "" : " (not counted)");
             if (counting()) {
