@@ -1,4 +1,4 @@
-"""Static analysis of Star Wars Trilogy's PowerPC program (CROM).
+"""Static analysis of Sega Rally 2's PowerPC program (CROM).
 
 Walks the code from the reset vector and the exception vectors,
 following branches and calls, discovers functions and generates:

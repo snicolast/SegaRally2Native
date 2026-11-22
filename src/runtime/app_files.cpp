@@ -212,12 +212,11 @@ bool load_game_rom(std::vector<uint8_t>& sound_program, std::vector<uint8_t>& so
                 load_rom("dsb_mpeg.bin", dsb_mpeg, false);
                 if (g_drive_rom.empty()) {
                     // An older romtool.py extracted the rest of a set without
-                    // epr-21119: say so here, not with the game's own
-                    // FAILED FEEDBACK LEVER INITIALIZE
+                    // epr-20512: say so here, before the game's own check of
+                    // the force feedback board fails
                     std::string msg =
-                        "The ROM in " + full_path(d) + " has no drive_program.bin (epr-21119.ic8, the force\n"
-                        "feedback board of the joystick). Without it the game stops at FAILED FEEDBACK LEVER\n"
-                        "INITIALIZE.\n\n"
+                        "The ROM in " + full_path(d) + " has no drive_program.bin (epr-20512, the force\n"
+                        "feedback board of the steering wheel). Without it the game may not start.\n\n"
                         "Your srally2.zip is probably an older set that lacks that chip. Get a current,\n"
                         "complete srally2.zip (Rev. A), put it next to build.bat and run build.bat again.";
                     fprintf(stderr, "%s\n", msg.c_str());
@@ -255,7 +254,7 @@ bool load_game_rom(std::vector<uint8_t>& sound_program, std::vector<uint8_t>& so
         }
         error = "Cannot load the ROM: " + error + ".\n";
     } else {
-        error = "Cannot find the Star Wars Trilogy ROM (srally2.zip). Looked in:\n";
+        error = "Cannot find the Sega Rally 2 ROM (srally2.zip). Looked in:\n";
         for (const std::string& l : looked) error += "  " + l + "\n";
     }
     error += "\nPut srally2.zip next to SegaRally2.exe, or give its path with\n"

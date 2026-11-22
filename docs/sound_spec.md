@@ -1,5 +1,8 @@
 # Sega Model 3 Sound Board: Implementation Spec (target: The Lost World, `lostwsga`, Step 1.5)
 
+Written for the Lost World port. The SCSP part still applies to Sega Rally 2; the Digital Sound
+Board it also has is in `src/audio/dsb2.h`.
+
 Sources studied (read-only reference): Supermodel `Src/Model3/SoundBoard.*`, `Src/Sound/SCSP.cpp`,
 `SCSPDSP.*`, `SCSPLFO.cpp`, `Src/Model3/Model3.cpp`, `IRQ.cpp`, `GameLoader.cpp`, `OSD/SDL/Audio.cpp`,
 `Config/Games.xml`. A few facts were also confirmed by reading the Lost World sound program ROM

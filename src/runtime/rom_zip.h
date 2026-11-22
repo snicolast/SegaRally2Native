@@ -1,4 +1,4 @@
-// Reads Star Wars Trilogy's memory regions straight from the original
+// Reads Sega Rally 2's memory regions straight from the original
 // srally2.zip (MAME/Supermodel set), as tools/romtool.py does for data/:
 // each chip is found by its CRC, so the names inside the zip do not matter.
 #pragma once
@@ -8,8 +8,8 @@
 
 struct RomSet {
     std::vector<uint8_t> crom, banked_crom, vrom, sound_program, sound_samples;
-    // Digital Sound Board 2 (68000 program + MPEG data) and the force feedback
-    // board's Z80 program: loaded but not used yet
+    // Digital Sound Board (68000 program + MPEG data) and the force feedback
+    // board's Z80 program
     std::vector<uint8_t> dsb_program, dsb_mpeg, drive_program;
 };
 

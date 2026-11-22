@@ -17,7 +17,7 @@ if "%ZIP%"=="" set ZIP=%~dp0srally2.zip
 rem Python 3.10 or later, checked: "python" in PATH can be an older one (Star Wars Trilogy issue #51)
 call tools\find_python.bat || goto no_python
 rem drive_program.bin too: data\ from an older build.bat can lack it (a set without
-rem epr-21119), and the game then stops at FAILED FEEDBACK LEVER INITIALIZE
+rem epr-20512), and the game then may not start
 if exist data\crom.bin if exist data\drive_program.bin goto rom_ok
 if not exist "%ZIP%" goto no_rom
 echo [1/5] Extracting the ROM

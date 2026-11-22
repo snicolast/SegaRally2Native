@@ -1,6 +1,8 @@
 # Real3D Pro-1000 (Sega Model 3, Step 1.5) - Renderer Format Specification
 
-Target: *The Lost World* (`lostwsga`, stepping 1.5, PPC 100 MHz).
+Target: *The Lost World* (`lostwsga`, stepping 1.5, PPC 100 MHz). Written for the
+Lost World port; the formats still apply to Sega Rally 2 (Step 2.1), whose
+memory map differences are in `docs/ARCHITECTURE.md`.
 Source of truth: behaviour of the Supermodel reference (`Src/Model3/Real3D.cpp`,
 `Model3.cpp`, `TileGen.cpp`, `Src/Graphics/New3D/*`, `Render2D.cpp`). Where the
 reference is a guess or internally inconsistent this is flagged with **[AMBIG]**.

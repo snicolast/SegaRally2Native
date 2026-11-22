@@ -170,7 +170,7 @@ uint64_t g_dec_irqs = 0;
 [[noreturn]] void exit_from_game_thread(int code);
 uint8_t g_adc_channel = 0;
 Ncr53c810 g_scsi;
-DriveBoard g_drive;   // force feedback board of the joystick (its own Z80)
+DriveBoard g_drive;   // force feedback board of the steering wheel (its own Z80)
 Jtag g_jtag;   // Real3D ASIC IDs, checked at boot on Step 2.1
 
 // Time base (TB): the game resets it to 0 and measures delays with it
@@ -321,9 +321,8 @@ static uint8_t rtc_read(uint32_t a) {
 
 // Security board (315-5881 crypto chip) at 0xF01A0000. The game reads 112
 // bytes through the data register (0x1C, two bytes per word in its high half,
-// low byte first) and compares them with its copyright text at RAM 0x1B1E80
-// ("===== STAR WARS =====..."); a mismatch prints "not correct" and a screen
-// of numbers (fn_000A3600). The chip decrypts data stored on the board; here
+// low byte first) and compares them with its copyright text at RAM 0x1B1E80;
+// a mismatch prints "not correct" and a screen of numbers (fn_000A3600). The chip decrypts data stored on the board; here
 // it hands back the text the game expects. The first read after the address
 // registers (0x10/0x14) are written returns 0xFFFF.
 static bool g_security_first = true;
@@ -730,7 +729,7 @@ DWORD WINAPI game_thread(LPVOID) {
     // above 0x00070000 (error 0x10 on the LEDs otherwise)
     c.spr[287] = 0x00071202;
     g_drive.init(g_drive_rom);
-    if (g_drive_rom.empty()) printf("No force feedback board program (epr-21119): the game will stop at FAILED FEEDBACK LEVER\n");
+    if (g_drive_rom.empty()) printf("No force feedback board program (epr-20512): the game may stop at its board check\n");
     // Test switches left set in the console (set SR2_...=1) change the game
     // in ways that look like bugs later on: listed, so a log shows them
     if (char** env = _environ)

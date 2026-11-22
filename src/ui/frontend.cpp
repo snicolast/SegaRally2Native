@@ -16,9 +16,9 @@
 
 namespace {
 
-// Star Wars: the title's yellow (bright at the top, deeper below) with a dark
-// outline, cool blue-white letters, and lightsaber blue for the lines and the
-// glow behind the selected entry
+// The title's yellow (bright at the top, deeper below) with a dark outline and
+// cool blue-white letters; SABER (a name kept from Star Wars Trilogy) is the
+// accent of the lines and the glow behind the selected entry
 constexpr uint32_t GOLD_TOP = 0xFFF06A, GOLD_BOTTOM = 0xF5C400, EDGE = 0x020308;
 constexpr uint32_t PALE_TOP = 0xEAF2FF, PALE_BOTTOM = 0xAFC2DA, DIM = 0x56606E;
 constexpr uint32_t HINT = 0xC4CAD2, FOOT = 0x7A8088;   // Sega Rally 2: neutral greys (the mock-up)

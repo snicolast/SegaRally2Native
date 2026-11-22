@@ -4,7 +4,7 @@
 // Drawn on the CPU into a full-window BGRA picture (premultiplied alpha) with
 // the OFL fonts in third_party/fonts and the game's yellow-to-orange letter
 // colours; video/ui_overlay.h puts it on screen. Driven by the keyboard
-// (arrows, Enter, Esc), by the mouse/gun (point and click, wheel) and by the
+// (arrows, Enter, Esc), by the mouse (point and click, wheel) and by the
 // gamepads (app.cpp turns what they send into keys).
 #pragma once
 #define WIN32_LEAN_AND_MEAN
@@ -310,7 +310,7 @@ private:
     void prompt(int& x, int y, int h, const wchar_t* pad_button, const wchar_t* key, const wchar_t* what);
     int prompt_width(int h, const wchar_t* pad_button, const wchar_t* key, const wchar_t* what);
     void backdrop_background();
-    // Main, Play, Boss, Survival and Debug on the backdrop: a column at the right under the logo
+    // Main, Play and Debug on the backdrop: a column at the right under the logo
     void draw_side_menu(const std::vector<Item>& list);
     // PLAY's page and back: the entries go out to the right one after the
     // other, then the new page's come in (as Windjammers' menus). Drawn every
