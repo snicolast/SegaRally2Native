@@ -5,12 +5,14 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <cstdlib>
 
 #include <SDL3/SDL.h>
 
 namespace {
 
-constexpr float STICK_DEAD = 0.15f;
+constexpr float STICK_DEAD = 0.15f;   // the menus' (and the old steering's)
+constexpr float STEER_DEAD = 0.04f;   // the steering's: Supermodel's is 3%
 constexpr float TRIGGER_DOWN = 0.35f;
 constexpr float RUMBLE_STRENGTH[4] = {0.0f, 0.45f, 0.75f, 1.0f};
 
@@ -128,6 +130,7 @@ void Gamepads::poll(int rumble, bool focused, bool menu) {
         if (!focused || menu) {
             st.view = st.handbrake = false;
             st.steer = st.gas = st.brake = 0;
+            st.select_dir = 0;
         }
         if (focused && menu) {
             SDL_GamepadButton accept = s.nintendo ? SDL_GAMEPAD_BUTTON_EAST : SDL_GAMEPAD_BUTTON_SOUTH;
@@ -163,13 +166,27 @@ void Gamepads::poll(int rumble, bool focused, bool menu) {
             s.dir = -1;
             st.start = pressed(SDL_GAMEPAD_BUTTON_START);
             st.back = pressed(SDL_GAMEPAD_BUTTON_BACK);
-            // Steering: the left stick's x past a small dead zone, a
-            // gentler response near the centre, the whole lock at the edge
+            // Steering: the left stick's x, straight (as Supermodel: a dead
+            // zone of a few percent, the wheel's angle following the stick's,
+            // the whole lock at the edge). SR2_STICK_CURVE=1: the response
+            // before (a 15% dead zone, gentle near the centre, steep at the edge)
+            static const bool curve = getenv("SR2_STICK_CURVE") && atoi(getenv("SR2_STICK_CURVE")) == 1;
             float sx = axis(p, SDL_GAMEPAD_AXIS_LEFTX);
             float m = std::fabs(sx);
-            float t = m < STICK_DEAD ? 0.0f : std::min((m - STICK_DEAD) / (0.95f - STICK_DEAD), 1.0f);
-            t *= 0.35f + 0.65f * t;
+            float t;
+            if (curve) {
+                t = m < STICK_DEAD ? 0.0f : std::min((m - STICK_DEAD) / (0.95f - STICK_DEAD), 1.0f);
+                t *= 0.35f + 0.65f * t;
+            } else {
+                t = m < STEER_DEAD ? 0.0f : std::min((m - STEER_DEAD) / (0.98f - STEER_DEAD), 1.0f);
+            }
             st.steer = sx < 0 ? -t : t;
+            // Left / right for SELECT CAR: the d-pad, or the stick past half
+            // way (let go once back under a third, so it does not flicker)
+            if (m >= 0.5f) s.stick_dir = sx < 0 ? -1 : 1;
+            else if (m < 0.33f) s.stick_dir = 0;
+            int dpad = int(down(SDL_GAMEPAD_BUTTON_DPAD_RIGHT)) - int(down(SDL_GAMEPAD_BUTTON_DPAD_LEFT));
+            st.select_dir = dpad != 0 ? dpad : s.stick_dir;
             auto pedal = [&](SDL_GamepadAxis a, SDL_GamepadButton b) {
                 float v = std::clamp(axis(p, a), 0.0f, 1.0f);
                 return down(b) ? 1.0f : v < 0.04f ? 0.0f : v;

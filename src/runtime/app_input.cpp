@@ -27,23 +27,27 @@ static int adc(float v) { return std::clamp(int(std::lround(v)), 0, 255); }
 // the car there is; with the hidden cars, eight bands (game_hooks.cpp). The
 // arrows, turning the wheel over 0.3 s and back, went through the middle
 // bands in a frame or two and only ever stopped on the outer cars (issue
-// #105). There each press steps one car: the wheel is put in the next car's
-// band for a moment, then straight back to the centre (no sweep back over the
-// others); held, it repeats
-static int car_select_steer(int car, int dir, double now) {
-    static int last_dir = 0, held = 0x80, held_car = 0;
-    static double held_until = 0, repeat_at = 0;
-    if (dir != 0 && (dir != last_dir || now >= repeat_at)) {
-        if (now < held_until) car = held_car;   // pressed again before the game took the last one
-        int place = std::clamp(sr2_select_place_of(car) + dir, 0, sr2_select_places() - 1);
-        held_car = sr2_select_car_at(place);
-        held = sr2_select_band_centre(place);
-        held_until = now + 0.1;   // the game reads the ADC at 57.5 Hz: a few frames
-        repeat_at = now + (dir != last_dir ? 0.45 : 0.25);
+// #105); a pad's stick had to be held in a narrow part of its travel for a
+// middle car and, let go, sprang back through the bands of the others. There
+// each press steps one car: the wheel is put in the next car's band for a
+// moment, then straight back to the centre (no sweep back over the others);
+// held, it repeats. One for the keyboard, one for the pads
+struct CarSelectSteer {
+    int last_dir = 0, held = 0x80, held_car = 0;
+    double held_until = 0, repeat_at = 0;
+    int operator()(int car, int dir, double now) {
+        if (dir != 0 && (dir != last_dir || now >= repeat_at)) {
+            if (now < held_until) car = held_car;   // pressed again before the game took the last one
+            int place = std::clamp(sr2_select_place_of(car) + dir, 0, sr2_select_places() - 1);
+            held_car = sr2_select_car_at(place);
+            held = sr2_select_band_centre(place);
+            held_until = now + 0.1;   // the game reads the ADC at 57.5 Hz: a few frames
+            repeat_at = now + (dir != last_dir ? 0.45 : 0.25);
+        }
+        last_dir = dir;
+        return now < held_until ? held : 0x80;
     }
-    last_dir = dir;
-    return now < held_until ? held : 0x80;
-}
+};
 
 // The car on the keyboard: arrows steer (the wheel turns over ~0.3 s and
 // comes back by itself), Up / Down are the accelerator and the brake, A / Z
@@ -59,7 +63,8 @@ static void poll_car_keys(Inputs& in, Down down) {
     last = now;
     int dir = down(VK_RIGHT) - down(VK_LEFT);
     if (int car = g_car_select; car >= 0) {   // SELECT CAR: a car a press
-        in.steer = car_select_steer(car, dir, now);
+        static CarSelectSteer select;
+        in.steer = select(car, dir, now);
         steer = 0;
     } else {
         float target = float(dir);
@@ -162,7 +167,12 @@ bool poll_gamepads(HWND hwnd) {
         const PadState& pad = g_pads.pad(i);
         if (!pad.connected) continue;
         if (driver) {
-            if (std::fabs(pad.steer) > std::fabs(keyboard_steer())) in.steer = adc(128.0f + 127.0f * pad.steer);
+            if (int car = g_car_select; car >= 0) {   // SELECT CAR: a car a press (d-pad or stick)
+                static CarSelectSteer select;
+                if (int held = select(car, pad.select_dir, qpc_seconds()); held != 0x80) in.steer = held;
+            } else if (std::fabs(pad.steer) > std::fabs(keyboard_steer())) {
+                in.steer = adc(128.0f + 127.0f * pad.steer);
+            }
             in.accel = std::max(int(in.accel), adc(255.0f * pad.gas));
             in.brake = std::max(int(in.brake), adc(255.0f * pad.brake));
             if (pad.shift_up) in.gear = std::min(int(in.gear) + 1, 4);

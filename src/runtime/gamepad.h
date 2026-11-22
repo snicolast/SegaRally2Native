@@ -33,6 +33,9 @@ struct PadState {
     // the brake (0..1, A and B too), RB / LB shift up and down (pressed
     // since the last poll), Y is VIEW CHANGE and X the hand brake
     float steer = 0, gas = 0, brake = 0;
+    // Left / right on the d-pad or the stick (-1, 0, 1): SELECT CAR steps a
+    // car a press with it (app_input.cpp) instead of the stick's angle
+    int select_dir = 0;
     bool shift_up = false, shift_down = false, view = false, handbrake = false;
 };
 
@@ -71,6 +74,7 @@ private:
         // Menu direction held, for the key repeat
         int dir = -1;
         double next_repeat = 0;
+        int stick_dir = 0;   // the stick's left / right for SELECT CAR (gamepad.cpp)
     };
     void open(uint32_t id);
     void close(uint32_t id);
