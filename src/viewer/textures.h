@@ -7,6 +7,7 @@
 #include <vector>
 
 #include "r3d_scene.h"
+#include "texel_decode.h"   // decode_texel(): one texel to RGBA
 
 // A polygon texture word (R3DVertex::tex) taken apart
 struct TextureWord {
@@ -15,9 +16,6 @@ struct TextureWord {
     uint32_t format;   // texel format, 0-11 (docs/real3d_spec.md 6.5)
 };
 TextureWord texture_word(uint32_t tex);
-
-// One texel to 8-bit RGBA: the decoding of r3d.frag and of texture_pack.cpp
-void decode_texel(uint16_t texel, uint32_t format, uint8_t* rgba);
 
 // The texture as RGBA (w x h x 4) and its texture pack hash
 uint64_t decode_texture(uint32_t tex, R3DTextureRam& ram, std::vector<uint8_t>& rgba);

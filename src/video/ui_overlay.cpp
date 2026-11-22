@@ -11,15 +11,6 @@
 #include "ui.frag.h"
 
 namespace {
-VkShaderModule make_module(VkDevice dev, const uint32_t* code, size_t bytes) {
-    VkShaderModuleCreateInfo ci{VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO};
-    ci.codeSize = bytes;
-    ci.pCode = code;
-    VkShaderModule m = VK_NULL_HANDLE;
-    vkCreateShaderModule(dev, &ci, nullptr, &m);
-    return m;
-}
-
 struct BackdropParams {   // backdrop.frag's push constants
     float t, screen_aspect, pic_aspect, anchor_x, height, blurred, dust;
 };
@@ -79,8 +70,8 @@ bool UiOverlay::init(VkPresenter& vk) {
 // A fullscreen triangle with this fragment shader; blend: premultiplied
 // alpha over what is there, else opaque
 VkPipeline UiOverlay::make_pipeline(const uint32_t* fs_code, size_t fs_bytes, VkPipelineLayout layout, bool blend) {
-    VkShaderModule vs = make_module(dev_, spv_compose_vert, sizeof(spv_compose_vert));
-    VkShaderModule fs = make_module(dev_, fs_code, fs_bytes);
+    VkShaderModule vs = vk_->shader_module(spv_compose_vert, sizeof(spv_compose_vert));
+    VkShaderModule fs = vk_->shader_module(fs_code, fs_bytes);
     VkPipelineShaderStageCreateInfo stages[2]{};
     stages[0] = {VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO, nullptr, 0, VK_SHADER_STAGE_VERTEX_BIT, vs, "main"};
     stages[1] = {VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO, nullptr, 0, VK_SHADER_STAGE_FRAGMENT_BIT, fs, "main"};

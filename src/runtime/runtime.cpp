@@ -130,17 +130,6 @@ std::atomic<bool> g_hold{false};
 // in g_parked, so the audio can be stopped with nobody pushing samples.
 std::atomic<bool> g_quit{false}, g_parked{false};
 
-double qpc_seconds() {
-    static LARGE_INTEGER freq = [] {
-        LARGE_INTEGER f;
-        QueryPerformanceFrequency(&f);
-        return f;
-    }();
-    LARGE_INTEGER now;
-    QueryPerformanceCounter(&now);
-    return double(now.QuadPart) / double(freq.QuadPart);
-}
-
 namespace {
 
 constexpr uint64_t CPU_HZ = 166666667;      // PowerPC 603ev at 166 MHz (Step 2.1). TODO: DEC and TB still tick every 4 cycles, as tuned for Lost World

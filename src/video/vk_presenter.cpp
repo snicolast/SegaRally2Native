@@ -8,19 +8,9 @@
 #include <vector>
 
 #include "dlss.h"
+#include "../common/clock.h"
 
 namespace {
-
-double seconds() {
-    static LARGE_INTEGER freq = [] {
-        LARGE_INTEGER f;
-        QueryPerformanceFrequency(&f);
-        return f;
-    }();
-    LARGE_INTEGER now;
-    QueryPerformanceCounter(&now);
-    return double(now.QuadPart) / double(freq.QuadPart);
-}
 
 bool check(VkResult r, const char* what) {
     if (r != VK_SUCCESS) {
@@ -44,6 +34,15 @@ void vk_image_barrier(VkCommandBuffer cmd, VkImage image, VkImageLayout from, Vk
     b.subresourceRange = {aspect, 0, 1, 0, layers};
     vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, 0, 0,
                          nullptr, 0, nullptr, 1, &b);
+}
+
+VkShaderModule VkPresenter::shader_module(const uint32_t* code, size_t bytes) const {
+    VkShaderModuleCreateInfo ci{VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO};
+    ci.codeSize = bytes;
+    ci.pCode = code;
+    VkShaderModule m = VK_NULL_HANDLE;
+    vkCreateShaderModule(device_, &ci, nullptr, &m);
+    return m;
 }
 
 uint32_t VkPresenter::find_memory(uint32_t type_bits, VkMemoryPropertyFlags flags) const {
@@ -634,14 +633,14 @@ void VkPresenter::frame(const RecordFn& record) {
     }
     if (!swapchain_) return;
 
-    double t0 = seconds();
+    double t0 = qpc_seconds();
     vkWaitForFences(device_, 1, &fence_, VK_TRUE, UINT64_MAX);
-    double t_fence = seconds();
+    double t_fence = qpc_seconds();
     uint32_t index = 0;
     VkResult r = vkAcquireNextImageKHR(device_, swapchain_, UINT64_MAX, acquired_, VK_NULL_HANDLE, &index);
     if (r == VK_ERROR_OUT_OF_DATE_KHR) { resized_ = true; return; }
     vkResetFences(device_, 1, &fence_);
-    double t1 = seconds();
+    double t1 = qpc_seconds();
 
     vkResetCommandBuffer(cmd_, 0);
     VkCommandBufferBeginInfo bi{VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
@@ -650,7 +649,7 @@ void VkPresenter::frame(const RecordFn& record) {
     vk_image_barrier(cmd_, images_[index], VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
     current_image_ = images_[index];
     record(cmd_, views_[index], extent_);
-    double t2 = seconds();
+    double t2 = qpc_seconds();
     bool capture = !capture_path_.empty();
     if (capture) {
         // Copy the finished image to a host-visible buffer
@@ -710,7 +709,7 @@ void VkPresenter::frame(const RecordFn& record) {
     }
     r = vkQueuePresentKHR(queue_, &pi);
     if (r == VK_ERROR_OUT_OF_DATE_KHR || r == VK_SUBOPTIMAL_KHR) resized_ = true;
-    double t3 = seconds();
+    double t3 = qpc_seconds();
     timing_.gpu_wait += t1 - t0;
     timing_.record += t2 - t1;
     timing_.present += t3 - t2;
@@ -752,7 +751,7 @@ double VkPresenter::limit_queue(int depth, uint64_t timeout_ns) {
     if (!present_wait_ || !swapchain_ || depth <= 0 || present_id_ < uint64_t(depth)) return 0;
     uint64_t id = present_id_ + 1 - uint64_t(depth);
     if (id < swapchain_first_id_ || vkWaitForPresentKHR(device_, swapchain_, id, timeout_ns) != VK_SUCCESS) return 0;
-    return seconds();
+    return qpc_seconds();
 }
 
 void VkPresenter::shutdown() {

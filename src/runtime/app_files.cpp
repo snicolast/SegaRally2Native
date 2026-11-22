@@ -40,6 +40,7 @@
 #include "../video/r3d_screen.h"
 #include "../video/r3d_state.h"
 #include "../video/sky_pack.h"
+#include "../video/snapshot.h"
 #include "../video/text_hd.h"
 #include "../video/texture_pack.h"
 #include "../video/tilegen.h"
@@ -98,46 +99,20 @@ void dump_scene(const R3DScene& scene, const uint32_t* back, const uint32_t* fro
 
 
 // Debug snapshot (F9): the Real3D memory of the frame on screen, texture RAM
-// and 2D layer memory in one file, to look at a scene again with --replay
-static const uint32_t SNAPSHOT_MAGIC = 0x3153574C;   // "LWS1"
-
+// and 2D layer memory in one file (snapshot.h), to look at a scene again with
+// --replay or in the capture viewer
 void save_snapshot(const char* path, const R3DFrameState& state, const std::vector<uint8_t>& vram) {
-    FILE* f = fopen(path, "wb");
-    if (!f) return;
-    uint32_t count = uint32_t(state.pages.size());
-    fwrite(&SNAPSHOT_MAGIC, 4, 1, f);
-    fwrite(&state.frame, 8, 1, f);
-    fwrite(&count, 4, 1, f);
-    for (auto& [key, page] : state.pages) {
-        fwrite(&key, 4, 1, f);
-        fwrite(page->data(), 1, page->size(), f);
-    }
     std::vector<uint16_t> texels;
     g_texture_ram.copy_all(texels);
-    fwrite(texels.data(), 2, texels.size(), f);
-    fwrite(vram.data(), 1, vram.size(), f);
-    fclose(f);
+    write_snapshot(path, state, texels, vram);
 }
 
 bool load_snapshot(const char* path) {
-    FILE* f = fopen(path, "rb");
-    if (!f) return false;
-    uint32_t magic = 0, count = 0;
-    auto state = std::make_shared<R3DFrameState>();
-    bool ok = fread(&magic, 4, 1, f) == 1 && magic == SNAPSHOT_MAGIC && fread(&state->frame, 8, 1, f) == 1 &&
-              fread(&count, 4, 1, f) == 1;
-    for (uint32_t i = 0; ok && i < count; i++) {
-        uint32_t key;
-        auto page = std::make_shared<R3DPage>();
-        ok = fread(&key, 4, 1, f) == 1 && fread(page->data(), 1, page->size(), f) == page->size();
-        state->pages[key] = page;
-    }
-    std::vector<uint16_t> texels(2048 * 2048);
-    ok = ok && fread(texels.data(), 2, texels.size(), f) == texels.size();
-    std::vector<uint8_t> vram(TILEGEN_SIZE);
-    ok = ok && fread(vram.data(), 1, vram.size(), f) == vram.size();
-    fclose(f);
-    if (!ok) return false;
+    std::shared_ptr<R3DFrameState> state;
+    std::vector<uint16_t> texels;
+    std::vector<uint8_t> vram;
+    std::string error;
+    if (!read_snapshot(path, state, texels, vram, error)) return false;
     g_texture_ram.load_all(texels);
     {
         std::lock_guard<std::mutex> lock(g_video_mutex);

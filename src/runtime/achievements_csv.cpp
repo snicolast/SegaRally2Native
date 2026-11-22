@@ -88,21 +88,6 @@ std::string local_time(int64_t t) {
     return strftime(b, sizeof b, "%Y-%m-%d %H:%M:%S", &tm) ? b : "";
 }
 
-bool replace_file(const std::string& path, const void* data, size_t size) {
-    std::string tmp = path + ".tmp";
-    FILE* f = fopen(tmp.c_str(), "wb");
-    if (!f) return false;
-    bool ok = fwrite(data, 1, size, f) == size;
-    ok = fclose(f) == 0 && ok;
-#ifdef _WIN32
-    ok = ok && MoveFileExA(tmp.c_str(), path.c_str(), MOVEFILE_REPLACE_EXISTING);
-#else
-    ok = ok && rename(tmp.c_str(), path.c_str()) == 0;
-#endif
-    if (!ok) remove(tmp.c_str());
-    return ok;
-}
-
 // An icon, written again only when missing or different
 bool write_icon(const std::string& path, const unsigned char* data, size_t size) {
     if (FILE* f = fopen(path.c_str(), "rb")) {
@@ -111,7 +96,7 @@ bool write_icon(const std::string& path, const unsigned char* data, size_t size)
         fclose(f);
         if (n == size && std::equal(data, data + size, reinterpret_cast<const unsigned char*>(have.data()))) return true;
     }
-    return replace_file(path, data, size);
+    return replace_file_now(path, data, size);
 }
 
 void make_dir(const char* path) {

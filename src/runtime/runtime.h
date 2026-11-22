@@ -16,6 +16,7 @@
 #include "eeprom.h"
 #include "inputs.h"
 #include "../audio/audio_out.h"
+#include "../common/clock.h"   // qpc_seconds()
 #include "../audio/sound_board.h"
 #include "../video/r3d_state.h"
 
@@ -41,7 +42,6 @@ extern AutoInput g_auto;
 
 // The game thread: runs the recompiled program on a 512 MB native stack
 DWORD WINAPI game_thread(LPVOID);
-double qpc_seconds();              // seconds from a fixed origin (QueryPerformanceCounter)
 void frame_log(const char* fmt, ...);   // LW_FRAMELOG (app.cpp); does nothing without it
 void console_prompt();             // before the process ends: the prompt of the terminal it was started from (app.cpp)
 extern LARGE_INTEGER g_qpf, g_start_time;

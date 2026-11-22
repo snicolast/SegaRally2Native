@@ -7,6 +7,8 @@
 
 #include <mmsystem.h>
 
+#include "ui_draw.h"
+
 namespace {
 
 // The menus' colours (ui/frontend.cpp)
@@ -18,36 +20,7 @@ constexpr double SHINE_AT = 0.4, SHINE_TIME = 0.55;   // a light sweep once it h
 
 const wchar_t* const FACES[2] = {L"Saira ExtraCondensed ExCond", L"Barlow Condensed"};
 
-float chan(uint32_t rgb, int shift) { return float((rgb >> shift) & 0xFF) / 255.0f; }
-
-uint32_t mix(uint32_t a, uint32_t b, float t) {
-    uint32_t r = 0;
-    for (int s = 0; s <= 16; s += 8) {
-        float v = chan(a, s) + (chan(b, s) - chan(a, s)) * t;
-        r |= uint32_t(std::clamp(v, 0.0f, 1.0f) * 255.0f + 0.5f) << s;
-    }
-    return r;
-}
-
-inline uint32_t over(uint32_t d, uint32_t rgb, int a) {   // a: 0..256, premultiplied BGRA
-    int k = 256 - a;
-    uint32_t rb = (((rgb & 0xFF00FFu) * a + (d & 0xFF00FFu) * k) >> 8) & 0xFF00FFu;
-    uint32_t g = (((rgb & 0x00FF00u) * a + (d & 0x00FF00u) * k) >> 8) & 0x00FF00u;
-    uint32_t da = ((255u * a + (d >> 24) * k) >> 8);
-    return rb | g | (da << 24);
-}
-
-std::vector<char> read_file(const std::string& path) {
-    std::vector<char> data;
-    if (FILE* f = fopen(path.c_str(), "rb")) {
-        fseek(f, 0, SEEK_END);
-        data.resize(size_t(ftell(f)));
-        fseek(f, 0, SEEK_SET);
-        if (fread(data.data(), 1, data.size(), f) != data.size()) data.clear();
-        fclose(f);
-    }
-    return data;
-}
+using ui_draw::mix, ui_draw::over, ui_draw::read_file;
 
 // Slide curves: overshoot a little on the way in, take a run up on the way out
 double ease_out_back(double t) {
@@ -155,36 +128,13 @@ const AchievementToast::Mask& AchievementToast::mask(Family f, int px, const std
     if (it != masks_.end()) return it->second;
     if (masks_.size() > 100) masks_.clear();
     Mask& m = masks_[key];
-    SelectObject(dc_, font(f, px));
-    SIZE sz{};
-    GetTextExtentPoint32W(dc_, s.c_str(), int(s.size()), &sz);
-    TEXTMETRICW tm{};
-    GetTextMetricsW(dc_, &tm);
     m.pad = 2 + px / 6;
-    m.text_w = sz.cx;
-    m.ascent = tm.tmAscent;
-    m.w = sz.cx + 2 * m.pad;
-    m.h = sz.cy + 2 * m.pad;
-    BITMAPINFO bi{};
-    bi.bmiHeader.biSize = sizeof(bi.bmiHeader);
-    bi.bmiHeader.biWidth = m.w;
-    bi.bmiHeader.biHeight = -m.h;
-    bi.bmiHeader.biPlanes = 1;
-    bi.bmiHeader.biBitCount = 32;
-    void* bits = nullptr;
-    HBITMAP bmp = CreateDIBSection(dc_, &bi, DIB_RGB_COLORS, &bits, nullptr, 0);
-    if (!bmp) return m;
-    HGDIOBJ old = SelectObject(dc_, bmp);
-    memset(bits, 0, size_t(m.w) * m.h * 4);
-    SetBkMode(dc_, TRANSPARENT);
-    SetTextColor(dc_, RGB(255, 255, 255));
-    TextOutW(dc_, m.pad, m.pad, s.c_str(), int(s.size()));
-    GdiFlush();
-    m.a.resize(size_t(m.w) * m.h);
-    const uint8_t* p = static_cast<const uint8_t*>(bits);
-    for (size_t i = 0; i < m.a.size(); i++) m.a[i] = p[i * 4 + 1];
-    SelectObject(dc_, old);
-    DeleteObject(bmp);
+    ui_draw::TextRaster t = ui_draw::rasterise_text(dc_, font(f, px), s, m.pad);
+    m.text_w = t.text_w;
+    m.ascent = t.tm.tmAscent;
+    m.w = t.w;
+    m.h = t.h;
+    m.a = std::move(t.a);
     return m;
 }
 

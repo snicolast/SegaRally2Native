@@ -14,6 +14,9 @@
 
 #include <wincodec.h>
 
+#include "ui_draw.h"
+#include "../common/clock.h"
+
 namespace {
 
 // The title's yellow (bright at the top, deeper below) with a dark outline and
@@ -25,35 +28,7 @@ constexpr uint32_t HINT = 0xC4CAD2, FOOT = 0x7A8088;   // Sega Rally 2: neutral 
 constexpr uint32_t SABER = 0xC8241E, PANEL = 0x040914;   // Sega Rally 2: the accent is the logo's red
 
 
-double now_seconds() {
-    static LARGE_INTEGER freq = [] { LARGE_INTEGER f; QueryPerformanceFrequency(&f); return f; }();
-    LARGE_INTEGER t;
-    QueryPerformanceCounter(&t);
-    return double(t.QuadPart) / double(freq.QuadPart);
-}
-
-float chan(uint32_t rgb, int shift) { return float((rgb >> shift) & 0xFF) / 255.0f; }
-
-uint32_t mix(uint32_t a, uint32_t b, float t) {
-    uint32_t r = 0;
-    for (int s = 0; s <= 16; s += 8) {
-        float v = chan(a, s) + (chan(b, s) - chan(a, s)) * t;
-        r |= uint32_t(std::clamp(v, 0.0f, 1.0f) * 255.0f + 0.5f) << s;
-    }
-    return r;
-}
-
-std::vector<char> read_file(const std::string& path) {
-    std::vector<char> data;
-    if (FILE* f = fopen(path.c_str(), "rb")) {
-        fseek(f, 0, SEEK_END);
-        data.resize(size_t(ftell(f)));
-        fseek(f, 0, SEEK_SET);
-        if (fread(data.data(), 1, data.size(), f) != data.size()) data.clear();
-        fclose(f);
-    }
-    return data;
-}
+using ui_draw::chan, ui_draw::mix, ui_draw::over, ui_draw::read_file;
 
 // Frontend::Family: the font's family name (as Windows knows it) and weight
 const wchar_t* const FACES[6] = {L"Saira ExtraCondensed ExCond", L"Barlow Condensed", L"Share Tech Mono",
@@ -462,7 +437,7 @@ void Frontend::open_splash() {
     if (video_.is_open() && settings.splash) {
         open(Screen::Splash);
         video_on_ = true;
-        splash_from_ = now_seconds();
+        splash_from_ = qpc_seconds();
         skip_from_ = -1;
         video_end_ = -1;
         video_level_ = 0;
@@ -477,7 +452,7 @@ void Frontend::open_splash() {
     }
     open(Screen::Splash);
     splash_on_ = 0;
-    splash_from_ = now_seconds();
+    splash_from_ = qpc_seconds();
     skip_from_ = -1;
     skip_next_ = false;
 }
@@ -1305,15 +1280,6 @@ void Frontend::draw_drop() {
 
 // ---- Drawing primitives (premultiplied BGRA canvas) ----
 
-// Integer "over" on premultiplied BGRA (it runs for every pixel of panels and text)
-static inline uint32_t over(uint32_t d, uint32_t rgb, int a) {   // a: 0..256
-    int k = 256 - a;
-    uint32_t rb = (((rgb & 0xFF00FFu) * a + (d & 0xFF00FFu) * k) >> 8) & 0xFF00FFu;
-    uint32_t g = (((rgb & 0x00FF00u) * a + (d & 0x00FF00u) * k) >> 8) & 0x00FF00u;
-    uint32_t da = ((255u * a + (d >> 24) * k) >> 8);
-    return rb | g | (da << 24);
-}
-
 void Frontend::blend(int x, int y, uint32_t rgb, float a) {
     if (x < 0 || y < 0 || x >= w_ || y >= h_ || a <= 0) return;
     uint32_t& d = px_[size_t(y) * w_ + x];
@@ -1363,39 +1329,17 @@ const Frontend::Mask& Frontend::mask(Family f, int px, const std::wstring& s, in
     if (it != masks_.end()) return it->second;
     if (masks_.size() > 800) masks_.clear();   // window resized many times
     Mask& m = masks_[key];
-    SelectObject(dc_, font(f, px));
-    const std::wstring& t = s;
-    SIZE sz{};
-    GetTextExtentPoint32W(dc_, t.c_str(), int(t.size()), &sz);
-    TEXTMETRICW tm{};
-    GetTextMetricsW(dc_, &tm);
     m.pad = edge_px + 2 + px / 6;   // room for the outline and overhanging letters
-    m.text_w = sz.cx;
-    m.text_h = sz.cy;
-    m.w = sz.cx + 2 * m.pad;
-    m.h = sz.cy + 2 * m.pad;
+    ui_draw::TextRaster t = ui_draw::rasterise_text(dc_, font(f, px), s, m.pad);
+    const TEXTMETRICW& tm = t.tm;
+    m.text_w = t.text_w;
+    m.text_h = t.text_h;
+    m.w = t.w;
+    m.h = t.h;
     m.grad0 = m.pad + tm.tmInternalLeading + (tm.tmAscent - tm.tmInternalLeading) / 8;
     m.grad1 = m.pad + tm.tmAscent;
-    BITMAPINFO bi{};
-    bi.bmiHeader.biSize = sizeof(bi.bmiHeader);
-    bi.bmiHeader.biWidth = m.w;
-    bi.bmiHeader.biHeight = -m.h;
-    bi.bmiHeader.biPlanes = 1;
-    bi.bmiHeader.biBitCount = 32;
-    void* bits = nullptr;
-    HBITMAP bmp = CreateDIBSection(dc_, &bi, DIB_RGB_COLORS, &bits, nullptr, 0);
-    if (!bmp) return m;
-    HGDIOBJ old = SelectObject(dc_, bmp);
-    memset(bits, 0, size_t(m.w) * m.h * 4);
-    SetBkMode(dc_, TRANSPARENT);
-    SetTextColor(dc_, RGB(255, 255, 255));
-    TextOutW(dc_, m.pad, m.pad, t.c_str(), int(t.size()));
-    GdiFlush();
-    m.a.resize(size_t(m.w) * m.h);
-    const uint8_t* p = static_cast<const uint8_t*>(bits);
-    for (size_t i = 0; i < m.a.size(); i++) m.a[i] = p[i * 4 + 1];
-    SelectObject(dc_, old);
-    DeleteObject(bmp);
+    if (t.a.empty()) return m;
+    m.a = std::move(t.a);
     if (edge_px > 0) {   // outline: the letters grown by a round brush
         m.e.assign(m.a.size(), 0);
         float r = float(edge_px);
@@ -1879,7 +1823,7 @@ void Frontend::shade_backdrop() {
 
 double Frontend::menu_clock() const {
     static const double fps = getenv("SR2_MENU_FPS") ? atof(getenv("SR2_MENU_FPS")) : 0;
-    return fps > 0 ? double(menu_frames_) / fps : now_seconds();
+    return fps > 0 ? double(menu_frames_) / fps : qpc_seconds();
 }
 
 void Frontend::slide_to(Screen s, int sel) {
@@ -2101,22 +2045,22 @@ constexpr double MENU_IN = 0.8;        // the main menu fading in after them
 
 void Frontend::skip_splash() {
     if (video_on_) {   // faded out with its sound, unless it is going anyway
-        if (skip_from_ < 0 && video_end_ < 0) skip_level_ = video_level_, skip_from_ = now_seconds();
+        if (skip_from_ < 0 && video_end_ < 0) skip_level_ = video_level_, skip_from_ = qpc_seconds();
         return;
     }
     if (skip_from_ >= 0) {   // already going: the next one goes too
         skip_next_ = true;
         return;
     }
-    double t = now_seconds() - splash_from_;
+    double t = qpc_seconds() - splash_from_;
     if (t >= SPLASH_GAP + SPLASH_IN + SPLASH_HOLD) return;   // fading out anyway
     skip_level_ = float(std::clamp((t - SPLASH_GAP) / SPLASH_IN, 0.0, 1.0));
-    skip_from_ = now_seconds();
+    skip_from_ = qpc_seconds();
 }
 
 bool Frontend::draw_splash(std::vector<uint32_t>& out) {
     if (video_on_) return draw_splash_video(out);
-    double now = now_seconds();
+    double now = qpc_seconds();
     float level = 0;   // brightness: 0 black .. 1 the picture
     for (;;) {
         double t = now - splash_from_;
@@ -2167,7 +2111,7 @@ bool Frontend::draw_splash(std::vector<uint32_t>& out) {
 // sound), its last picture faded out. Hurried: picture and sound fade out
 // together. As big as fits the window, its own background colour around it
 bool Frontend::draw_splash_video(std::vector<uint32_t>& out) {
-    double now = now_seconds(), t = now - splash_from_;
+    double now = qpc_seconds(), t = now - splash_from_;
     if (video_.failed() || (t > 5 && video_.position() <= 0)) return false;   // it will not play: to the menu
     if (video_end_ < 0 && video_.ended()) video_end_ = now;
     float level = float(std::clamp(t / SPLASH_IN, 0.0, 1.0));
@@ -2896,7 +2840,7 @@ bool Frontend::draw(int w, int h, std::vector<uint32_t>& out) {
             return true;
         }
         open(Screen::Main);   // the last one ended: the menu comes in from black
-        menu_in_from_ = now_seconds();
+        menu_in_from_ = qpc_seconds();
     }
     auto U = [&](float v) { return int(v * u_ + 0.5f); };
     bool over_game = this->over_game();
@@ -2912,7 +2856,7 @@ bool Frontend::draw(int w, int h, std::vector<uint32_t>& out) {
     // After the splash: the whole picture towards black, less every refresh
     auto fade_in = [&] {
         if (menu_in_from_ < 0) return;
-        double k = (now_seconds() - menu_in_from_) / MENU_IN;
+        double k = (qpc_seconds() - menu_in_from_) / MENU_IN;
         if (k >= 1 || over_game) {
             menu_in_from_ = -1;
             return;

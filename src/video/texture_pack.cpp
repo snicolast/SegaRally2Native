@@ -1,6 +1,7 @@
 #include "texture_pack.h"
 
 #include "../common/fnv1a.h"
+#include "texel_decode.h"
 
 #include <windows.h>
 
@@ -10,39 +11,6 @@
 #include <cstring>
 
 namespace {
-
-// Same decoding as r3d.frag decode(), to 8-bit RGBA
-void decode(uint16_t t, uint32_t fmt, uint8_t* o) {
-    auto lum = [&](uint32_t l, uint32_t max, bool opaque, uint32_t a) {
-        o[0] = o[1] = o[2] = uint8_t((l * 255 + max / 2) / max);
-        o[3] = opaque ? uint8_t(a) : uint8_t(0);
-    };
-    auto l4 = [&](uint32_t l, uint32_t a) { lum(l, 15, true, (a * 255 + 7) / 15); };
-    switch (fmt) {
-    case 0:
-        o[0] = uint8_t((((t >> 10) & 31) * 255 + 15) / 31);
-        o[1] = uint8_t((((t >> 5) & 31) * 255 + 15) / 31);
-        o[2] = uint8_t(((t & 31) * 255 + 15) / 31);
-        o[3] = (t & 0x8000) ? 0 : 255;
-        break;
-    case 1: l4(t & 15, (t >> 4) & 15); break;
-    case 2: l4((t >> 4) & 15, t & 15); break;
-    case 3: l4((t >> 8) & 15, (t >> 12) & 15); break;
-    case 4: l4((t >> 12) & 15, (t >> 8) & 15); break;
-    case 5: lum(t & 255, 255, (t & 255) != 255, 255); break;
-    case 6: lum((t >> 8) & 255, 255, ((t >> 8) & 255) != 255, 255); break;
-    case 7:
-        o[0] = uint8_t(((t >> 12) & 15) * 17);
-        o[1] = uint8_t(((t >> 8) & 15) * 17);
-        o[2] = uint8_t(((t >> 4) & 15) * 17);
-        o[3] = uint8_t((t & 15) * 17);
-        break;
-    default: {
-        uint32_t n = (t >> (4 * (fmt - 8))) & 15;
-        lum(n, 15, n != 15, 255);
-    }
-    }
-}
 
 // The texels of b that t has darkened as a painted shadow does (set_unpaint_shadows):
 // 0 unless at least a fifth of the texels are the same, at least 3 in 100
@@ -130,7 +98,7 @@ uint64_t TexturePack::decode_texture(uint32_t tex, R3DTextureRam& ram, uint64_t&
     uint32_t fmt = tex >> 28;
     generation = ram.read_texture(x, y, w, h, texels_);
     rgba_.resize(texels_.size() * 4);
-    for (size_t i = 0; i < texels_.size(); i++) decode(texels_[i], fmt, &rgba_[i * 4]);
+    for (size_t i = 0; i < texels_.size(); i++) decode_texel(texels_[i], fmt, &rgba_[i * 4]);
     uint32_t dims[2] = {uint32_t(w), uint32_t(h)};
     return fnv1a_bytes(rgba_.data(), rgba_.size(), fnv1a_bytes(dims, sizeof(dims)));
 }
@@ -220,7 +188,7 @@ uint32_t TexturePack::unpainted_slot(uint32_t tex, int w, int h, uint64_t hash) 
             RgbaImage img;
             img.w = w, img.h = h;
             img.rgba.resize(n * 4);
-            for (size_t i = 0; i < n; i++) decode(original->texels[i], 0, &img.rgba[i * 4]);
+            for (size_t i = 0; i < n; i++) decode_texel(original->texels[i], 0, &img.rgba[i * 4]);
             slot = uint32_t(slots_.size() + 1);
             slots_[key] = slot;
             img.slot = slot;

@@ -49,6 +49,6 @@ jobs:
             -DCMAKE_C_COMPILER=x86_64-w64-mingw32-clang -DCMAKE_CXX_COMPILER=x86_64-w64-mingw32-clang++ `
             -DCMAKE_RC_COMPILER=x86_64-w64-mingw32-windres
       - name: Build what does not need the ROM (the game with its stand-in)
-        run: cmake --build build\cmake --target shaders m68kmake tilegen_test fnv_test options_test audio_stream_test rom_zip_test jtag_test r3d_state_test menu_music_test achievements_csv_test disk_writer_test viewer_test pack2d_test telemetry_test SegaRally2Viewer SegaRally2
+        run: cmake --build build\cmake --target all SegaRally2Viewer
       - name: Test
         run: ctest --test-dir build\cmake --output-on-failure
