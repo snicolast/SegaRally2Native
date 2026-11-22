@@ -138,6 +138,9 @@ pace notes, 24 bytes each, a negative track point ending the list:
 fn_0003E5C8 finds the next note at the start (index +0xC4, its point +0xC8),
 fn_0003E68C calls it. FOREST's list (0xE5090) has only the end: game_hooks.cpp
 writes FOREST its own and points its structure there.
+The sign shows with the call, after the distance word's wait (+0xD8), for
+90 frames; out of ARCADE ORIGINAL the port shows it as the distance word
+starts (hooks at 0x3E8D0 / 0x3E9C0).
 
 ## Finish, stage cleared, time up, championship result
 

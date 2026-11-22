@@ -19,6 +19,10 @@ void sr2_card_flag_store_all(uint32_t ea, uint32_t v);                // the loo
 uint32_t sr2_card_palette(uint32_t table, uint32_t offset);           // the 2D picture's palette for a card
 uint32_t sr2_course_id(uint32_t table, uint32_t offset);              // the race set-up: card -> course id
 uint32_t sr2_course_sound(uint32_t ea);                               // a course's sound at the start / goal (FOREST: MOUNTAIN's)
+// The co-driver's sign: frames before it shows (the arcade: after the distance
+// word; otherwise at once) and then how long it stays on
+uint32_t sr2_sign_wait(uint32_t frames);
+uint32_t sr2_sign_shown(uint32_t frames);
 
 // OBJECT DISTANCE (game_hooks.cpp): how far ahead of the camera, in metres,
 // the course's placed objects are put in the scene (the ROM's 100.0 at 0xF54D0)

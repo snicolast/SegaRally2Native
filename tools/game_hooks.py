@@ -91,6 +91,13 @@ _set([0x3E5B0], ["c.r[3] = sr2_course_sound(c.r[9] + 4);"])            # lwz r3,
 # FOREST's own notes in game_hooks.cpp)
 _set([0x3E85C], ["c.r[3] = sr2_course_sound(c.r[9] + c.r[0]);"])       # lwzx r3, r9, r0
 
+# The co-driver's sign (pace notes, 0x3E68C): the game showed it only after the
+# distance word (the wait of table 0xF160C, ~0.7 s), with the corner's call;
+# out of ARCADE ORIGINAL it comes as the distance starts, and stays on that
+# much longer (game_hooks.cpp)
+_set([0x3E8D0], ["wr32(c.r[31] + 0xD8, sr2_sign_wait(c.r[0]));"])      # stw r0, 0xD8(r31)
+_set([0x3E9C0], ["wr32(c.r[11] + 0xD8, sr2_sign_shown(c.r[0]));"])     # stw r0, 0xD8(r11)
+
 # OBJECT DISTANCE: the course's placed objects (spectators, cameramen, signs,
 # cones...) are put in the scene only within 100 m ahead of the camera
 # (0x5D784, lfs f0 of 0xF54D0); out of the race, the kind-4 ones within 100 m
