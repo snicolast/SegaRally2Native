@@ -276,6 +276,13 @@ uint32_t sr2_course_sound(uint32_t ea) {
     return rd32(ea);
 }
 
+// START!! (tools/game_hooks.py): the 2D layers' A/A' line mask (0xF10F7000,
+// a word per line, a bit per 16 pixels, 1 = layer A), as 0x41CB4 fills it
+void sr2_start_mask() {
+    constexpr uint32_t MASK = 0xF10F7000, WORDS = 0x200;
+    for (uint32_t i = 0; i < WORDS; i++) wr32(MASK + 4 * i, ~0u);
+}
+
 // ---- OBJECT DISTANCE -------------------------------------------------------
 // The course's placed objects (table 0x497CCC, 24 bytes each: spectators,
 // cameramen, flashes, cones, signs, tyre barriers, snowmen...) are put in the

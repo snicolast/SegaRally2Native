@@ -137,3 +137,12 @@ _set([0x3F54], ["c.r[0] = sr2_select_band(c.r[9], c.r[10]);"])
 # goes left): the eight, the Delta with the left ones
 _set([0x47A38], [f"c.r[0] = c.r[11] + ({E8} ? 84 : 60);"])
 _set([0x47A50], ["cmps(c, 1, sr2_car_goes_right(c.r[11], c.r[10]), 0);"])
+
+# START!! (the picture before each race, mode table 0xF15F0: init 0x45204):
+# the race HUD's lap-time box leaves lines of the A/A' line mask (0xF10F7000)
+# picking A' for the left 128 pixels (set by 0x16D94 as START ends, put back
+# by 0x16CC8 as the race ends), and the init only blanks layer A's names. From
+# the second race on, a box of the left side showed layer B through (the
+# NAME ENTRY backdrop still there). After lis r9, 0x4B (0x45228) the mask is
+# filled back with A everywhere, as 0x41CB4 does
+_set([0x45228], ["c.r[9] = 0x004B0000;", "sr2_start_mask();"])
