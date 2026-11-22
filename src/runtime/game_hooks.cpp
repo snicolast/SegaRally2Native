@@ -224,13 +224,13 @@ static void forest_pace_notes() {
     struct Note { int point, when, word, sign, sign2, call; };
     static const Note notes[] = {
         {4, 1, 5, EASY_LEFT, -1, 308},          // from the start (first lap): 17 easy left
-        {16, -1, 3, EASY_RIGHT, -1, 259},       // 23-31 (later: off the lap line's CHECKPOINT call)
+        {13, -1, 4, EASY_RIGHT, -1, 259},       // 23-31
         {30, -1, 4, LONG_EASY_RIGHT, -1, 270},  // 39-68, after the kink at 36
         {64, -1, 4, LONG_K_LEFT, -1, 257},      // 73
         {83, -1, 3, MID_RIGHT, -1, 276},        // 91-108
         {102, -1, 3, LONG_MID_LEFT, -1, 326},   // 110-124
         {117, -1, 4, K_RIGHT, -1, 299},         // 126
-        {136, -1, 4, LONG_EASY_RIGHT, -1, 270}, // 145-180
+        {129, -1, 5, LONG_EASY_RIGHT, -1, 270}, // 145-180 (said before the second checkpoint, 138)
         {173, -1, 4, MID_LEFT, -1, 325},        // 182
         {187, -1, 4, LONG_EASY_LEFT, -1, 319},  // 196-219
         {220, -1, 4, K_RIGHT, -1, 299},         // 229
