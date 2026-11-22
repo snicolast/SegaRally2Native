@@ -89,7 +89,7 @@ set SR2_NO_PAUSE=1
 if exist data\drive_program.bin (call build.bat) else (call build.bat "%ZIP%")
 if errorlevel 1 goto fail
 echo.
-echo Installed. Play with SegaRally2.exe. Updates come through NicoLauncher.
+echo Installed. Play with SegaRally2.exe; update later with update.bat.
 if not defined PAUSE_AT_END exit /b 0
 choice /c YN /m "Start the game now"
 if not errorlevel 2 start "" "%~dp0SegaRally2.exe"
