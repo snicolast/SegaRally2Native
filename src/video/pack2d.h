@@ -88,8 +88,8 @@ private:
         uint32_t lit_slot = 0;
         // "px CELL p0 .. p63" lines (BGRA, hex): the pixels of a cell that changes
         // between the two states, in each state (px_off from <name>.txt, px_lit from
-        // <name>_lit.txt). A cell caught between them (a bar graph's last bar half
-        // lit) is shown as the state most of its changing pixels are closer to
+        // <name>_lit.txt). A cell caught between them (a bar graph's last bars half
+        // lit) shows each 2x2-pixel block in the state its pixels are closer to
         std::unordered_map<int, std::array<uint32_t, 64>> px_off, px_lit;
     };
     // Who holds each slot of the range, and the last apply() that showed it
@@ -111,10 +111,12 @@ private:
     std::vector<RgbaImage> pending_;
     std::vector<uint64_t> hashes_, hashes_top_;
     int matches(const Entry& e, int cx, int cy, int& total) const;
-    // For a cell of `e` (index in its box) that shows neither state: whether its
-    // pixels in `raw` are closer to the lit state (false: the unlit one, or no
-    // reference pixels for it)
-    static bool closer_to_lit(const Entry& e, int index, const uint32_t* raw, int px, int py);
+    // For a cell of `e` (index in its box) that shows neither state: which of
+    // its 4x4 blocks of 2x2 pixels show the lit state (bit y * 4 + x), each
+    // block as most of its changing pixels in `raw` are closer to one state or
+    // the other (blocks with none of them: as most of the cell's are). 0 = none
+    // lit, or no reference pixels for it
+    static uint32_t lit_blocks(const Entry& e, int index, const uint32_t* raw, int px, int py);
     bool same(int cy, int cx, uint64_t ref) const {
         return hashes_[cy * CELLS_X + cx] == ref || hashes_top_[cy * CELLS_X + cx] == ref;
     }

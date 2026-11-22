@@ -216,6 +216,10 @@ vec4 replacement_pictures(vec4 under, vec2 pos, bool below_3d) {
             ivec2 cell = clamp(ivec2(pos / 8.0), ivec2(0), SIZE_2D / 8 - 1);
             vec4 mark = texelFetch(text_cells, ivec2(cell.x * TEXT_CELL_TEXELS + 1, cell.y), 0);
             if (mark.a < 0.5 || abs(mark.r - info.r) > 0.5 / 255.0) continue;
+            // only some of its 2x2-pixel blocks (G, B: bit y * 4 + x; none = the whole cell)
+            uint blocks = uint(mark.g * 255.0 + 0.5) << 8 | uint(mark.b * 255.0 + 0.5);
+            ivec2 block = clamp(ivec2((pos - vec2(cell) * 8.0) / 2.0), ivec2(0), ivec2(3));
+            if (blocks != 0u && ((blocks >> uint(block.y * 4 + block.x)) & 1u) == 0u) continue;
         }
         vec4 rect = round(texelFetch(text_cells, ivec2(1 + 2 * i, OVERLAY_ROW), 0) * 255.0) * 8.0;
         vec2 r = (pos - rect.xy) / (rect.zw - rect.xy);

@@ -117,24 +117,30 @@ int Pack2D::matches(const Entry& e, int cx, int cy, int& total) const {
     return matched;
 }
 
-bool Pack2D::closer_to_lit(const Entry& e, int index, const uint32_t* raw, int px, int py) {
+uint32_t Pack2D::lit_blocks(const Entry& e, int index, const uint32_t* raw, int px, int py) {
     auto off = e.px_off.find(index), lit = e.px_lit.find(index);
-    if (off == e.px_off.end() || lit == e.px_lit.end()) return false;
+    if (off == e.px_off.end() || lit == e.px_lit.end()) return 0;
     auto distance = [](uint32_t a, uint32_t b) {
         int d = 0;
         for (int shift = 0; shift < 32; shift += 8) d += std::abs(int((a >> shift) & 0xFF) - int((b >> shift) & 0xFF));
         return d;
     };
-    int votes = 0;
+    int votes[16] = {}, counted[16] = {}, cell = 0;
     for (int y = 0; y < 8; y++)
         for (int x = 0; x < 8; x++) {
             uint32_t a = off->second[y * 8 + x], b = lit->second[y * 8 + x];
             if (a == b) continue;
             uint32_t p = raw[(py + y) * SCREEN_W + px + x];
-            int da = distance(p, a), db = distance(p, b);
-            votes += (db < da) - (da < db);
+            int da = distance(p, a), db = distance(p, b), v = (db < da) - (da < db);
+            int block = (y / 2) * 4 + x / 2;
+            votes[block] += v;
+            counted[block]++;
+            cell += v;
         }
-    return votes > 0;
+    uint32_t blocks = 0;
+    for (int i = 0; i < 16; i++)
+        if (counted[i] ? votes[i] > 0 : cell > 0) blocks |= 1u << i;
+    return blocks;
 }
 
 uint32_t Pack2D::take_slot(int entry, bool lit) {
@@ -276,10 +282,13 @@ int Pack2D::apply(uint32_t* target, int stride, const uint32_t* raw, const uint3
                 uint64_t lit = e.lit_slot ? e.lit[y * e.cw + x] : 0;   // (lit picture not loaded: the game's cells)
                 bool on_lit = lit && same(oy + y, ox + x, lit);
                 bool on_ref = ref && same(oy + y, ox + x, ref);
+                uint32_t blocks = 0;   // (0: the whole cell)
                 if (lit && !on_lit && !on_ref && e.px_off.count(y * e.cw + x)) {
-                    // caught between the two states: the closer one, either way not the game's cell
-                    on_lit = closer_to_lit(e, y * e.cw + x, raw, (ox + x) * 8, (oy + y) * 8);
-                    on_ref = !on_lit;
+                    // caught between the two states: each block as the closer one, never the game's cell
+                    blocks = lit_blocks(e, y * e.cw + x, raw, (ox + x) * 8, (oy + y) * 8);
+                    on_lit = blocks != 0;
+                    on_ref = true;
+                    if (blocks == 0xFFFF) blocks = 0;
                 }
                 if (!e.cover && !on_lit && !on_ref) continue;
                 for (int py = 0; py < 8; py++) {
@@ -294,7 +303,8 @@ int Pack2D::apply(uint32_t* target, int stride, const uint32_t* raw, const uint3
                 if (!below_3d) {
                     uint32_t* cell = text_cells + ((oy + y) * CELLS_X + ox + x) * TextHD::CELL_TEXELS;
                     memset(cell, 0, TextHD::CELL_TEXELS * 4);
-                    if (on_lit) cell[1] = 0xFF000000u | e.lit_slot << 16;   // this cell shows the lit picture
+                    // this cell shows the lit picture: all of it, or the 2x2-pixel blocks in G and B
+                    if (on_lit) cell[1] = 0xFF000000u | e.lit_slot << 16 | blocks;
                 }
             }
         if (1 + 2 * (listed + 1) >= TextHD::ROW_TEXELS) break;
