@@ -458,6 +458,18 @@ class FuncGen:
         return [f"rt_bad(c, 0x{a:08X}); return;"]
 
 
+def write_if_changed(path, text):
+    """Leaves a file with the same contents untouched: its date stays, so the
+    build does not recompile what includes it (every generated file includes
+    fns.h) nor reconfigure CMake (files.cmake)."""
+    if os.path.exists(path):
+        with open(path) as f:
+            if f.read() == text:
+                return
+    with open(path, "w") as f:
+        f.write(text)
+
+
 def main():
     rom_path = sys.argv[1] if len(sys.argv) > 1 else "data/crom.bin"
     outdir = sys.argv[2] if len(sys.argv) > 2 else "build/gen"
@@ -485,24 +497,19 @@ def main():
             code = g.generate()
             bad += sum(1 for ln in code if "rt_bad" in ln and "/*" not in ln)
             lines += code + [""]
-        new = "\n".join(lines)
-        path = os.path.join(outdir, name)
-        if not os.path.exists(path) or open(path).read() != new:
-            open(path, "w").write(new)
+        write_if_changed(os.path.join(outdir, name), "\n".join(lines))
         files.append(name)
-    with open(os.path.join(outdir, "fns.h"), "w") as fo:
-        fo.write('#pragma once\n#include "ppc_rt.h"\n#include "game_hooks.h"\n\n')
-        for e in entries:
-            fo.write(f"void fn_{e:08X}(Ctx& c);\n")
-        fo.write("\nstruct FnEntry { uint32_t addr; void (*fn)(Ctx&); };\n")
-        fo.write("extern const FnEntry g_fn_table[];\nextern const int g_fn_count;\n")
-    with open(os.path.join(outdir, "table.cpp"), "w") as fo:
-        fo.write('#include "fns.h"\n\nconst FnEntry g_fn_table[] = {\n')
-        for e in entries:
-            fo.write(f"    {{0x{e:08X}u, fn_{e:08X}}},\n")
-        fo.write(f"}};\nconst int g_fn_count = {len(entries)};\n")
-    with open(os.path.join(outdir, "files.cmake"), "w") as fo:
-        fo.write("set(GEN_SOURCES\n" + "".join(f"    ${{GEN_DIR}}/{n}\n" for n in files + ["table.cpp"]) + ")\n")
+    fns = ['#pragma once\n#include "ppc_rt.h"\n#include "game_hooks.h"\n\n']
+    fns += [f"void fn_{e:08X}(Ctx& c);\n" for e in entries]
+    fns += ["\nstruct FnEntry { uint32_t addr; void (*fn)(Ctx&); };\n",
+            "extern const FnEntry g_fn_table[];\nextern const int g_fn_count;\n"]
+    write_if_changed(os.path.join(outdir, "fns.h"), "".join(fns))
+    table = ['#include "fns.h"\n\nconst FnEntry g_fn_table[] = {\n']
+    table += [f"    {{0x{e:08X}u, fn_{e:08X}}},\n" for e in entries]
+    table += [f"}};\nconst int g_fn_count = {len(entries)};\n"]
+    write_if_changed(os.path.join(outdir, "table.cpp"), "".join(table))
+    write_if_changed(os.path.join(outdir, "files.cmake"),
+                     "set(GEN_SOURCES\n" + "".join(f"    ${{GEN_DIR}}/{n}\n" for n in files + ["table.cpp"]) + ")\n")
     print(f"{len(entries)} functions in {len(files)} files, {bad} untranslated instructions")
     missing = set(HOOKS) - HOOKS_USED
     if missing:   # a hook on an address no function translates: the game's code is not what it was written for
