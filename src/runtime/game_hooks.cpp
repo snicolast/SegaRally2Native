@@ -14,7 +14,7 @@
 #include "ppc_rt.h"
 
 extern Options g_opt;   // app.cpp
-extern std::vector<uint8_t> g_vrom;   // runtime.cpp
+extern std::vector<uint8_t> g_vrom, g_crom;   // runtime.cpp
 
 // ---- SELECT COURSE with a fifth card, FOREST --------------------------------
 // The ROM has a fifth stage, FOREST (course id 1, docs/game_ram.md), that no
@@ -196,10 +196,71 @@ static void forest_checkpoints() {
     wr32(row + 8, 138);
 }
 
+// FOREST has no co-driver: its pace notes were never written. Each course's
+// structure (table 0xE8408, 0x60 bytes a course; the race set-up 0x2BA30 keeps
+// a pointer to it at game +0x50) points at +0x5C to a list of notes, 24 bytes
+// each: the track point (0..255) where it is called, a condition (-1 always,
+// 1 first lap only, 2 not on the final lap, 5 the final lap's goal sound), the
+// first word (0..8, sound 168 + n by table 0xF160C), the HUD sign (the 36
+// signs in alphabetical order, as their records in the banked CROM), a second
+// sign, and the call (a sound command); a negative point ends it. 0x3E5C8
+// finds the next note at the start, 0x3E68C calls it when the car's track
+// point (+0xA4) reaches it. FOREST's list (0xE5090) holds only the end.
+//
+// So here are its own, written as the other four courses': each corner told
+// 130-150 m before it (the first word 3 or 4, as theirs at that distance), by
+// the sign and call they give a corner of that shape (MOUNTAIN, DESERT,
+// SNOWY, RIVIERA measured from their track quads; turns of FOREST: 17 easy
+// left, 23-68 a long right, 73 +160 deg left in 166 m, 91 a right in two parts,
+// 110 a long left, 126 -95 deg right, 145 -223 deg right in 581 m, 182 left,
+// 196 a long easy left, 229 -103 deg right, 241 an easy right). Only calls the
+// game already pairs with each sign. The list goes in the fixed CROM's zeros
+// (0x2BF3F0-0x700000, never read by the game) and FOREST's structure points there
+static void forest_pace_notes() {
+    constexpr uint32_t STRUCT = 0xE8408 + 0x60 * FOREST_COURSE + 0x5C, OLD = 0xE5090;
+    constexpr uint32_t AT = 0x6FF000, GAME_AT = 0xFF800000 + AT;
+    enum { EASY_LEFT = 5, EASY_RIGHT = 7, K_RIGHT = 14, LONG_EASY_LEFT = 19, LONG_EASY_RIGHT = 20,
+           LONG_K_LEFT = 21, LONG_MID_LEFT = 23, MID_LEFT = 26, MID_RIGHT = 28 };
+    struct Note { int point, when, word, sign, sign2, call; };
+    static const Note notes[] = {
+        {4, 1, 5, EASY_LEFT, -1, 308},          // from the start (first lap): 17 easy left
+        {13, -1, 4, LONG_EASY_RIGHT, -1, 270},  // 23-68
+        {64, -1, 4, LONG_K_LEFT, -1, 257},      // 73
+        {83, -1, 3, MID_RIGHT, -1, 276},        // 91-108
+        {102, -1, 3, LONG_MID_LEFT, -1, 326},   // 110-124
+        {117, -1, 4, K_RIGHT, -1, 299},         // 126
+        {136, -1, 4, LONG_EASY_RIGHT, -1, 270}, // 145-180
+        {173, -1, 4, MID_LEFT, -1, 325},        // 182
+        {187, -1, 4, LONG_EASY_LEFT, -1, 319},  // 196-219
+        {220, -1, 4, K_RIGHT, -1, 299},         // 229
+        {233, -1, 3, EASY_RIGHT, -1, 259},      // 241
+        {247, 5, -1, -1, -1, -1},               // the final lap: the goal's sound (as the others)
+        {248, 2, 8, EASY_LEFT, -1, 308},        // the next lap's 17 easy left
+        {-1, 0, 0, 0, 0, 0}};
+    constexpr size_t BYTES = sizeof(notes) / sizeof(notes[0]) * 24;
+    if (rd32(STRUCT) == GAME_AT) return;   // done
+    if (rd32(STRUCT) != OLD || rd32(OLD) != ~0u || g_crom.size() < AT + BYTES) return;   // not the ROM this was written for
+    uint8_t list[BYTES], *out = list;
+    for (const Note& n : notes)
+        for (int v : {n.point, n.when, n.word, n.sign, n.sign2, n.call}) {
+            uint32_t u = uint32_t(v);
+            out[0] = uint8_t(u >> 24), out[1] = uint8_t(u >> 16), out[2] = uint8_t(u >> 8), out[3] = uint8_t(u);
+            out += 4;
+        }
+    uint8_t* rom = &g_crom[AT];
+    if (memcmp(rom, list, BYTES)) {   // not there yet: only over zeros
+        for (size_t i = 0; i < BYTES; i++)
+            if (rom[i]) return;
+        memcpy(rom, list, BYTES);
+    }
+    wr32(STRUCT, GAME_AT);
+}
+
 uint32_t sr2_course_id(uint32_t table, uint32_t offset) {
     if (offset >> 2 != uint32_t(FOREST_CARD)) return rd32(table + offset);
     forest_practice_times();
     forest_checkpoints();
+    forest_pace_notes();
     return FOREST_COURSE;
 }
 

@@ -87,6 +87,9 @@ _set([0x3E514], ["c.r[0] = sr2_course_sound(c.r[31] + 4);"])           # lwz r0,
 _set([0x3E524], ["c.r[3] = sr2_course_sound(c.r[30] + c.r[29]);"])     # lwzx r3, r30, r29
 _set([0x3E570], ["c.r[3] = sr2_course_sound(c.r[9] + c.r[0]);"])       # lwzx r3, r9, r0
 _set([0x3E5B0], ["c.r[3] = sr2_course_sound(c.r[9] + 4);"])            # lwz r3, 4(r9)
+# and the goal's sound as the final lap ends, from the pace notes (0x3E68C,
+# FOREST's own notes in game_hooks.cpp)
+_set([0x3E85C], ["c.r[3] = sr2_course_sound(c.r[9] + c.r[0]);"])       # lwzx r3, r9, r0
 
 # OBJECT DISTANCE: the course's placed objects (spectators, cameramen, signs,
 # cones...) are put in the scene only within 100 m ahead of the camera
