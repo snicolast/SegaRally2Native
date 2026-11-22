@@ -96,7 +96,7 @@ struct FrontendSettings {
     void load(const char* path, const char* section = "");
     void save(const char* path) const;
     // what save() writes: one "key = value" line per setting (section: without
-    // the keys of the whole game and EXPERIENCE)
+    // the keys of the whole game, EXPERIENCE and the update check)
     std::string text(bool section = false) const;
     // ARCADE ORIGINAL's settings before it has a section of its own: these (the
     // screen, the sound, the controls) with the arcade's own look: the ROM's HUD
