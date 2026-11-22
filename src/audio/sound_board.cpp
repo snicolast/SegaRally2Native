@@ -79,48 +79,6 @@ bool SoundBoard::init(std::vector<uint8_t> program, std::vector<uint8_t> samples
     return true;
 }
 
-// Layout: both RAMs, both SCSPs, the 68000 context, ctrl_. The SCSPs keep
-// their own RAM pointers; the 68000 context carries pointers into this
-// program (cycle tables, callbacks), set again after it is put back.
-void SoundBoard::save_state(std::vector<uint8_t>& out) const {
-    out.clear();
-    if (!ready_) return;
-    size_t ctx = m68k_context_size();
-    out.resize(2 * kRamSize + 2 * sizeof(Scsp) + ctx + 1);
-    uint8_t* p = out.data();
-    for (int i = 0; i < 2; i++, p += kRamSize) memcpy(p, ram_[i].data(), kRamSize);
-    for (int i = 0; i < 2; i++, p += sizeof(Scsp)) memcpy(p, &scsp_[i], sizeof(Scsp));
-    m68k_get_context(p);
-    p[ctx] = ctrl_;
-}
-
-bool SoundBoard::load_state(const std::vector<uint8_t>& in) {
-    size_t ctx = m68k_context_size();
-    if (!ready_ || in.size() != 2 * kRamSize + 2 * sizeof(Scsp) + ctx + 1) return false;
-    const uint8_t* p = in.data();
-    for (int i = 0; i < 2; i++, p += kRamSize) memcpy(ram_[i].data(), p, kRamSize);
-    for (int i = 0; i < 2; i++, p += sizeof(Scsp)) {
-        Scsp chip;
-        memcpy(static_cast<void*>(&chip), p, sizeof(Scsp));
-        scsp_[i].load_state(chip);
-    }
-    std::vector<uint8_t> cpu(p, p + ctx);
-    m68k_set_context(cpu.data());
-    m68k_set_cpu_type(M68K_CPU_TYPE_68000);   // the cycle tables of this run
-    m68k_set_int_ack_callback(scsp_int_ack);
-    m68k_set_bkpt_ack_callback(nullptr);
-    m68k_set_reset_instr_callback(nullptr);
-    m68k_set_pc_changed_callback(nullptr);
-    m68k_set_tas_instr_callback(nullptr);
-    m68k_set_illg_instr_callback(nullptr);
-    m68k_set_trap_instr_callback(nullptr);
-    m68k_set_fc_callback(nullptr);
-    m68k_set_instr_hook_callback(nullptr);
-    ctrl_ = p[ctx];
-    sample_acc_ = 0;
-    return true;
-}
-
 uint8_t SoundBoard::read8(uint32_t a) {
     switch ((a >> 20) & 0xF) {
     case 0x0: return ram_[0][a & 0xFFFFF];
@@ -231,7 +189,6 @@ void SoundBoard::run_frame(double frame_hz) {
             for (int c = 0; c < AudioStream::kInChannels; c++) f[c] *= k;
         }
         out_->push(buffer_.data(), size_t(samples));   // the output keeps the latency bounded
-        frames_out_ += uint64_t(samples);
     }
 }
 

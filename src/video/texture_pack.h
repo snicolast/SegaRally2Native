@@ -63,7 +63,6 @@ public:
     // Replacements loaded since the last call, to be uploaded by the renderer
     std::vector<RgbaImage> take_new_images();
 
-    size_t replaced_count() const { return slots_.size(); }
 
 private:
     uint32_t max_slots_ = MAX_SLOTS;
@@ -74,7 +73,7 @@ private:
     uint32_t resolve(uint32_t tex, R3DTextureRam& ram, uint64_t& generation);
     uint64_t decode_texture(uint32_t tex, R3DTextureRam& ram, uint64_t& generation, int& w, int& h);
     uint32_t load_slot(uint64_t hash);   // the replacement's slot, loading it (0 = none)
-    uint32_t dirty_slot(uint32_t tex, int w, int h, uint64_t hash);
+    uint32_t dirty_slot(int w, int h, uint64_t hash);
     uint32_t unpainted_slot(uint32_t tex, int w, int h, uint64_t hash);
 
     // set_unpaint_shadows: the textures seen (ARGB1555, 64x64 or larger), to

@@ -226,13 +226,6 @@ void FrontendSettings::arcade_base() {
     free_play = true;
 }
 
-void FrontendSettings::save(const char* path) const {
-    FILE* f = fopen(path, "w");
-    if (!f) return;
-    fputs(text().c_str(), f);
-    fclose(f);
-}
-
 // ---- Setup ----
 
 bool Frontend::init(const std::string& font_dir) {
@@ -326,8 +319,8 @@ const wchar_t* const Frontend::TAB_NAMES[Frontend::TAB_COUNT] = {L"EXPERIENCE", 
 // Every settings option: its tab, within the tab the order shown, and the
 // heading of each group of rows (on its first one). This is the one place to
 // put a new option (besides `all` in items()); an option missing here is not
-// shown. Left out in Sega Rally 2: SOFT PARTICLES (only the spectators'
-// camera flashes). A tab whose rows do not fit the page scrolls.
+// shown. SOFT PARTICLES (settings.soft: only the spectators' camera flashes)
+// has no row in Sega Rally 2. A tab whose rows do not fit the page scrolls.
 const Frontend::OptionTab Frontend::OPTION_TABS[] = {
     {OPT_EXPERIENCE, EXPERIENCE_TAB, L"EDITION"}, {OPT_ARCADE_ASPECT, EXPERIENCE_TAB},
     {OPT_TELEMETRY, EXPERIENCE_TAB, L"EXPERIMENTAL"}, {OPT_TELEMETRY_FORMAT, EXPERIENCE_TAB},
@@ -360,12 +353,6 @@ const wchar_t* Frontend::group_of(Id id) {
 const wchar_t* const Frontend::RECORD_TAB_NAMES[Frontend::RECORD_TAB_COUNT] = {L"ACHIEVEMENTS", L"STATS"};
 static const wchar_t* const RECORD_TAB_ABOUT[] = {L"Unlocked and still to get", L"Totals and best laps"};
 static const wchar_t* const RECORD_GROUPS[] = {L"UNLOCKED", L"LOCKED", L"TOTALS", L"BEST LAPS"};
-
-int Frontend::tab_of(Id id) {
-    for (const OptionTab& o : OPTION_TABS)
-        if (o.id == id) return o.tab;
-    return -1;   // not shown
-}
 
 void Frontend::set_tab(int t) {
     tab_ = (t + tab_count()) % tab_count();
@@ -559,8 +546,6 @@ std::vector<Frontend::Item> Frontend::items() const {
                  !rt_available ? L"Needs a graphics card with ray tracing (NVIDIA RTX 30, AMD RX 7000 or newer)"
                                : RT_HINTS[settings.ray_tracing],
                  rt_available},
-                {OPT_SOFT, L"SOFT PARTICLES", on_off(settings.soft),
-                 L"Dust, smoke and spray blend softly where they touch the ground and the cars"},
                 {OPT_HDR, L"HDR LIGHTING", on_off(settings.hdr),
                  L"Bright light keeps its detail instead of clipping to white; exposure adapts gently"},
                 {OPT_REFLECT, L"RT REFLECTIONS", !rt_available ? L"N/A" : on_off(settings.reflections),
@@ -597,8 +582,6 @@ std::vector<Frontend::Item> Frontend::items() const {
                 {OPT_LIVERIES, L"HD LIVERIES", on_off(settings.hd_liveries),
                  settings.hd_liveries ? L"Repainted cars: sharp liveries, logos and race numbers"
                                       : L"The arcade's original car paint"},
-                {OPT_DIFFICULTY, L"DIFFICULTY", DIFFICULTY_NAMES[settings.difficulty],
-                 L"Arcade difficulty: the time you get at the start and at each checkpoint"},
                 {OPT_CONNECTED, L"CONNECTED", connected,
                  gamepads.empty() ? L"No gamepad or wheel found. Plug one in: it shows here as soon as the game sees it"
                                   : L"Found: " + gamepads,
@@ -849,7 +832,6 @@ void Frontend::activate(const Item& it, int dir) {
         if (settings.ray_tracing == 2) settings.ao = true;
         push(Action::SettingsChanged);
         break;
-    case OPT_SOFT: settings.soft = !settings.soft; push(Action::SettingsChanged); break;
     case OPT_HDR: settings.hdr = !settings.hdr; push(Action::SettingsChanged); break;
     case OPT_REFLECT: settings.reflections = !settings.reflections; push(Action::SettingsChanged); break;
     case OPT_GI: settings.gi = settings.gi ? 0 : 1; push(Action::SettingsChanged); break;
@@ -862,14 +844,6 @@ void Frontend::activate(const Item& it, int dir) {
     case OPT_HUD: settings.hd_hud = !settings.hd_hud; push(Action::SettingsChanged); break;
     case OPT_LIVERIES: settings.hd_liveries = !settings.hd_liveries; push(Action::SettingsChanged); break;
     case OPT_MOTION: settings.smooth = !settings.smooth; push(Action::SettingsChanged); break;
-    case OPT_DIFFICULTY: {
-        int at = 0;
-        for (int i = 0; i < 5; i++)
-            if (DIFFICULTY_ORDER[i] == settings.difficulty) at = i;
-        settings.difficulty = DIFFICULTY_ORDER[(at + dir + 5) % 5];
-        push(Action::SettingsChanged);
-        break;
-    }
     case OPT_CONNECTED: break;   // shows what is plugged in, nothing to change
     case OPT_WHEEL: wheel_row = it.index; wheel_dir = dir; push(Action::WheelRow); break;
     case OPT_VIBRATION: settings.vibration = (settings.vibration + dir + 4) % 4; push(Action::SettingsChanged); break;
@@ -1633,21 +1607,6 @@ int Frontend::text(Family f, int px, const std::wstring& s, int x, int y, int al
     if (st.edge_px > 0) paint(m.e, 0, 0, false, st.edge, st.alpha);
     paint(m.a, 0, 0, true, 0, st.alpha);
     return m.text_w;
-}
-
-// A glowing line in the accent colour: a white-hot core in a soft glow,
-// fading out towards both ends
-void Frontend::saber(int cx, int y, int half_w) {
-    int glow = std::max(4, int(16 * u_)), core = std::max(1, int(1.6f * u_ + 0.5f));
-    for (int x = std::max(cx - half_w, 0); x < std::min(cx + half_w, w_); x++) {
-        float t = 1 - std::abs(float(x - cx)) / float(half_w);
-        float a = std::min(1.0f, t * 3.0f);
-        for (int dy = -glow; dy <= glow; dy++) {
-            float d = std::abs(float(dy)) / float(glow);
-            blend(x, y + dy, SABER, a * 0.55f * std::exp(-d * d * 5.0f));
-            if (std::abs(dy) <= core) blend(x, y + dy, 0xEAF6FF, a);
-        }
-    }
 }
 
 // ---- Shapes and pictures ----

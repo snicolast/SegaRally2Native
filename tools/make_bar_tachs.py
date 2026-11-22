@@ -19,7 +19,6 @@ CARS = {   # car: (capture number, the counter's whole box in cells, its parts (
     "impreza": (3, (2, 33, 14, 13), [("a", (2, 33, 14, 9)), ("b", (2, 42, 5, 4))]),
     "delta": (7, (2, 36, 16, 9), [("a", (2, 36, 16, 6)), ("b", (2, 42, 5, 3))]),
 }
-EMPTY = None
 
 
 def cells(path):

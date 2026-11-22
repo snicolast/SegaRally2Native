@@ -61,7 +61,6 @@ private:
     std::map<std::pair<int, int>, HFONT> fonts_;
     std::map<std::wstring, Mask> masks_;
     HDC dc_ = nullptr;
-    bool jurassic_ = false;
     int w_ = 0, h_ = 0;
     uint32_t* px_ = nullptr;
 };

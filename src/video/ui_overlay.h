@@ -17,7 +17,6 @@ public:
     // New picture (w x h BGRA, premultiplied); uploaded with the next record
     void set_image(const uint32_t* bgra, uint32_t w, uint32_t h);
     void hide() { visible_ = false; }
-    bool visible() const { return visible_; }
 
     // The backdrops the menu can stand on (opaque BGRA, uploaded once):
     // BACKDROP the picture, BACKDROP_BLURRED the same blurred (behind the

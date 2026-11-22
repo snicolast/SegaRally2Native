@@ -30,15 +30,6 @@ public:
     void midi_in(uint8_t b);
     bool midi_pending() const { return midi_r_ != midi_w_; }
 
-    // Game states (sound_board.cpp): all of `from` but this chip's RAM and DSP switch
-    void load_state(const Scsp& from) {
-        uint8_t* ram = ram_;
-        bool dsp = dsp_on_;
-        *this = from;
-        ram_ = ram;
-        dsp_on_ = dsp;
-    }
-
 private:
     enum EgState { ATTACK, DECAY1, DECAY2, RELEASE };
     struct Slot {

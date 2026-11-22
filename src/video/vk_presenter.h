@@ -68,8 +68,6 @@ public:
     VkInstance instance() const { return instance_; }
     VkDevice device() const { return device_; }
     VkPhysicalDevice gpu() const { return gpu_; }
-    VkQueue queue() const { return queue_; }
-    VkCommandPool pool() const { return pool_; }
     VkFormat swap_format() const { return format_; }
     uint32_t find_memory(uint32_t type_bits, VkMemoryPropertyFlags flags) const;
     VkImage current_image() const { return current_image_; }   // the swapchain image frame() is recording
