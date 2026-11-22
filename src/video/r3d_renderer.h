@@ -322,6 +322,27 @@ private:
     VkDescriptorSetLayout r3d_set_layout_ = VK_NULL_HANDLE, compose_set_layout_ = VK_NULL_HANDLE;
     VkDescriptorPool pool_ = VK_NULL_HANDLE;
     VkDescriptorSet r3d_set_ = VK_NULL_HANDLE, compose_set_ = VK_NULL_HANDLE;
+    // The images a pass may itself be drawing into, in a second set of their
+    // own (issue #158: an image bound for reading while it is drawn into, even
+    // where the shader leaves it unread that time, is invalid usage that Intel's
+    // driver may not survive). The passes that draw into one of them bind a set
+    // with a 1x1 stand-in in its place (blank_color_, blank_depth_: always readable)
+    Image blank_color_, blank_depth_;
+    // 3D pass, set 1: 0 sun shadow map, 1 the opaque world's depth (soft particles).
+    // r3d_aux_set_: both; r3d_aux_opaque_set_: the depth a stand-in (the 3D pass
+    // before the depth is made readable); r3d_aux_shadow_set_: both stand-ins (shadow pass)
+    VkDescriptorSetLayout r3d_aux_layout_ = VK_NULL_HANDLE;
+    VkDescriptorSet r3d_aux_set_ = VK_NULL_HANDLE, r3d_aux_opaque_set_ = VK_NULL_HANDLE,
+                    r3d_aux_shadow_set_ = VK_NULL_HANDLE;
+    // Composition, set 1: 0 bloom, 1 exposure, 2 diffusion, 3 tight bloom.
+    // compose_fx_set_: all four; compose_fx_inner_set_: the bloom and diffusion
+    // stand-ins (the sky glow into bloom_a_, the scene into diff_a_);
+    // compose_fx_measure_set_: all stand-ins (the measure into exposure_)
+    VkDescriptorSetLayout compose_fx_layout_ = VK_NULL_HANDLE;
+    VkDescriptorSet compose_fx_set_ = VK_NULL_HANDLE, compose_fx_inner_set_ = VK_NULL_HANDLE,
+                    compose_fx_measure_set_ = VK_NULL_HANDLE;
+    void bind_compose_sets(VkCommandBuffer cmd, VkDescriptorSet fx);
+    void bind_r3d_sets(VkCommandBuffer cmd, VkDescriptorSet aux);
     VkPipelineLayout r3d_layout_ = VK_NULL_HANDLE, compose_layout_ = VK_NULL_HANDLE;
     VkPipeline opaque_ = VK_NULL_HANDLE, translucent_ = VK_NULL_HANDLE, blob_ = VK_NULL_HANDLE, compose_ = VK_NULL_HANDLE;
     VkPipeline trans_depth_ = VK_NULL_HANDLE;   // nearest translucent surface, depth only (spec 7.2)

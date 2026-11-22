@@ -471,8 +471,15 @@ bool VkPresenter::init(const char* title, int width, int height, bool with_ngx) 
     VkPhysicalDeviceFeatures2 features{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2};
     features.pNext = &f13;
     features.features.samplerAnisotropy = VK_TRUE;
-    // DLAA: the translucent pass blends colour but leaves the motion vectors alone
-    features.features.independentBlend = with_ngx ? VK_TRUE : VK_FALSE;
+    // DLAA: the translucent pass blends colour but leaves the motion vectors alone.
+    // On wherever the GPU has it; without it every pipeline gives all its colour
+    // attachments the same blend (R3DRenderer::make_pipeline: invalid otherwise, issue #158)
+    {
+        VkPhysicalDeviceFeatures have;
+        vkGetPhysicalDeviceFeatures(gpu_, &have);
+        independent_blend_ = have.independentBlend == VK_TRUE;
+    }
+    features.features.independentBlend = independent_blend_ ? VK_TRUE : VK_FALSE;
     VkDeviceCreateInfo dci{VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO};
     dci.pNext = &features;
     dci.queueCreateInfoCount = 1;

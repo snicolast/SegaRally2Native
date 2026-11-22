@@ -123,9 +123,12 @@ bool R3DRayTracer::reserve(uint32_t triangles) {
     tinfo.flags = VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_BUILD_BIT_KHR;
     tinfo.geometryCount = 1;
     tinfo.pGeometries = &tgeo;
-    uint32_t two = 2;
+    // (one instance per level: sized for 2 when there were 2, it was built with
+    // LEVELS and came out short, VUID-vkCmdBuildAccelerationStructuresKHR-pInfos-10126)
+    uint32_t instances = LEVELS;
     VkAccelerationStructureBuildSizesInfoKHR tsizes{VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_SIZES_INFO_KHR};
-    vkGetAccelerationStructureBuildSizesKHR(dev_, VK_ACCELERATION_STRUCTURE_BUILD_TYPE_DEVICE_KHR, &tinfo, &two, &tsizes);
+    vkGetAccelerationStructureBuildSizesKHR(dev_, VK_ACCELERATION_STRUCTURE_BUILD_TYPE_DEVICE_KHR, &tinfo, &instances,
+                                            &tsizes);
     tlas_scratch_offset_ = scratch;
     if (!create_buffer(scratch_, scratch + tsizes.buildScratchSize + scratch_align_, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
                        false))
