@@ -226,7 +226,6 @@ add_executable(SegaRally2 WIN32
     src/video/vk_presenter.cpp
     src/video/ui_overlay.cpp
     src/ui/frontend.cpp
-    src/ui/news.cpp
     src/ui/menu_music.cpp
     src/ui/splash_video.cpp
     src/video/r3d_state.cpp
@@ -291,7 +290,7 @@ file(CONFIGURE OUTPUT ${ICONS_DIR}/achievement_icons.h CONTENT "${icons_h}")
 target_include_directories(SegaRally2 PRIVATE ${ICONS_DIR})
 # volk loads vulkan-1.dll at runtime: the SDK is not needed
 target_compile_definitions(SegaRally2 PRIVATE VK_NO_PROTOTYPES VK_USE_PLATFORM_WIN32_KHR)
-target_link_libraries(SegaRally2 PRIVATE SDL3::SDL3-static winmm ole32 oleaut32 windowscodecs mfplat mfuuid gdi32 dwmapi shell32 winhttp ws2_32
+target_link_libraries(SegaRally2 PRIVATE SDL3::SDL3-static winmm ole32 oleaut32 windowscodecs mfplat mfuuid gdi32 dwmapi shell32 ws2_32
     ${DLSS_LIB})
 
 if(MSVC)
@@ -382,7 +381,6 @@ if(LW_TESTS)
     add_executable(rom_zip_test tests/rom_zip_test.cpp src/runtime/rom_zip.cpp ${MINIZ_DIR}/miniz.c)
     add_executable(jtag_test tests/jtag_test.cpp src/runtime/jtag.cpp)
     add_executable(r3d_state_test tests/r3d_state_test.cpp)
-    add_executable(news_test tests/news_test.cpp src/ui/news.cpp)
     add_executable(menu_music_test tests/menu_music_test.cpp src/ui/menu_music.cpp)
     target_include_directories(menu_music_test PRIVATE third_party/minimp3)
     add_executable(achievements_csv_test tests/achievements_csv_test.cpp src/runtime/achievements_csv.cpp src/runtime/disk_writer.cpp)
@@ -399,7 +397,7 @@ if(LW_TESTS)
     add_executable(telemetry_test tests/telemetry_test.cpp src/runtime/telemetry_ogs.cpp src/runtime/inputs.cpp)
     target_link_libraries(telemetry_test PRIVATE ws2_32)
     target_link_libraries(pack2d_test PRIVATE ole32 windowscodecs)
-    foreach(t tilegen_test fnv_test options_test audio_stream_test rom_zip_test jtag_test r3d_state_test news_test menu_music_test
+    foreach(t tilegen_test fnv_test options_test audio_stream_test rom_zip_test jtag_test r3d_state_test menu_music_test
             achievements_csv_test disk_writer_test viewer_test pack2d_test telemetry_test)
         target_include_directories(${t} PRIVATE src/video src/common src/runtime src/audio src/ui ${MINIZ_DIR})
         if(MSVC)
@@ -414,7 +412,6 @@ if(LW_TESTS)
     add_test(NAME rom_zip COMMAND rom_zip_test)
     add_test(NAME jtag COMMAND jtag_test)
     add_test(NAME r3d_state COMMAND r3d_state_test)
-    add_test(NAME news COMMAND news_test)
     add_test(NAME menu_music COMMAND menu_music_test)
     add_test(NAME achievements_csv COMMAND achievements_csv_test)
     add_test(NAME disk_writer COMMAND disk_writer_test)

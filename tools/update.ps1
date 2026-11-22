@@ -17,19 +17,16 @@
 #
 # A folder cloned with git is updated with git pull instead.
 #
-# Usage: update.bat [-Branch main] [-Check] [-Force] [-NoBuild] [-FromGame]
+# Usage: update.bat [-Branch main] [-Check] [-Force] [-NoBuild]
 #   -Check     only say whether there is a new version
 #   -Force     download and rebuild even if it is already up to date
 #   -NoBuild   update the files but do not run build.bat
-#   -FromGame  started by the game's UPDATE NOW: waits for the game to close
-#              by itself (update.bat starts it again afterwards)
 param(
     [string]$Branch = "main",
     [string]$Repo = "snicolast/SegaRally2Native",
     [switch]$Check,
     [switch]$Force,
-    [switch]$NoBuild,
-    [switch]$FromGame
+    [switch]$NoBuild
 )
 
 $ErrorActionPreference = "Stop"
@@ -72,9 +69,6 @@ function Test-GameRunning {
 
 function Invoke-Build {
     if ($NoBuild) { Say "Files updated. Run build.bat to rebuild SegaRally2.exe." "Yellow"; return 0 }
-    if ($FromGame) {   # it is closing: give it up to 30 seconds
-        for ($i = 0; $i -lt 60 -and (Test-GameRunning); $i++) { Start-Sleep -Milliseconds 500 }
-    }
     while (Test-GameRunning) {
         Say "SegaRally2.exe is running: close the game and press Enter to rebuild it." "Yellow"
         [void](Read-Host)

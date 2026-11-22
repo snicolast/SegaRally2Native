@@ -61,8 +61,7 @@ downloads, builds, updates and starts the game for you. No Visual Studio, nothin
 
 With NicoLauncher: it tells you when there is something new. Press **Update**.
 
-Without it: when there is a new version, the main menu says what is new and offers **UPDATE NOW**. Or run
-`update.bat` yourself: it downloads the changed files from GitHub (no git needed) and rebuilds.
+Without it: run `update.bat`. It downloads the changed files from GitHub (no git needed) and rebuilds.
 Your ROM, settings and textures are kept; files you edited are backed up to `out\update_backup\`.
 
 ## Controls

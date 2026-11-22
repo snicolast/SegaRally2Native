@@ -1,10 +1,8 @@
 # Sega Rally 2 Native: what is new, for the players.
 #
-# The game reads this file from GitHub (main branch) at launch. When it has an
-# entry with a higher number than the news.txt in the player's folder, the main
-# menu shows those entries in an UPDATE AVAILABLE window with UPDATE NOW
-# (update.bat) and LATER. Commits that do not add an entry show nothing, so
-# several fixes can go out together: add the entry when they are all in.
+# NicoLauncher shows this file from GitHub (main branch, hub.toml: news) and
+# offers the update. Commits that do not add an entry show nothing, so several
+# fixes can go out together: add the entry when they are all in.
 #
 # Format:
 #   [N] title      starts entry N (a number one higher than the last; the
@@ -12,6 +10,13 @@
 #   - text         a line of the entry (lines starting "- " get a bullet)
 #   # ...          a comment, never shown
 # Newest entry at the top. Keep each one short: about ten lines fit.
+
+[38] 22 November 2026
+- FOREST now has a co-driver: corner signs and calls, like the other stages.
+- FOREST practice: new times between DESERT and MOUNTAIN, starting with 60 s like MOUNTAIN.
+- FOREST: the time extensions now come at the CHECK POINT banners.
+- Fixed a box in the top left of the START!! picture from the second race on.
+- The game no longer checks for updates: update from NicoLauncher (or update.bat).
 
 [37] 22 November 2026
 - The hidden Toyota Celica and Lancia Delta are now in SELECT CAR, next to the other six, in both PC Edition and Arcade Original.

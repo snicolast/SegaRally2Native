@@ -9,10 +9,8 @@
 #include <cwctype>
 #include <ctime>
 #include <initializer_list>
-#include <thread>
 
 #include <shellapi.h>
-#include <winhttp.h>
 
 #include <wincodec.h>
 
@@ -26,10 +24,6 @@ constexpr uint32_t PALE_TOP = 0xEAF2FF, PALE_BOTTOM = 0xAFC2DA, DIM = 0x56606E;
 constexpr uint32_t HINT = 0xC4CAD2, FOOT = 0x7A8088;   // Sega Rally 2: neutral greys (the mock-up)
 constexpr uint32_t SABER = 0xC8241E, PANEL = 0x040914;   // Sega Rally 2: the accent is the logo's red
 
-// UPDATE AVAILABLE: news.txt on the public repository's main branch (news.h)
-constexpr const wchar_t* NEWS_HOST = L"raw.githubusercontent.com";
-constexpr const wchar_t* NEWS_PATH = L"/snicolast/SegaRally2Native/main/news.txt";
-constexpr const wchar_t* GAME_URL = L"https://github.com/snicolast/SegaRally2Native";
 
 double now_seconds() {
     static LARGE_INTEGER freq = [] { LARGE_INTEGER f; QueryPerformanceFrequency(&f); return f; }();
@@ -59,54 +53,6 @@ std::vector<char> read_file(const std::string& path) {
         fclose(f);
     }
     return data;
-}
-
-std::wstring widen(const std::string& s) {   // UTF-8
-    int n = MultiByteToWideChar(CP_UTF8, 0, s.c_str(), int(s.size()), nullptr, 0);
-    std::wstring w(size_t(std::max(n, 0)), L'\0');
-    if (n > 0) MultiByteToWideChar(CP_UTF8, 0, s.c_str(), int(s.size()), w.data(), n);
-    return w;
-}
-
-#ifndef WINHTTP_ACCESS_TYPE_AUTOMATIC_PROXY
-#define WINHTTP_ACCESS_TYPE_AUTOMATIC_PROXY 4   // Windows 8.1 and later
-#endif
-
-// GET https://host/path into `body` (at most 256 KB); false on any failure.
-// A few seconds at most when there is no connection
-bool https_get(const wchar_t* host, const wchar_t* path, std::string& body) {
-    body.clear();
-    const wchar_t* agent = L"SegaRally2Native";
-    HINTERNET session = WinHttpOpen(agent, WINHTTP_ACCESS_TYPE_AUTOMATIC_PROXY, WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0);
-    if (!session) session = WinHttpOpen(agent, WINHTTP_ACCESS_TYPE_DEFAULT_PROXY, WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0);
-    if (!session) return false;
-    WinHttpSetTimeouts(session, 4000, 4000, 4000, 4000);
-    HINTERNET connect = WinHttpConnect(session, host, INTERNET_DEFAULT_HTTPS_PORT, 0);
-    HINTERNET request = connect ? WinHttpOpenRequest(connect, L"GET", path, nullptr, WINHTTP_NO_REFERER,
-                                                     WINHTTP_DEFAULT_ACCEPT_TYPES, WINHTTP_FLAG_SECURE)
-                                : nullptr;
-    DWORD status = 0, size = sizeof(status);
-    bool ok = request && WinHttpSendRequest(request, WINHTTP_NO_ADDITIONAL_HEADERS, 0, WINHTTP_NO_REQUEST_DATA, 0, 0, 0) &&
-              WinHttpReceiveResponse(request, nullptr) &&
-              WinHttpQueryHeaders(request, WINHTTP_QUERY_STATUS_CODE | WINHTTP_QUERY_FLAG_NUMBER, WINHTTP_HEADER_NAME_BY_INDEX,
-                                  &status, &size, WINHTTP_NO_HEADER_INDEX) &&
-              status == 200;
-    while (ok) {
-        DWORD avail = 0, got = 0;
-        if (!WinHttpQueryDataAvailable(request, &avail)) ok = false;
-        if (!ok || avail == 0) break;
-        size_t at = body.size();
-        if (at + avail > 256 * 1024) ok = false;
-        else {
-            body.resize(at + avail);
-            ok = WinHttpReadData(request, body.data() + at, avail, &got) != FALSE;
-            body.resize(at + got);
-        }
-    }
-    for (HINTERNET h : {request, connect, session})
-        if (h) WinHttpCloseHandle(h);
-    if (!ok) body.clear();
-    return ok;
 }
 
 // Frontend::Family: the font's family name (as Windows knows it) and weight
@@ -143,7 +89,7 @@ void FrontendSettings::load(const char* path, const char* section) {
         std::string k = key, v = value;
         bool on = v == "1" || v == "on" || v == "true";
         // (the keys of the whole game only in the first section)
-        if (!top && (k == "experience" || k == "check_updates" || k == "news_seen" || k == "telemetry" || k == "telemetry_port" || k == "telemetry_format")) continue;
+        if (!top && (k == "experience" || k == "telemetry" || k == "telemetry_port" || k == "telemetry_format")) continue;
         if (k == "experience") experience = v == "arcade" ? 1 : 0;
         else if (k == "aspect") {
             static const char* const NAMES[5] = {"auto", "32:9", "21:9", "16:9", "4:3"};
@@ -200,8 +146,6 @@ void FrontendSettings::load(const char* path, const char* section) {
         else if (k == "trigger_rumble") trigger_rumble = std::clamp(atoi(value) / 10 * 10, 0, 100);
         else if (k == "splash_screens") splash = on;
         else if (k == "menu_music") menu_music = on;
-        else if (k == "check_updates") check_updates = on;
-        else if (k == "news_seen") news_seen = std::max(0, atoi(value));
         else if (k == "telemetry") telemetry = on;
         else if (k == "telemetry_port") telemetry_port = std::clamp(atoi(value), 1, 65535);
         else if (k == "telemetry_format") telemetry_format = v == "ogs-ts" || v == "ogs" ? 1 : 0;
@@ -236,8 +180,8 @@ std::string FrontendSettings::text(bool section) const {
     out += buf;
     if (!section) {
         static const char* const FORMATS[2] = {"dirt", "ogs-ts"};
-        snprintf(buf, sizeof(buf), "check_updates = %d\nnews_seen = %d\ntelemetry = %d\ntelemetry_format = %s\ntelemetry_port = %d\n",
-                 check_updates, news_seen, telemetry, FORMATS[std::clamp(telemetry_format, 0, 1)], telemetry_port);
+        snprintf(buf, sizeof(buf), "telemetry = %d\ntelemetry_format = %s\ntelemetry_port = %d\n",
+                 telemetry, FORMATS[std::clamp(telemetry_format, 0, 1)], telemetry_port);
         out += buf;
     }
     snprintf(buf, sizeof(buf), "rt_reflections = %d\nglobal_illumination = %s\ndust = %s\ndifficulty = %s\nhd_liveries = %d\ntrigger_rumble = %d\nobject_distance = %d\n", reflections, gi ? "low" : "off", dust ? "enhanced" : "original", DIFFICULTY_KEYS[std::clamp(difficulty, 0, 4)], hd_liveries, trigger_rumble, object_distance);
@@ -390,7 +334,6 @@ const Frontend::OptionTab Frontend::OPTION_TABS[] = {
     {OPT_DISPLAY, DISPLAY_TAB, L"SCREEN"}, {OPT_RESOLUTION, DISPLAY_TAB}, {OPT_ASPECT, DISPLAY_TAB}, {OPT_HUD_AREA, DISPLAY_TAB}, {OPT_SCALE, DISPLAY_TAB}, {OPT_MOTION, DISPLAY_TAB},
     {OPT_VSYNC, DISPLAY_TAB}, {OPT_MAXFPS, DISPLAY_TAB}, {OPT_BGFPS, DISPLAY_TAB}, {OPT_AA, DISPLAY_TAB},
     {OPT_SAT, DISPLAY_TAB, L"PICTURE"}, {OPT_GAMMA, DISPLAY_TAB}, {OPT_SHARPEN, DISPLAY_TAB},
-    {OPT_UPDATES, DISPLAY_TAB, L"UPDATES"},
     {OPT_SUN, LIGHTING_TAB, L"LIGHTING"}, {OPT_SHADOWS, LIGHTING_TAB}, {OPT_HDR, LIGHTING_TAB}, {OPT_AO, LIGHTING_TAB},
     {OPT_BLOOM, LIGHTING_TAB}, {OPT_HAZE, LIGHTING_TAB},
     {OPT_RT, LIGHTING_TAB, L"RAY TRACING"}, {OPT_REFLECT, LIGHTING_TAB}, {OPT_GI, LIGHTING_TAB},
@@ -640,8 +583,6 @@ std::vector<Frontend::Item> Frontend::items() const {
                 {OPT_GAMMA, L"GAMMA", gamma_text, L"Brightness of the mid-tones (1.00 = original)"},
                 {OPT_SHARPEN, L"SHARPEN", on_off(settings.sharpen),
                  L"Brings back texture detail after the edge smoothing, without halos"},
-                {OPT_UPDATES, L"CHECK FOR UPDATES", on_off(settings.check_updates),
-                 L"At launch, look on GitHub for a new version and show what is new in it"},
                 {OPT_TELEMETRY, L"TELEMETRY", on_off(settings.telemetry),
                  L"Enable telemetry for use with motion simulators and haptics"},
                 {OPT_TELEMETRY_FORMAT, L"TELEMETRY FORMAT",
@@ -868,7 +809,6 @@ void Frontend::activate(const Item& it, int dir) {
         settings.music = dir > 0 && settings.music == 10 && wrap_ ? 0 : std::clamp(settings.music + dir, 0, 10);
         push(Action::SettingsChanged);
         break;
-    case OPT_UPDATES: settings.check_updates = !settings.check_updates; push(Action::SettingsChanged); break;
     case OPT_TELEMETRY: settings.telemetry = !settings.telemetry; push(Action::SettingsChanged); break;
     case OPT_TELEMETRY_FORMAT: settings.telemetry_format = (settings.telemetry_format + 1) % 2; push(Action::SettingsChanged); break;
     case OPT_MENU_MUSIC: settings.menu_music = !settings.menu_music; push(Action::SettingsChanged); break;
@@ -997,7 +937,6 @@ bool Frontend::key(int vk) {
     }
     if (starting) return true;   // nothing to choose while the game starts
     if (slide_from_ >= 0) finish_slide();   // the entries moving: in place at once, and the key does its job
-    if (news_open_ && screen_ == Screen::Main) return news_key(vk);
     if (drop_open_) return drop_key(vk);
     if (setup_open_ && screen_ == Screen::Play) return setup_key(vk);
     if (restart_open_) {
@@ -1075,179 +1014,6 @@ bool Frontend::key(int vk) {
     return false;
 }
 
-// ---- UPDATE AVAILABLE ----
-
-void Frontend::check_for_news() {
-    if (!settings.check_updates || news_download_) return;
-    auto d = std::make_shared<NewsDownload>();
-    news_download_ = d;
-    if (const char* file = getenv("SR2_NEWS_FILE")) {   // testing aid: this file in place of GitHub's news.txt
-        std::vector<char> text = read_file(file);
-        d->text.assign(text.begin(), text.end());
-        d->state = text.empty() ? 2 : 1;
-        return;
-    }
-    std::thread([d] {   // on its own: the game may close before it ends
-        std::string text;
-        bool ok = https_get(NEWS_HOST, NEWS_PATH, text);
-        {
-            std::lock_guard<std::mutex> lock(d->mutex);
-            d->text = std::move(text);
-        }
-        d->state = ok ? 1 : 2;
-    }).detach();
-}
-
-void Frontend::take_news() {
-    if (!news_download_) return;
-    int state = news_download_->state.load();
-    if (state == 0 || state == 3) return;   // still downloading, or done with
-    news_download_->state = 3;
-    if (state != 1) {
-        printf("[menu] news: could not reach GitHub (no update check)\n");
-        return;
-    }
-    std::string text;
-    {
-        std::lock_guard<std::mutex> lock(news_download_->mutex);
-        text = news_download_->text;
-    }
-    std::vector<NewsEntry> remote = parse_news(text);
-    std::vector<char> here = read_file("news.txt");   // what this version already has
-    int local = news_latest(parse_news(std::string(here.begin(), here.end())));
-    news_latest_ = news_latest(remote);
-    // A new entry since the last LATER brings the window up; it then lists
-    // everything this version is missing, the entries put off before too
-    if (news_latest_ > std::max(local, settings.news_seen)) news_ = news_after(remote, local);
-    printf("[menu] news: newest %d on GitHub, %d here, %d seen: %zu new\n", news_latest_, local, settings.news_seen,
-           news_.size());
-}
-
-bool Frontend::news_key(int vk) {
-    switch (vk) {
-    case VK_LEFT: case VK_RIGHT: case VK_UP: case VK_DOWN: case VK_TAB:
-    case 'A': case 'D': case 'W': case 'S':
-        news_button_ ^= 1;
-        dirty_ = true;
-        return true;
-    case VK_RETURN: case VK_SPACE: news_choose(news_button_); return true;
-    case VK_ESCAPE: case VK_BACK: news_choose(1); return true;   // LATER
-    }
-    return true;   // nothing else while it is open
-}
-
-void Frontend::news_choose(int button) {
-    news_open_ = false;
-    dirty_ = true;
-    if (button == 0) {
-        start_update();
-    } else {   // not again until a newer entry
-        settings.news_seen = std::max(settings.news_seen, news_latest_);
-        push(Action::SettingsChanged);   // saves it
-    }
-    news_.clear();
-}
-
-// update.bat -FromGame from the game's folder in its own window: it waits for
-// the game to close, updates, rebuilds and starts it again. Without
-// update.bat (an old folder) the GitHub page opens instead
-void Frontend::start_update() {
-    wchar_t module[MAX_PATH] = {};
-    GetModuleFileNameW(nullptr, module, MAX_PATH);
-    std::wstring dir = module;
-    dir = dir.substr(0, dir.find_last_of(L"\\/") + 1);
-    std::wstring bat = dir + L"update.bat";
-    DWORD a = GetFileAttributesW(bat.c_str());
-    if (a != INVALID_FILE_ATTRIBUTES && !(a & FILE_ATTRIBUTE_DIRECTORY) &&
-        INT_PTR(ShellExecuteW(nullptr, L"open", bat.c_str(), L"-FromGame", dir.c_str(), SW_SHOWNORMAL)) > 32) {
-        printf("[menu] update: started %ls, closing the game\n", bat.c_str());
-        push(Action::Quit);
-        return;
-    }
-    printf("[menu] update: could not start %ls, opening the GitHub page\n", bat.c_str());
-    ShellExecuteW(nullptr, L"open", GAME_URL, nullptr, nullptr, SW_SHOWNORMAL);
-}
-
-// A card over the darkened main menu: UPDATE AVAILABLE, the entries of
-// news.txt (as many lines as fit nicely), the two buttons and what UPDATE NOW does
-void Frontend::draw_news() {
-    auto U = [&](float v) { return int(v * u_ + 0.5f); };
-    int w = w_, h = h_, cx = w / 2;
-    fill(0, 0, w, h, 0x000000, 0.62f);
-    int half = std::min(U(600), w / 2 - U(16));
-    int left = cx - half + U(60), text_w = 2 * half - U(120);
-    int text_px = U(27), indent = U(30);
-
-    enum Kind { HEAD, BULLET, MORE, PLAIN, GAP };
-    struct Line { std::wstring s; Kind kind; };
-    std::vector<Line> lines;
-    for (const NewsEntry& e : news_) {
-        if (!lines.empty()) lines.push_back({L"", GAP});
-        if (!e.title.empty()) lines.push_back({widen(e.title), HEAD});
-        for (const std::string& raw : e.lines) {
-            std::wstring t = widen(raw);
-            bool bullet = t.size() >= 2 && (t[0] == L'-' || t[0] == L'*') && t[1] == L' ';
-            if (bullet) t.erase(0, 2);
-            auto wrapped = wrap(ITEM, text_px, t, text_w - (bullet ? indent : 0));
-            for (size_t i = 0; i < wrapped.size(); i++)
-                lines.push_back({wrapped[i], !bullet ? PLAIN : i == 0 ? BULLET : MORE});
-        }
-    }
-    const size_t MAX_LINES = 14;
-    bool cut = lines.size() > MAX_LINES;
-    if (cut) lines.resize(MAX_LINES - 1);
-    auto line_h = [&](Kind k) { return k == GAP ? U(16) : U(36); };
-    int content = cut ? U(36) : 0;
-    for (const Line& l : lines) content += line_h(l.kind);
-
-    int bh = U(66);
-    int card_h = U(178) + content + U(34) + bh + U(26) + U(30) + U(34);
-    int top = std::max(U(16), (h - card_h) / 2), bottom = top + card_h;
-    fill(cx - half, top, cx + half, bottom, PANEL, 0.95f);
-    saber(cx, top, half);
-    saber(cx, bottom, half);
-    text(TITLE, U(70), L"UPDATE AVAILABLE", cx, top + U(30), 1, {GOLD_TOP, GOLD_BOTTOM, EDGE, U(4), 1, U(4)});
-    text(MONO, U(22), L"WHAT'S NEW", cx, top + U(124), 1, {0x9ED8FF, 0x6AB8F0});
-
-    int y = top + U(178);
-    for (const Line& l : lines) {
-        switch (l.kind) {
-        case HEAD: text(MONO, U(22), l.s, left, y + U(6), 0, {0x9ED8FF, 0x6AB8F0}); break;
-        case BULLET: {
-            int d = std::max(3, U(7));
-            fill(left + U(6), y + U(17) - d / 2, left + U(6) + d, y + U(17) - d / 2 + d, GOLD_BOTTOM, 1);
-            text(ITEM, text_px, l.s, left + indent, y, 0, {PALE_TOP, PALE_BOTTOM});
-            break;
-        }
-        case MORE: text(ITEM, text_px, l.s, left + indent, y, 0, {PALE_TOP, PALE_BOTTOM}); break;
-        case PLAIN: text(ITEM, text_px, l.s, left, y, 0, {PALE_TOP, PALE_BOTTOM}); break;
-        case GAP: break;
-        }
-        y += line_h(l.kind);
-    }
-    if (cut) {
-        text(ITEM, U(24), L"...and more: news.txt on the game's GitHub page", left, y + U(2), 0, {HINT, HINT});
-        y += U(36);
-    }
-
-    // The buttons side by side, the chosen one lit
-    static const wchar_t* const LABELS[2] = {L"UPDATE NOW", L"LATER"};
-    int bw = std::min(U(340), half - U(40)), gap = U(40), by = y + U(34);
-    for (int b = 0; b < 2; b++) {
-        int x0 = b == 0 ? cx - gap / 2 - bw : cx + gap / 2;
-        news_buttons_[b] = {x0, by, x0 + bw, by + bh};
-        bool sel = b == news_button_;
-        fill(x0, by, x0 + bw, by + bh, sel ? SABER : 0x000000, sel ? 0.34f : 0.45f);
-        frame(x0, by, x0 + bw, by + bh, std::max(1, U(sel ? 3.0f : 1.5f)), sel ? 0xEAF6FF : SABER, sel ? 1.0f : 0.55f);
-        const Style st = sel ? Style{GOLD_TOP, GOLD_BOTTOM, EDGE, U(2), 1, U(2)} : Style{PALE_TOP, PALE_BOTTOM, EDGE, U(2), 0.95f};
-        text(TITLE, U(40), LABELS[b], x0 + bw / 2, by + bh / 2 - U(22), 1, st);
-    }
-    const wchar_t* about = news_button_ == 0
-                               ? L"Closes the game, downloads the new version, builds it again (update.bat) and starts it"
-                               : L"Back to the menu.  This news will not show again; update.bat updates any time";
-    text(ITEM, U(22), about, cx, by + bh + U(26), 1, {HINT, HINT});
-}
-
 void Frontend::mouse_move(int x, int y) {
     if (screen_ == Screen::Splash) return;
     mouse_x_ = x;
@@ -1255,15 +1021,6 @@ void Frontend::mouse_move(int x, int y) {
     if (setup_open_ && screen_ == Screen::Play) {   // the race set-up's rows and buttons
         for (int r = 0; r < 6; r++)
             if (PtInRect(&setup_rects_[r], POINT{x, y}) && r != setup_sel_) setup_sel_ = r, dirty_ = true;
-        return;
-    }
-    if (news_open_ && screen_ == Screen::Main) {   // only its two buttons
-        int hot = -1;
-        for (int b = 0; b < 2; b++)
-            if (PtInRect(&news_buttons_[b], POINT{x, y})) hot = b;
-        if (hot != news_hot_ || (hot >= 0 && hot != news_button_)) dirty_ = true;
-        news_hot_ = hot;
-        if (hot >= 0) news_button_ = hot;
         return;
     }
     int hit = -1;
@@ -1311,11 +1068,6 @@ void Frontend::click(int x, int y) {
         dirty_ = true;
         return;
     }
-    if (news_open_ && screen_ == Screen::Main) {
-        for (int b = 0; b < 2; b++)
-            if (PtInRect(&news_buttons_[b], p)) news_choose(b);
-        return;
-    }
     if (PtInRect(&more_up_, p) || PtInRect(&more_down_, p)) {   // the scroll arrows of a long settings tab
         int n = int(items().size());
         int k = std::clamp(selected_ - 1, 0, n - 3) + (PtInRect(&more_up_, p) ? -1 : 1);
@@ -1348,7 +1100,7 @@ void Frontend::click(int x, int y) {
 }
 
 void Frontend::wheel(int x, int y, int delta) {
-    if (starting || screen_ == Screen::Splash || (news_open_ && screen_ == Screen::Main)) return;
+    if (starting || screen_ == Screen::Splash) return;
     if (screen_ == Screen::Options && wheel_prompt.on) return;
     if (setup_open_ && screen_ == Screen::Play) {   // over an option: change it
         if (setup_sel_ < 4) setup_change(setup_sel_, delta > 0 ? +1 : -1);
@@ -3334,12 +3086,6 @@ bool Frontend::draw(int w, int h, std::vector<uint32_t>& out) {
         }
         dirty_ = true;
     }
-    take_news();
-    if (!news_.empty() && !news_open_ && screen_ == Screen::Main && !starting && menu_in_from_ < 0) {
-        news_open_ = dirty_ = true;   // once the main menu is up (after the splash and its fade)
-        news_button_ = 0;
-        news_hot_ = -1;
-    }
     if (!dirty_ && w == w_ && h == h_ && out.size() == size_t(w) * h) return false;
     gliding_ = false;
     if (w != w_ || h != h_) {
@@ -3401,7 +3147,6 @@ bool Frontend::draw(int w, int h, std::vector<uint32_t>& out) {
         shade_backdrop();   // the main menu's shade and logo
     }
     draw_side_menu(list);
-    if (news_open_ && screen_ == Screen::Main) draw_news();
     if (setup_open_ && screen_ == Screen::Play) draw_setup();
     if (restart_open_ && screen_ == Screen::Pause) draw_restart();
     dirty_ = slide_from_ >= 0 || gliding_;   // moving: drawn again every refresh

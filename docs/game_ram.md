@@ -120,6 +120,25 @@ detection is the time left (0x22CF88) going **up** while the clock counts
 (lap-line extensions don't move it). DEBUG TIME INFINITE holds the time left
 at its maximum, so it hides the jumps; the game is marked cheated then anyway.
 
+### Co-driver (pace notes)
+
+Each course's structure (table 0xE8408, 0x60 bytes per course id; the race
+set-up fn_0002BA30 keeps a pointer to it at +0x50) points at +0x5C to its
+pace notes, 24 bytes each, a negative track point ending the list:
+
+| Offset | Meaning |
+|---|---|
+| +0x00 | track point (0..255) where it is called: when +0xA4 equals it |
+| +0x04 | condition: -1 always, 1 first lap only, 2 not on the final lap, 3 jump crowd sounds by speed, 4 sound 0x2B, 5 the final lap's goal sound (0xF16D4) |
+| +0x08 | first word, 0..8: sound 168 + n, then the call after the frames in table 0xF160C |
+| +0x0C | HUD sign (-1 none): the 36 signs in alphabetical order of their records in the banked CROM (0 bridge ... 5 easy_left, 7 easy_right, 9 h_right, 14 k_right, 19/20 long_easy_left/right, 23 long_mid_left, 26 mid_left, 28 mid_right ...; tools/make_signs.py) |
+| +0x10 | second sign after it (-1 none; 0 bridge, 10 hazard) |
+| +0x14 | the call, a sound command (right-hand ones a0 18 xx, left-hand a0 19 xx at the same xx) |
+
+fn_0003E5C8 finds the next note at the start (index +0xC4, its point +0xC8),
+fn_0003E68C calls it. FOREST's list (0xE5090) has only the end: game_hooks.cpp
+writes FOREST its own and points its structure there.
+
 ## Finish, stage cleared, time up, championship result
 
 Confirmed sequence for each championship stage (forced runs, every 30 frames):
