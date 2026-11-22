@@ -211,7 +211,7 @@ static void forest_checkpoints() {
 // 130-150 m before it (the first word 3 or 4, as theirs at that distance), by
 // the sign and call they give a corner of that shape (MOUNTAIN, DESERT,
 // SNOWY, RIVIERA measured from their track quads; turns of FOREST: 17 easy
-// left, 23-68 a long right, 73 +160 deg left in 166 m, 91 a right in two parts,
+// left, 23 an easy right, a kink, 39-68 a long right, 73 +160 deg left in 166 m, 91 a right in two parts,
 // 110 a long left, 126 -95 deg right, 145 -223 deg right in 581 m, 182 left,
 // 196 a long easy left, 229 -103 deg right, 241 an easy right). Only calls the
 // game already pairs with each sign. The list goes in the fixed CROM's zeros
@@ -224,7 +224,8 @@ static void forest_pace_notes() {
     struct Note { int point, when, word, sign, sign2, call; };
     static const Note notes[] = {
         {4, 1, 5, EASY_LEFT, -1, 308},          // from the start (first lap): 17 easy left
-        {13, -1, 4, LONG_EASY_RIGHT, -1, 270},  // 23-68
+        {13, -1, 4, EASY_RIGHT, -1, 259},       // 23-31
+        {30, -1, 4, LONG_EASY_RIGHT, -1, 270},  // 39-68, after the kink at 36
         {64, -1, 4, LONG_K_LEFT, -1, 257},      // 73
         {83, -1, 3, MID_RIGHT, -1, 276},        // 91-108
         {102, -1, 3, LONG_MID_LEFT, -1, 326},   // 110-124
