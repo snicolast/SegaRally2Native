@@ -275,27 +275,6 @@ uint32_t sr2_course_sound(uint32_t ea) {
     return rd32(ea);
 }
 
-// The co-driver's sign (pace notes, 0x3E68C): the distance word plays at the
-// note and the game waits its length (table 0xF160C, 27-46 frames) to play the
-// corner's call and show the sign, for 90 frames. Out of ARCADE ORIGINAL the
-// sign shows as the distance word starts and stays on until the same frame
-// it went off before (the wait added to its 90)
-namespace {
-uint32_t g_sign_extra = 0;
-}
-
-uint32_t sr2_sign_wait(uint32_t frames) {
-    if (g_opt.arcade) return frames;
-    g_sign_extra = frames;
-    return 0;
-}
-
-uint32_t sr2_sign_shown(uint32_t frames) {
-    uint32_t extra = g_sign_extra;
-    g_sign_extra = 0;
-    return frames + extra;
-}
-
 // ---- OBJECT DISTANCE -------------------------------------------------------
 // The course's placed objects (table 0x497CCC, 24 bytes each: spectators,
 // cameramen, flashes, cones, signs, tyre barriers, snowmen...) are put in the
