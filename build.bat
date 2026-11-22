@@ -8,7 +8,7 @@ rem Started with a double click (cmd /c): keep the window open at the end so the
 rem message can be read
 set "PAUSE_AT_END="
 for %%a in (%cmdcmdline%) do if /i "%%~a"=="/c" set PAUSE_AT_END=1
-rem update.bat and install.bat run it and pause themselves
+rem install.bat runs it and pauses itself
 if defined SR2_NO_PAUSE set "PAUSE_AT_END="
 set ZIP=%~1
 if "%ZIP%"=="" set ZIP=%SR2_ROM_ZIP%

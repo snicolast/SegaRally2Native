@@ -220,8 +220,6 @@ static void save_settings(const FrontendSettings& s) {
     } else {   // PC EDITION's at the top, with the keys of the whole game as they are now
         FrontendSettings top = g_other_settings ? *g_other_settings : s;
         top.experience = s.experience;
-        top.check_updates = s.check_updates;
-        top.news_seen = s.news_seen;
         top.telemetry = s.telemetry;
         top.telemetry_port = s.telemetry_port;
         top.telemetry_format = s.telemetry_format;
@@ -717,13 +715,10 @@ int main(int argc, char** argv) {
         presenter.set_vsync(s.vsync);
         if (s.display_mode != 0 || (s.res_w > 0 && s.res_h > 0)) presenter.set_mode(s.display_mode, s.res_w, s.res_h);
         // the logo first (not when a debugging aid drives the menu)
-        // ARCADE ORIGINAL: no logo, no main menu, no news: the game from its SEGA logo
+        // ARCADE ORIGINAL: no logo, no main menu: the game from its SEGA logo
         if (g_opt.arcade) frontend.open(Frontend::Screen::None);
         else if (getenv("LW_MENU_KEYS") || getenv("LW_MENU_SHOT") || getenv("SR2_RESTARTED")) frontend.open(Frontend::Screen::Main);
-        else {
-            frontend.open_splash();
-            frontend.check_for_news();   // news.txt on GitHub while the logo plays
-        }
+        else frontend.open_splash();
         g_menu_open = !g_opt.arcade;
         presenter.input_hook = [&](UINT msg, WPARAM wp, LPARAM lp) -> bool {
             // A test run in the background (LW_BACKGROUND): the menus only take the scripted keys

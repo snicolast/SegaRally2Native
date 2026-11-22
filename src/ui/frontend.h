@@ -20,7 +20,6 @@
 #include <vector>
 
 #include "../runtime/stats.h"
-#include "news.h"
 #include "splash_video.h"
 
 struct FrontendSettings {
@@ -86,8 +85,6 @@ struct FrontendSettings {
     int trigger_rumble = 100;   // the triggers' own motors (Xbox One / Series pads), % of VIBRATION's strength, steps of 10
     bool splash = true;     // the logo video at launch (splash_screens = 0: straight to the menu)
     bool menu_music = true; // the game's Main Title in the menus
-    bool check_updates = true;     // at launch, news.txt on GitHub: a window with what is new and UPDATE NOW
-    int news_seen = 0;             // the newest news.txt entry the player closed with LATER
     // settings.ini only: UDP telemetry for SimHub and motion rigs (runtime/telemetry.h),
     // to 127.0.0.1 on this port. Off by default
     bool telemetry = false;
@@ -197,12 +194,6 @@ public:
     int wheel_row = -1, wheel_dir = 0;
     bool pad_prompts = false;   // a gamepad drives the menu: its buttons in the key help and hints, not the keyboard's
 
-    // At launch: news.txt from GitHub in the background (when the settings
-    // allow it). An entry newer than the news.txt here and than the last one
-    // closed with LATER opens a window over the main menu listing every entry
-    // this version lacks (see news.h)
-    void check_for_news();
-
     bool starting = false;    // PLAY pressed: the game still gets to its mission select (a notice instead of the hint)
 
     // DEBUG (testing): a practice race of any course with any car. StartDebug
@@ -237,7 +228,7 @@ private:
         DEBUG, DEBUG_COURSE, DEBUG_CAR, DEBUG_GEARS, DEBUG_TIME, DEBUG_GO,
         OPT_QUALITY,   // (no row: the first of the option ids, the ones >= it are options)
         OPT_DISPLAY, OPT_VOLUME, OPT_MUSIC, OPT_SPEAKERS, OPT_REAR, OPT_SAMPLES, OPT_AA, OPT_HAZE, OPT_BLOOM, OPT_AO, OPT_SUN, OPT_SHADOWS, OPT_SOFT, OPT_HDR, OPT_SHARPEN, OPT_HUD, OPT_LIVERIES,
-        OPT_SAT, OPT_GAMMA, OPT_MOTION, OPT_VIBRATION, OPT_RT, OPT_MENU_MUSIC, OPT_REFLECT, OPT_GI, OPT_DUST, OPT_OBJECTS, OPT_UPDATES, OPT_TELEMETRY, OPT_TELEMETRY_FORMAT,
+        OPT_SAT, OPT_GAMMA, OPT_MOTION, OPT_VIBRATION, OPT_RT, OPT_MENU_MUSIC, OPT_REFLECT, OPT_GI, OPT_DUST, OPT_OBJECTS, OPT_TELEMETRY, OPT_TELEMETRY_FORMAT,
         OPT_DIFFICULTY, OPT_CONNECTED, OPT_TRIGGERS, OPT_RESOLUTION, OPT_SCALE, OPT_VSYNC, OPT_MAXFPS, OPT_BGFPS,
         OPT_EXPERIENCE, OPT_ASPECT, OPT_ARCADE_ASPECT, OPT_HUD_AREA,
         OPT_WHEEL,   // CONTROLS > WHEEL: one row per wheel_lines entry (Item::index)   // OPT_ARCADE_ASPECT: ARCADE ORIGINAL's, under EXPERIENCE
@@ -386,27 +377,6 @@ private:
     void draw_drop();
     void placeholder_backdrop();      // no background picture: a drawn one (Sega Rally 2)
     void shade_backdrop();            // darker at the right and the bottom, the logo: on px_
-    // UPDATE AVAILABLE: the window over the main menu with the entries of
-    // news.txt this version lacks. UPDATE NOW starts update.bat (it waits for the game to close,
-    // updates, rebuilds and starts it again) and closes the game; LATER (Esc)
-    // keeps it closed until a newer entry
-    struct NewsDownload {                  // shared with the thread that downloads it (left to finish on its own)
-        std::mutex mutex;
-        std::string text;                  // news.txt from GitHub
-        std::atomic<int> state{0};         // 0 downloading, 1 there, 2 failed, 3 taken (take_news)
-    };
-    std::shared_ptr<NewsDownload> news_download_;
-    std::vector<NewsEntry> news_;          // the entries shown
-    int news_latest_ = 0;                  // the newest one on GitHub
-    bool news_open_ = false;
-    int news_button_ = 0;                  // 0 UPDATE NOW, 1 LATER
-    int news_hot_ = -1;                    // the button under the pointer
-    RECT news_buttons_[2]{};
-    void take_news();                      // the download, once it is there
-    void draw_news();
-    bool news_key(int vk);
-    void news_choose(int button);
-    void start_update();
 
     // The splash screens: their pictures, which one is on and since when
     std::vector<Picture> splash_;
