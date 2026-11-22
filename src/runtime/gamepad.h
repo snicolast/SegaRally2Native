@@ -34,7 +34,8 @@ struct PadState {
     // since the last poll), Y is VIEW CHANGE and X the hand brake
     float steer = 0, gas = 0, brake = 0;
     // Left / right on the d-pad or the stick (-1, 0, 1): SELECT CAR steps a
-    // car a press with it (app_input.cpp) instead of the stick's angle
+    // car a press with it, NAME ENTRY a letter (app_input.cpp), instead of
+    // the stick's angle
     int select_dir = 0;
     bool shift_up = false, shift_down = false, view = false, handbrake = false;
 };

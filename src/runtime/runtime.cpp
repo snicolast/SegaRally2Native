@@ -120,6 +120,7 @@ std::atomic<bool> g_debug_freeze_time{false};
 std::atomic<bool> g_skip_attract{false}, g_game_over_menu{false}, g_in_attract{false};
 std::atomic<bool> g_wants_start{false};
 std::atomic<int> g_car_select{-1};
+std::atomic<bool> g_name_entry{false};
 std::atomic<bool> g_restart_program{false};
 static uint64_t g_boot_from = 0;   // the frame the program (re)started on: the power-on screens' skip gives up 3000 after
 // Menus: the game stands still (and so does its sound) while set. The boot
@@ -1394,6 +1395,9 @@ void rt_event(Ctx& c) {
                 int car = !in_attract() && int32_t(rd32(SELECT_STEP)) == 9 ? int(rd32(SELECT_CAR) & 7) : -1;
                 if (car != g_car_select.exchange(car) && car >= 0)
                     printf("[select] car %d (frame %llu)\n", car, (unsigned long long)g_frame);
+                bool name = !in_attract() && int32_t(rd32(SELECT_STEP)) == 15 && rd32(NAME_DONE) != 3;
+                if (name != g_name_entry.exchange(name))
+                    printf("[select] name entry %s (frame %llu)\n", name ? "on" : "off", (unsigned long long)g_frame);
             }
             stats_frame();
             telemetry_frame(g_opt.telemetry, g_opt.telemetry_format, g_opt.telemetry_port);
