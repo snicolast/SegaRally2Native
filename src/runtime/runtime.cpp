@@ -25,6 +25,7 @@
 #include "wheel.h"
 #include "fns.h"
 #include "game_hooks.h"
+#include "game_ram.h"
 #include "runtime.h"
 #include "drive_board.h"
 #include "jtag.h"
@@ -38,6 +39,8 @@
 #include "stats.h"
 #include "telemetry.h"
 #include "options.h"
+
+using namespace game_ram;   // the game's RAM addresses
 
 extern Options g_opt;   // app.cpp: command line and menu settings (DIFFICULTY)
 
@@ -415,8 +418,8 @@ void dev_write8(uint32_t a, uint8_t v) {
         if (midi_log) {
             if (g_frame != midi_frame) {
                 midi_frame = g_frame;
-                fprintf(midi_log, "\n%llu step %d round %d:", (unsigned long long)g_frame, int32_t(rd32(0x22435C)),
-                        int32_t(rd32(0x22CF48)));
+                fprintf(midi_log, "\n%llu step %d round %d:", (unsigned long long)g_frame, int32_t(rd32(SELECT_STEP)),
+                        int32_t(rd32(G_ROUND)));
                 fflush(midi_log);
             }
             fprintf(midi_log, " %02x", v);
@@ -1041,10 +1044,9 @@ bool g_fast_idle = false;
 // current and runs its init (table 0xEDAF0, 12 bytes an entry), then its
 // frame function every frame. The credit / START screen counts its steps at
 // 0x22436C: 1 a credit taken, 4 once START is taken and SELECT GAME comes up
-constexpr uint32_t SR2_SEQUENCE = 0x22D618, SR2_SEQUENCE_NEXT = 0x22D61C, SR2_START_STEP = 0x22436C;
 
 static bool in_attract() {
-    return int32_t(rd32(SR2_SEQUENCE)) != 1;
+    return int32_t(rd32(SEQUENCE)) != 1;
 }
 
 // The game's selects keep their state at 0x224320 (set up by 0x00046160):
@@ -1055,8 +1057,6 @@ static bool in_attract() {
 // its carousel has a cursor of its own), the car (+0x04: the SELECT CAR cursor,
 // an index into the model table at 0xF1F00) and the transmission (+0x14: 0
 // automatic, 1 manual). The race is set up from them (0x00046AAC)
-constexpr uint32_t SR2_SELECT_STEP = 0x22435C, SR2_SELECT_MODE = 0x22432C, SR2_SELECT_COURSE = 0x224328,
-                   SR2_SELECT_CAR = 0x224324, SR2_SELECT_GEARS = 0x224334;
 
 // DEBUG's FOREST (course 4): SELECT COURSE's fifth card (game_hooks.cpp),
 // there when FOREST is on
@@ -1073,7 +1073,7 @@ static bool debug_jump_frame(uint64_t from) {
     uint32_t course = forest ? DEBUG_FOREST : uint32_t(choice & 0xF) & 3, car = uint32_t(choice >> 4 & 0xF) & 7,
              gears = uint32_t(choice >> 8 & 1);
     Inputs& p = g_inputs;
-    int32_t step = int32_t(rd32(SR2_SELECT_STEP));
+    int32_t step = int32_t(rd32(SELECT_STEP));
     auto finish = [&](const char* why) {
         printf("[debug] %s: step %d after %llu frames (course %u%s car %u gears %u)\n", why, step,
                (unsigned long long)(g_frame - from), course, forest ? " = FOREST" : "", car, gears);
@@ -1084,10 +1084,10 @@ static bool debug_jump_frame(uint64_t from) {
     if (g_frame - from > 12000) return finish("gave up");
     if (step >= 17) return finish("racing");
     static const bool champ = getenv("SR2_DEBUG_CHAMP") != nullptr;   // testing aid: the championship (16 cars) instead
-    if (step <= 3) wr32(SR2_SELECT_MODE, champ ? 0 : 1);   // practice
-    if (step > 6) wr32(SR2_SELECT_COURSE, course);
-    if (step > 6) wr32(SR2_SELECT_CAR, car);
-    if (step > 9) wr32(SR2_SELECT_GEARS, gears);
+    if (step <= 3) wr32(SELECT_MODE, champ ? 0 : 1);   // practice
+    if (step > 6) wr32(SELECT_COURSE, course);
+    if (step > 6) wr32(SELECT_CAR, car);
+    if (step > 9) wr32(SELECT_GEARS, gears);
     p.accel = (g_frame - from) % 40 < 6 ? 0xFF : 0;   // the pedal confirms
     return false;
 }
@@ -1098,21 +1098,20 @@ static bool debug_jump_frame(uint64_t from) {
 // +0x0C the time the next start sets it to.
 // DEBUG (menu): TIME INFINITE holds the time left at the most it has been
 // while the clock runs (a checkpoint's extension still adds to it)
-constexpr uint32_t SR2_CLOCK_STATE = 0x22CF84, SR2_CLOCK_LEFT = 0x22CF88;
 
 static void debug_time_frame() {
     static uint32_t held = 0;
-    if (!g_debug_freeze_time || in_attract() || rd32(SR2_CLOCK_STATE) != 2) {
+    if (!g_debug_freeze_time || in_attract() || rd32(G_CLOCK) != 2) {
         held = 0;
         return;
     }
-    uint32_t left = rd32(SR2_CLOCK_LEFT);
+    uint32_t left = rd32(G_LEFT);
     if (left > 0x7FFFFFFF) return;
     if (left >= held) {
         if (!held) stats_game_cheated();   // a race with no end: no records
         held = left;
     } else {
-        wr32(SR2_CLOCK_LEFT, held);
+        wr32(G_LEFT, held);
     }
 }
 
@@ -1140,7 +1139,7 @@ static bool arcade_entry_frame() {
     bool attract = in_attract();
     if (g_arcade_entry == 3) {
         from = g_frame, select_at = 0;
-        if (g_debug_jump >= 0 && !attract && int32_t(rd32(SR2_SELECT_STEP)) == 3 && rd32(SR2_START_STEP) == 4) {
+        if (g_debug_jump >= 0 && !attract && int32_t(rd32(SELECT_STEP)) == 3 && rd32(START_STEP) == 4) {
             // DEBUG with the game waiting at SELECT GAME (behind the menu): on from there
             g_arcade_entry = 2;
             select_at = g_frame;
@@ -1149,14 +1148,14 @@ static bool arcade_entry_frame() {
             clear_text_layers();
             g_arcade_entry = 2;
         } else {
-            wr32(SR2_SEQUENCE_NEXT, 0);   // the attract, entered as the game does after a game over
+            wr32(SEQUENCE_NEXT, 0);   // the attract, entered as the game does after a game over
             g_arcade_entry = 4;
         }
     }
     if (g_arcade_entry == 4) {
         coin = start = false;
         // the attract itself (0), not the restart on the way to it (-1)
-        if (int32_t(rd32(SR2_SEQUENCE)) != 0 && g_frame - from < 12000) return false;
+        if (int32_t(rd32(SEQUENCE)) != 0 && g_frame - from < 12000) return false;
         printf("[play] back in the attract after %llu frames\n", (unsigned long long)(g_frame - from));
         clear_text_layers();
         g_arcade_entry = 1;
@@ -1173,7 +1172,7 @@ static bool arcade_entry_frame() {
         return false;
     }
     uint64_t k = (t - settle) % 60;
-    bool taken = !attract && start_pressed && rd32(SR2_START_STEP) == 4;
+    bool taken = !attract && start_pressed && rd32(START_STEP) == 4;
     if (!select_at && !taken && t < 9000) {   // (once at SELECT GAME, the start step is the past)
         coin = attract && k < 6;      // a credit (the attract takes it at any point)
         start = !attract && k >= 30 && k < 36;
@@ -1202,7 +1201,7 @@ static bool arcade_entry_frame() {
 static void attract_guard_frame() {
     static bool was = true;
     static int32_t seq_was = 0;
-    int32_t seq = int32_t(rd32(SR2_SEQUENCE));
+    int32_t seq = int32_t(rd32(SEQUENCE));
     // Back to power on (-1): the program restarted, as on leaving the TEST
     // menu: the SEGA logo and the attract would follow, so the same as a game over
     bool restarted = seq == -1 && seq_was != -1;
@@ -1331,7 +1330,7 @@ void rt_event(Ctx& c) {
                 // game (0x2C7D4: +0x20, 0xC9 DRIVER, 0xCA BEHIND), before SELECT GAME, where
                 // PLAY finds it already: written there too while the selects are on
                 // (GAME MODE is read at the race set-up, 0x46AAC: the bit is enough)
-                const int32_t step = int32_t(rd32(SR2_SELECT_STEP));
+                const int32_t step = int32_t(rd32(SELECT_STEP));
                 if (g_opt.default_view >= 0 && !in_attract() && step >= 3 && step < 15) {
                     const uint32_t view = g_opt.default_view ? 0xCA : 0xC9;
                     if (rd32(0x22CF34) != view) wr32(0x22CF34, view);
@@ -1398,12 +1397,12 @@ void rt_event(Ctx& c) {
             attract_guard_frame();   // before the frame's picture is taken
             g_in_attract = in_attract();
             {
-                bool wants = in_attract() || rd32(SR2_START_STEP) != 4;
+                bool wants = in_attract() || rd32(START_STEP) != 4;
                 if (wants != g_wants_start.exchange(wants))
                     printf("[play] %s START (frame %llu)\n", wants ?"waits for" : "past", (unsigned long long)g_frame);
             }
             {
-                int car = !in_attract() && int32_t(rd32(SR2_SELECT_STEP)) == 9 ? int(rd32(SR2_SELECT_CAR) & 7) : -1;
+                int car = !in_attract() && int32_t(rd32(SELECT_STEP)) == 9 ? int(rd32(SELECT_CAR) & 7) : -1;
                 if (car != g_car_select.exchange(car) && car >= 0)
                     printf("[select] car %d (frame %llu)\n", car, (unsigned long long)g_frame);
             }
@@ -1411,7 +1410,7 @@ void rt_event(Ctx& c) {
             telemetry_frame(g_opt.telemetry, g_opt.telemetry_format, g_opt.telemetry_port);
             // The course of the race being run (round = course id + 6 x kind: championship,
             // practice, attract; docs/game_ram.md): 5 is SWEDISH, the Snowy course
-            r3d_set_sr2_snowy(int32_t(rd32(0x22CF48)) % 6 == 5);
+            r3d_set_sr2_snowy(int32_t(rd32(G_ROUND)) % 6 == 5);
             video_snapshot();
             bool boot_done = g_arcade_entry ? arcade_entry_frame() : (g_frame % 4 == 0 && boot_logo_up()) || g_frame > g_boot_from + 3000;
             if (g_boot_skip && boot_done) {

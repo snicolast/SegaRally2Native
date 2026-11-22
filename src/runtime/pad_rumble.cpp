@@ -40,6 +40,7 @@
 #include <cstdlib>
 #include <cstring>
 
+#include "game_ram.h"
 #include "inputs.h"
 #include "ppc_rt.h"
 
@@ -47,11 +48,7 @@ std::atomic<float> g_pad_motor[2] = {0.0f, 0.0f};
 
 namespace {
 
-constexpr uint32_t SEQUENCE = 0x22D618;      // 1 from the credit to GAME OVER
-constexpr uint32_t PHASE = 0x22D624;         // in a game: 1 selects and races
-constexpr uint32_t CAR_STATUS = 0x22CF14 + 0x6C;   // 1 GO: racing
-constexpr uint32_t PLAYER_CAR = 0x2242B0;
-constexpr uint32_t SPEED = 0x22F3A8;
+using game_ram::SEQUENCE, game_ram::PHASE, game_ram::G_CAR_STATUS, game_ram::PLAYER_CAR, game_ram::SPEED, game_ram::IN_AIR;
 constexpr float HZ = 60.0f;                  // the game's frames a second
 constexpr float G = 9.81f;
 constexpr float ANGLE = 6.2831853f / 65536.0f;
@@ -86,7 +83,7 @@ void pad_rumble_frame(float arcade, bool attract) {
     static const bool log = getenv("SR2_RUMBLE_LOG") != nullptr;
     const uint32_t car = rd32(PLAYER_CAR);
     const bool racing = !attract && rd32(SEQUENCE) == 1 && rd32(PHASE) == 1 && car != 0 && car < 0x800000 &&
-                        int32_t(rd32(CAR_STATUS)) == 1;
+                        int32_t(rd32(G_CAR_STATUS)) == 1;
     if (!racing) {
         s = State{};
         bump(g_pad_motor[0], arcade);   // the select screens' jolts, as before
@@ -138,7 +135,7 @@ void pad_rumble_frame(float arcade, bool attract) {
     // landing thump on touching down, fn_0003D7F4). A thump as strong as the
     // flight was long: a hop is small, a long jump the full kick
     static int air = 0;
-    if (rd32(0x22F394) == 1) air++;
+    if (rd32(IN_AIR) == 1) air++;
     else {
         if (air >= 6) hit_now = std::max(hit_now, std::clamp(float(air) / 40.0f, 0.3f, 1.0f));
         air = 0;

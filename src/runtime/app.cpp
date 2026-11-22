@@ -31,6 +31,7 @@
 
 #include "disk_writer.h"
 #include "game_hooks.h"
+#include "game_ram.h"
 #include "gamepad.h"
 #include "inputs.h"
 #include "options.h"
@@ -545,7 +546,7 @@ int main(int argc, char** argv) {
     // The race is on FOREST: the round (0x22CF48) is the course id + 6 x the kind, FOREST's id 1
     // (docs/game_ram.md); R3DSceneBuilder::set_forest
     auto forest_race = [] {
-        uint32_t round = rd32(0x22CF48);
+        uint32_t round = rd32(game_ram::G_ROUND);
         return round < 18 && round % 6 == 1;
     };
     builder.set_texture_pack(texture_pack(), &g_texture_ram);

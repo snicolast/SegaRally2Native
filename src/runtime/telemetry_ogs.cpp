@@ -32,20 +32,19 @@
 
 #include "../../third_party/ogs_telemetry/OgsTelemetryFrame.h"
 #include "../../third_party/ogs_telemetry/OgsTelemetryWire.h"
+#include "game_ram.h"
 #include "inputs.h"
 #include "ppc_rt.h"
 
 namespace {
 using namespace ogs::telemetry;
 
-// Game RAM
-constexpr uint32_t SEQUENCE = 0x22D618, PHASE = 0x22D624;
-constexpr uint32_t GAME = 0x22CF14;
-constexpr uint32_t G_ROUND = GAME + 0x34, G_GOAL = GAME + 0x7C, G_LAPS_TOTAL = GAME + 0x3C, G_CAR_STATUS = GAME + 0x6C, G_LAPS = GAME + 0x94;
-constexpr uint32_t HUD_POSITION = 0x13AB74, HUD_GEAR = 0x13AB80, SELECT_CAR = 0x224324;
-constexpr uint32_t RPM = 0x22F364, SPEED = 0x22F3A8, PLAYER_CAR = 0x2242B0;
+// Game RAM (game_ram.h)
+using game_ram::SEQUENCE, game_ram::PHASE, game_ram::RACE_RESULT, game_ram::G_ROUND, game_ram::G_GOAL,
+    game_ram::G_LAPS_TOTAL, game_ram::G_CAR_STATUS, game_ram::G_LAPS, game_ram::HUD_POSITION, game_ram::HUD_GEAR,
+    game_ram::SELECT_CAR, game_ram::RPM, game_ram::SPEED, game_ram::PLAYER_CAR, game_ram::IN_AIR, game_ram::VISIBLE_COUNT,
+    game_ram::VISIBLE_CARS;
 constexpr int CAR_GO = 1, PHASE_RACE = 1, PHASE_REPLAY = 3;
-constexpr uint32_t RACE_RESULT = 0x22D630;   // 0 before the start, 1 racing, 2 finished, 3 time up (docs/game_ram.md)
 constexpr int RESULT_FINISHED = 2, RESULT_TIME_UP = 3;
 constexpr float GAME_HZ = 60.0f;      // the game's steps a second of its own time: its metres per frame x 60 are the speed in m/s
 // (a recording: the car's change of position per frame x 57.524, the vblank, came 4% under the speed float, whose m/s
@@ -75,13 +74,11 @@ constexpr float SLOW_HARD = 15.0f;        // ... and from here whatever came bef
 constexpr float SLOW_FULL = 35.0f;        // ... and the one that is intensity 1
 constexpr float SLOW_ONSET = 2.0f;        // times the loss of the 6 frames before that a sudden one is
 constexpr float SLOW_BRAKE = 0.3f;        // brake pedal (0..1) from which the same loss may be braking
-constexpr uint32_t IN_AIR = 0x22F394;     // 1 while the player's car is in the air (a landing is a hit too)
 // Another car touching. The game keeps the cars in view in a list (fn_00015FA4 sorts it by size on screen):
 // the count at 0x225A2C and the car objects from 0x225A30, each with its position at +0 / +4 / +8 as the
 // player's car (fn_0004B1BC reads them so) and its velocity at +0x0C / +0x14. A tap on a car often slows the
 // player no more than the road does, so a car inside the player's own box (its length and width, in the
 // player's axes) is a hit. The box is a guess from car sizes: SR2_TELEMETRY_LOG prints the cars near
-constexpr uint32_t VISIBLE_COUNT = 0x225A2C, VISIBLE_CARS = 0x225A30;
 constexpr float CONTACT_X = 2.0f, CONTACT_Y = 2.5f, CONTACT_Z = 4.5f;   // m: half-extents of the box, across, up, along
 constexpr float CONTACT_FULL = 20.0f;     // m/s of closing speed that is intensity 1
 constexpr float SNAP = 15.0f;             // m/s changed in ONE frame is a reset (the finish zeroes the speed), not a crash
