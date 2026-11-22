@@ -128,6 +128,7 @@ void Gamepads::poll(int rumble, bool focused, bool menu) {
         if (!focused || menu) {
             st.view = st.handbrake = false;
             st.steer = st.gas = st.brake = 0;
+            st.select_dir = 0;
         }
         if (focused && menu) {
             SDL_GamepadButton accept = s.nintendo ? SDL_GAMEPAD_BUTTON_EAST : SDL_GAMEPAD_BUTTON_SOUTH;
@@ -170,6 +171,12 @@ void Gamepads::poll(int rumble, bool focused, bool menu) {
             float t = m < STICK_DEAD ? 0.0f : std::min((m - STICK_DEAD) / (0.95f - STICK_DEAD), 1.0f);
             t *= 0.35f + 0.65f * t;
             st.steer = sx < 0 ? -t : t;
+            // Left / right for SELECT CAR: the d-pad, or the stick past half
+            // way (let go once back under a third, so it does not flicker)
+            if (m >= 0.5f) s.stick_dir = sx < 0 ? -1 : 1;
+            else if (m < 0.33f) s.stick_dir = 0;
+            int dpad = int(down(SDL_GAMEPAD_BUTTON_DPAD_RIGHT)) - int(down(SDL_GAMEPAD_BUTTON_DPAD_LEFT));
+            st.select_dir = dpad != 0 ? dpad : s.stick_dir;
             auto pedal = [&](SDL_GamepadAxis a, SDL_GamepadButton b) {
                 float v = std::clamp(axis(p, a), 0.0f, 1.0f);
                 return down(b) ? 1.0f : v < 0.04f ? 0.0f : v;
