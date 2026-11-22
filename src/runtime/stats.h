@@ -38,7 +38,7 @@ struct Stats {
     int cars_finished = 0;                           // bit per model: a race finished with it
     int practice_courses = 0;                        // bit per course: a practice race finished on it
     int championships_won = 0;                       // finished 1st
-    int from_the_back = 0;                           // stages won from the last place on the grid
+    int from_the_back = 0;                           // championships won after starting a race last on the grid
     int manual_championships = 0;                    // finished with the manual gearbox
     int last_gasps = 0;                              // checkpoints reached with under 1 s left
     int records = 0;                                 // games that got into the records table
