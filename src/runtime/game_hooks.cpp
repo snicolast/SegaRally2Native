@@ -168,9 +168,26 @@ static void forest_practice_times() {
     }
 }
 
+// FOREST's checkpoints were left at the prototype's track points: the
+// checkpoint table (0xE5828, 0x14 bytes a course: the count, then the track
+// point of each, the lap line last; read by the race set-up 0x2BA30 into the
+// game structure +0x5C and passed by 0x3E308) has 43 and 141, but the course's
+// two CHECK POINT banners stand on the road at track points 45 and 138 (their
+// polygons, in the course's world, found on F9 snapshots of FOREST races). So
+// the first checkpoint went off ~33 m before its banner and the second ~50 m
+// after it. Moved to the banners, in the RAM copy of the table; FOREST only
+static void forest_checkpoints() {
+    constexpr uint32_t TABLE = 0xE5828, ROW = 0x14;
+    const uint32_t row = TABLE + ROW * FOREST_COURSE;
+    if (rd32(row) != 3 || rd32(row + 12) != 256) return;   // not the table this was written for
+    wr32(row + 4, 45);
+    wr32(row + 8, 138);
+}
+
 uint32_t sr2_course_id(uint32_t table, uint32_t offset) {
     if (offset >> 2 != uint32_t(FOREST_CARD)) return rd32(table + offset);
     forest_practice_times();
+    forest_checkpoints();
     return FOREST_COURSE;
 }
 
