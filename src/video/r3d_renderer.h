@@ -46,7 +46,6 @@ public:
     // dlss_model: 0 AUTO, 1 K, 2 M, 3 L (dlss::preset_for)
     bool init(VkPresenter& vk, float supersample, int msaa, int aniso, bool dlaa = false, int dlss_mode = 0,
               int dlss_model = 0);
-    int dlss_preset() const { return dlss_preset_; }   // the NGX preset in use (dlss::PRESET_*), 0 without DLSS
     // Texture pack images the GPU can hold at once (TexturePack::set_max_slots)
     uint32_t texture_slots() const { return texture_slots_; }
     int msaa_samples() const { return int(samples_); }
@@ -57,7 +56,6 @@ public:
     void set_light_gain(float gain) {
         light_gain_ = gain < 0.1f ? 0.1f : (gain > 8.0f ? 8.0f : gain);
     }
-    float light_gain() const { return light_gain_; }
     void shutdown();
 
     // Thread-safe sources are read by the caller; these just stage data

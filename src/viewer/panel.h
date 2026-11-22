@@ -30,8 +30,6 @@ public:
     void image(int x, int y, int size, const uint8_t* rgba, int w, int h);
     // The finished picture: BGRA with premultiplied alpha (UiOverlay::set_image)
     const uint32_t* end();
-    int width() const { return w_; }
-    int height() const { return h_; }
 
 private:
     void release();

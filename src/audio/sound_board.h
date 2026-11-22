@@ -46,11 +46,6 @@ public:
     // Muted: the board keeps running but nothing reaches the output (the game
     // fast-forwarding behind a loading screen); unmuted, it fades in over 20 ms
     void set_muted(bool m) { muted_ = m; }
-    uint64_t frames_out() const { return frames_out_; }   // frames sent to the output so far
-    // Game states (boss mode, runtime.cpp): the 68000, the SCSPs and their RAM.
-    // save_state leaves `out` empty when the board is not running.
-    void save_state(std::vector<uint8_t>& out) const;
-    bool load_state(const std::vector<uint8_t>& in);
 
     // 68000 bus (called from the Musashi callbacks)
     uint8_t read8(uint32_t a);
@@ -77,7 +72,6 @@ private:
     std::atomic<bool> muted_{false};
     bool was_muted_ = false;
     int fade_ = 0;        // samples of fade-in left
-    std::atomic<uint64_t> frames_out_{0};
     FILE* wav_ = nullptr;
     uint32_t wav_frames_ = 0;
     Limiter wav_limiter_;

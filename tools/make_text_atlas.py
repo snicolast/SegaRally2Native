@@ -476,7 +476,6 @@ def render_block(b):
 
     rl = tuple(nearest(t) for t in b.get("targets", st["targets"]))
     box = body_box(img, rl[2])
-    k = SCALE * SS
     # the parts on one baseline, then the ink stretched over the box (an
     # outline's width inside the block's tiles)
     room = st["room"]

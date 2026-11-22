@@ -28,7 +28,6 @@ public:
     void run_frame();                  // one video frame of Z80 time
     void command(uint8_t v);           // main board writes input register 0x10
     uint8_t reply() const { return rom_.empty() ? 0xFF : reply_; }   // input register 0x0C
-    bool initialized() const { return initialized_; }
     // Stick position seen by the board's ADC (0x80 = centre); the board only
     // reads it after it has initialised, before that it sees the centre
     void set_stick(uint8_t x, uint8_t y) { stick_x_ = x; stick_y_ = y; }

@@ -11,12 +11,9 @@
 
 class AudioOut {
 public:
-    static constexpr int kRate = AudioStream::kInRate;
-    static constexpr int kChannels = AudioStream::kInChannels;
-
     bool start();
     void stop();
-    // Called by the emulation thread: frames of kChannels floats (full scale = 1)
+    // Called by the emulation thread: frames of AudioStream::kInChannels floats (full scale = 1)
     void push(const float* frames, size_t count) { stream_.push(frames, count); }
     // Frames currently queued
     size_t queued() const { return stream_.queued(); }

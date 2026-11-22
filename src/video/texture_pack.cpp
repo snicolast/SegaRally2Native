@@ -182,7 +182,7 @@ uint32_t TexturePack::resolve(uint32_t tex, R3DTextureRam& ram, uint64_t& genera
         return load_slot(hash);
     }
     if (uint32_t slot = unpainted_slot(tex, w, h, hash)) return slot;
-    return use_files_ ? dirty_slot(tex, w, h, hash) : 0;
+    return use_files_ ? dirty_slot(w, h, hash) : 0;
 }
 
 // set_unpaint_shadows: a texture (texels_) that is one seen before with a
@@ -292,7 +292,7 @@ void TexturePack::edge_map(const uint8_t* rgba, int w, int h, std::vector<float>
 // how far towards the dirt's colour (that colour taken as the average of the
 // most changed pixels), as colour and amount for the shader to lay over the
 // replacement
-uint32_t TexturePack::dirty_slot(uint32_t tex, int w, int h, uint64_t hash) {
+uint32_t TexturePack::dirty_slot(int w, int h, uint64_t hash) {
     auto done = dirty_.find(hash);
     if (done != dirty_.end()) return done->second;
     uint32_t result = 0;

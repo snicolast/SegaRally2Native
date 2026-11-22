@@ -16,7 +16,7 @@ constexpr uint32_t PALE_TOP = 0xDCE6F2, PALE_BOTTOM = 0xAFC2DA, AMBER = 0x3CC8FF
 constexpr double SHOW_SECONDS = 5, SLIDE_IN = 0.5, SLIDE_OUT = 0.4;
 constexpr double SHINE_AT = 0.4, SHINE_TIME = 0.55;   // a light sweep once it has landed
 
-const wchar_t* const FACES[3] = {L"Saira ExtraCondensed ExCond", L"Barlow Condensed", L"Jurassic Park"};
+const wchar_t* const FACES[2] = {L"Saira ExtraCondensed ExCond", L"Barlow Condensed"};
 
 float chan(uint32_t rgb, int shift) { return float((rgb >> shift) & 0xFF) / 255.0f; }
 
@@ -105,17 +105,13 @@ std::vector<uint8_t> make_chime(float gain) {
 }  // namespace
 
 bool AchievementToast::init(const std::string& font_dir) {
-    static const char* const FILES[3] = {"SairaExtraCondensed-Bold.ttf", "BarlowCondensed-Bold.ttf",
-                                         "Jurassic_Park.ttf"};
+    static const char* const FILES[2] = {"SairaExtraCondensed-Bold.ttf", "BarlowCondensed-Bold.ttf"};
     for (const char* name : FILES) {
         font_data_.push_back(read_file(font_dir + "/" + name));
         auto& data = font_data_.back();
         DWORD count = 0;
         HANDLE h = data.empty() ? nullptr : AddFontMemResourceEx(data.data(), DWORD(data.size()), nullptr, &count);
-        if (h) {
-            font_handles_.push_back(h);
-            if (name == FILES[2]) jurassic_ = true;
-        }
+        if (h) font_handles_.push_back(h);
     }
     dc_ = CreateCompatibleDC(nullptr);
     return dc_ != nullptr;
@@ -145,8 +141,8 @@ HFONT AchievementToast::font(Family f, int px) {
     auto key = std::make_pair(int(f), px);
     auto it = fonts_.find(key);
     if (it != fonts_.end()) return it->second;
-    const wchar_t* face = f == TITLE ? (jurassic_ ? FACES[2] : FACES[0]) : FACES[1];
-    HFONT h = CreateFontW(-px, 0, 0, 0, f == TITLE && jurassic_ ? FW_NORMAL : FW_BOLD, FALSE, FALSE, FALSE,
+    const wchar_t* face = f == TITLE ? FACES[0] : FACES[1];
+    HFONT h = CreateFontW(-px, 0, 0, 0, FW_BOLD, FALSE, FALSE, FALSE,
                           DEFAULT_CHARSET, OUT_TT_ONLY_PRECIS, CLIP_DEFAULT_PRECIS, ANTIALIASED_QUALITY, DEFAULT_PITCH,
                           face);
     fonts_[key] = h;
@@ -160,13 +156,8 @@ const AchievementToast::Mask& AchievementToast::mask(Family f, int px, const std
     if (masks_.size() > 100) masks_.clear();
     Mask& m = masks_[key];
     SelectObject(dc_, font(f, px));
-    std::wstring t = s;   // the Jurassic font's space is very narrow
-    if (f == TITLE && jurassic_) {
-        t.clear();
-        for (wchar_t c : s) t += c == L' ' ? std::wstring(L"   ") : std::wstring(1, c);
-    }
     SIZE sz{};
-    GetTextExtentPoint32W(dc_, t.c_str(), int(t.size()), &sz);
+    GetTextExtentPoint32W(dc_, s.c_str(), int(s.size()), &sz);
     TEXTMETRICW tm{};
     GetTextMetricsW(dc_, &tm);
     m.pad = 2 + px / 6;
@@ -187,7 +178,7 @@ const AchievementToast::Mask& AchievementToast::mask(Family f, int px, const std
     memset(bits, 0, size_t(m.w) * m.h * 4);
     SetBkMode(dc_, TRANSPARENT);
     SetTextColor(dc_, RGB(255, 255, 255));
-    TextOutW(dc_, m.pad, m.pad, t.c_str(), int(t.size()));
+    TextOutW(dc_, m.pad, m.pad, s.c_str(), int(s.size()));
     GdiFlush();
     m.a.resize(size_t(m.w) * m.h);
     const uint8_t* p = static_cast<const uint8_t*>(bits);

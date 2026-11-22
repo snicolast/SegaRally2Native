@@ -8,7 +8,7 @@ Needs Pillow.
 """
 import sys
 
-from PIL import Image, ImageDraw, ImageFilter, ImageFont
+from PIL import Image, ImageDraw, ImageFont
 
 kind, gears = sys.argv[1], sys.argv[2:]
 box = Image.open(f"textures/art/caja_{kind}.png").convert("RGBA")
