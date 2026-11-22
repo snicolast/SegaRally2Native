@@ -6,9 +6,9 @@ box, which has its own replacement: boxes must not overlap). The captures
 come from snapshots replayed with LW_2D_CAPTURE (out/2d/barras_coche_N_*).
 
   python tools/make_bar_tachs.py          the .txt files and the templates
-  python tools/make_bar_tachs.py split    cut Sergi's pictures
+  python tools/make_bar_tachs.py split    cut the pictures
       (textures/art/barras_<car>.png and barras_<car>_lit.png, each the
-      whole counter as the template) into the boxes
+      whole counter as the template, from tools/make_bar_art.py) into the boxes
 Needs Pillow.
 """
 import sys
@@ -25,21 +25,40 @@ def cells(path):
     return [line.split() for line in open(path + ".cells")]
 
 
-def write(name, grid, box, source):
+def pixels(path):
+    img = Image.open(path + ".png").convert("RGBA")
+    return img.load()
+
+
+def write(name, grid, box, source, other):
+    """other: the cells of the other state; where a cell differs, its pixels in
+    this state go in a "px" line (src/video/pack2d.h), so a cell caught
+    between the two states shows the closer one"""
     x, y, w, h = box
+    px = pixels(source)
     with open(f"textures/2d/{name}.txt", "w") as f:
         f.write(f"# bar graph rev counter, from {source}\nrect {x} {y} {w} {h}\n")
         for r in range(y, y + h):
             for c in range(x, x + w):
                 f.write(grid[r][c] + "\n")
+        for r in range(y, y + h):
+            for c in range(x, x + w):
+                if grid[r][c] == other[r][c]:
+                    continue
+                values = []
+                for py in range(8):
+                    for pxx in range(8):
+                        cr, cg, cb, ca = px[c * 8 + pxx, r * 8 + py]
+                        values.append(f"{ca << 24 | cr << 16 | cg << 8 | cb:08x}")
+                f.write(f"px {(r - y) * w + c - x} " + " ".join(values) + "\n")
 
 
 def make():
     for car, (n, whole, parts) in CARS.items():
         off, on = f"out/2d/barras_coche_{n}_ralenti", f"out/2d/barras_coche_{n}_bajo"
         for part, box in parts:
-            write(f"barras_{car}_{part}", cells(off), box, off)
-            write(f"barras_{car}_{part}_lit", cells(on), box, on)
+            write(f"barras_{car}_{part}", cells(off), box, off, cells(on))
+            write(f"barras_{car}_{part}_lit", cells(on), box, on, cells(off))
         x, y, w, h = whole
         for state, src in (("apagado", off), ("encendido", on)):
             img = Image.open(src + ".png").convert("RGBA").crop((x * 8, y * 8, (x + w) * 8, (y + h) * 8))

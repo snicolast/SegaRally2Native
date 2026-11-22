@@ -3,6 +3,7 @@
 #include "../common/fnv1a.h"
 
 #include <algorithm>
+#include <cstdlib>
 #include <cstdio>
 #include <cstring>
 #include <unordered_map>
@@ -50,7 +51,7 @@ void Pack2D::init(const std::string& dir, uint32_t first_slot, uint32_t last_slo
         e.name = file.substr(0, file.size() - 4);
         FILE* f = fopen((dir + "/" + file).c_str(), "r");
         if (!f) continue;
-        char line[256];
+        char line[1024];   // ("px" lines: 64 pixels of 8 digits)
         while (fgets(line, sizeof(line), f)) {
             unsigned long long h;
             if (line[0] == '#') continue;
@@ -63,6 +64,15 @@ void Pack2D::init(const std::string& dir, uint32_t first_slot, uint32_t last_slo
             }
             if (strncmp(line, "cover", 5) == 0) {   // texts: every cell of the box gives way, changed or empty
                 e.cover = true;
+                continue;
+            }
+            if (strncmp(line, "px ", 3) == 0) {
+                std::array<uint32_t, 64> px{};
+                int cell = -1, used = 0, at = 3;
+                bool ok = sscanf(line + at, "%d%n", &cell, &used) == 1;
+                at += used;
+                for (int i = 0; ok && i < 64; i++, at += used) ok = sscanf(line + at, "%x%n", &px[i], &used) == 1;
+                if (ok && cell >= 0) e.px_off[cell] = px;
                 continue;
             }
             if (sscanf(line, "%llx", &h) == 1) e.cells.push_back(h == empty_cell_hash() ? 0 : h);
@@ -86,6 +96,7 @@ void Pack2D::init(const std::string& dir, uint32_t first_slot, uint32_t last_slo
         }
         base->lit = std::move(entries_[i].cells);
         base->lit_name = n;
+        base->px_lit = std::move(entries_[i].px_off);
         entries_.erase(entries_.begin() + i);
     }
     if (!entries_.empty()) printf("[2d] %zu 2D graphics replacements\n", entries_.size());
@@ -104,6 +115,26 @@ int Pack2D::matches(const Entry& e, int cx, int cy, int& total) const {
             matched += (ref && same(cy + y, cx + x, ref)) || (lit && same(cy + y, cx + x, lit));
         }
     return matched;
+}
+
+bool Pack2D::closer_to_lit(const Entry& e, int index, const uint32_t* raw, int px, int py) {
+    auto off = e.px_off.find(index), lit = e.px_lit.find(index);
+    if (off == e.px_off.end() || lit == e.px_lit.end()) return false;
+    auto distance = [](uint32_t a, uint32_t b) {
+        int d = 0;
+        for (int shift = 0; shift < 32; shift += 8) d += std::abs(int((a >> shift) & 0xFF) - int((b >> shift) & 0xFF));
+        return d;
+    };
+    int votes = 0;
+    for (int y = 0; y < 8; y++)
+        for (int x = 0; x < 8; x++) {
+            uint32_t a = off->second[y * 8 + x], b = lit->second[y * 8 + x];
+            if (a == b) continue;
+            uint32_t p = raw[(py + y) * SCREEN_W + px + x];
+            int da = distance(p, a), db = distance(p, b);
+            votes += (db < da) - (da < db);
+        }
+    return votes > 0;
 }
 
 uint32_t Pack2D::take_slot(int entry, bool lit) {
@@ -244,7 +275,13 @@ int Pack2D::apply(uint32_t* target, int stride, const uint32_t* raw, const uint3
                 uint64_t ref = e.cells[y * e.cw + x];
                 uint64_t lit = e.lit_slot ? e.lit[y * e.cw + x] : 0;   // (lit picture not loaded: the game's cells)
                 bool on_lit = lit && same(oy + y, ox + x, lit);
-                if (!e.cover && !on_lit && (!ref || !same(oy + y, ox + x, ref))) continue;
+                bool on_ref = ref && same(oy + y, ox + x, ref);
+                if (lit && !on_lit && !on_ref && e.px_off.count(y * e.cw + x)) {
+                    // caught between the two states: the closer one, either way not the game's cell
+                    on_lit = closer_to_lit(e, y * e.cw + x, raw, (ox + x) * 8, (oy + y) * 8);
+                    on_ref = !on_lit;
+                }
+                if (!e.cover && !on_lit && !on_ref) continue;
                 for (int py = 0; py < 8; py++) {
                     memset(target + ((oy + y) * 8 + py) * stride + (ox + x) * 8, 0, 8 * 4);
                     if (!under) continue;
