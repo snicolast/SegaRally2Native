@@ -226,6 +226,7 @@ add_executable(SegaRally2 WIN32
     src/video/vk_presenter.cpp
     src/video/ui_overlay.cpp
     src/ui/frontend.cpp
+    src/ui/frontend_settings.cpp
     src/ui/menu_music.cpp
     src/ui/splash_video.cpp
     src/video/r3d_state.cpp
