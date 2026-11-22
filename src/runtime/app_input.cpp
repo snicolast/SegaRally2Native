@@ -56,16 +56,17 @@ struct CarSelectSteer {
 // that way. The pedals pick (accelerator) and rub out (brake). The wheel's
 // small angles were a narrow part of a stick's travel and the arrows went
 // past them in a few frames: the letters spun by. There each press is a short
-// push past the free spin, a third of a letter's turn, and the game settles
-// on the next letter; held, it repeats (once the wheel has settled)
+// push past the free spin, about two thirds of a letter's turn (the game
+// settles the rest at 0.01 rad a frame, slow), and it stops on the next
+// letter; held, it repeats
 struct NameEntrySteer {
     int last_dir = 0, held = 0x80;
     double held_until = 0, repeat_at = 0;
     int operator()(int dir, double now) {
         if (dir != 0 && (dir != last_dir || now >= repeat_at)) {
-            held = 0x80 + 40 * dir;   // 0.024 rad a frame (a letter is 0.217): 2-3 frames
-            held_until = now + 0.05;
-            repeat_at = now + (dir != last_dir ? 0.5 : 0.4);   // it settles at 0.01 rad a frame
+            held = 0x80 + 55 * dir;   // 0.033 rad a frame for 4 frames (6 at most: 0.198, a letter is 0.217)
+            held_until = now + 0.067;
+            repeat_at = now + (dir != last_dir ? 0.35 : 0.22);
         }
         last_dir = dir;
         return now < held_until ? held : 0x80;
