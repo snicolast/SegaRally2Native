@@ -48,7 +48,6 @@ gen/*.cpp + src/ (memory, Real3D, SCSP, inputs, menus) ──CMake/MSVC──▶
   (`vk_presenter`, `ui_overlay`), texture and 2D packs, DLSS bridge.
 - `src/audio`: SCSP, sound board, DSB2, audio output.
 - `src/ui`: the PC menus (`frontend`), achievement toasts, menu music, splash.
-- `src/viewer`: the capture viewer (`docs/VIEWER.md`), which reuses `src/video`.
 - `tests`: unit tests run by CTest and the GitHub workflow.
 
 ## What is known about the program

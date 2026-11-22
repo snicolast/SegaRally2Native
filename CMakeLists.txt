@@ -188,10 +188,9 @@ else()
     set(DLSS_LIB "")
 endif()
 
-# The renderer and what it draws with (src/video): one library, compiled once
-# with the same flags, for the game, the capture viewer and viewer_test (a
-# program takes only the parts it uses). DLSS is not in it: the game links
-# its own (DLSS_SOURCE above), the viewer the stub.
+# The renderer and what it draws with (src/video): a library of its own, with
+# its own include folders, so it cannot reach into the emulator (src/runtime).
+# DLSS is not in it: the game links the one chosen above (DLSS_SOURCE).
 add_library(sr2_video STATIC
     src/video/tilegen.cpp
     src/video/texture_pack.cpp
@@ -199,7 +198,6 @@ add_library(sr2_video STATIC
     src/video/sky_pack.cpp
     src/video/text_hd.cpp
     src/video/image_io.cpp
-    src/video/snapshot.cpp
     src/video/vk_presenter.cpp
     src/video/ui_overlay.cpp
     src/video/r3d_state.cpp
@@ -330,38 +328,10 @@ elseif(WIN32)
     endif()
 endif()
 
-# The capture viewer (src/viewer, docs/VIEWER.md): a snapshot of the game (F9)
-# seen from a free camera, drawn by the game's own scene builder and renderer.
-# A program of its own that links none of the recompiled code, so it builds
-# without the ROM. Not built with the rest: build_viewer.bat, or
-# cmake --build <build folder> --target SegaRally2Viewer.
-# A console program: what it loads and what is selected is also printed
-add_executable(SegaRally2Viewer EXCLUDE_FROM_ALL
-    src/viewer/viewer_main.cpp
-    src/viewer/capture.cpp
-    src/viewer/panel.cpp
-    src/viewer/textures.cpp
-    src/viewer/view_math.cpp
-    src/video/dlss_stub.cpp
-    $<TARGET_OBJECTS:SegaRally2_res>
-)
-if(GAME_IN_SOURCE_DIR)
-    set_target_properties(SegaRally2Viewer PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR})
-endif()
-target_include_directories(SegaRally2Viewer PRIVATE src/viewer)
-target_link_libraries(SegaRally2Viewer PRIVATE sr2_video comdlg32)
-if(MSVC)
-    target_compile_options(SegaRally2Viewer PRIVATE $<$<COMPILE_LANGUAGE:CXX>:/W4 /wd4146 /fp:strict /utf-8>)
-    target_compile_definitions(SegaRally2Viewer PRIVATE _CRT_SECURE_NO_WARNINGS)
-elseif(WIN32)
-    # (the renderer's code as the game builds it)
-    target_compile_options(SegaRally2Viewer PRIVATE -ffp-contract=off -fno-strict-aliasing -fwrapv)
-endif()
-
 # Unit tests (ctest): the 2D composition against golden hashes, the FNV-1a
 # hash of C++ and Python against the same vectors, the command-line table and
-# the audio queue, the ROM layout read from the zip, the capture viewer, the
-# OGS-TS telemetry sender over a fake game RAM and save/settings.ini.
+# the audio queue, the ROM layout read from the zip, the OGS-TS telemetry
+# sender over a fake game RAM and save/settings.ini.
 # build.bat runs them (they are built with the rest).
 option(LW_TESTS "Build the unit tests" ON)
 if(LW_TESTS)
@@ -378,10 +348,6 @@ if(LW_TESTS)
     add_executable(achievements_csv_test tests/achievements_csv_test.cpp src/runtime/achievements_csv.cpp src/runtime/disk_writer.cpp)
     target_include_directories(achievements_csv_test PRIVATE ${ICONS_DIR})
     add_executable(disk_writer_test tests/disk_writer_test.cpp src/runtime/disk_writer.cpp)
-    # The capture viewer without its window: its own code and the game's scene builder
-    add_executable(viewer_test tests/viewer_test.cpp src/viewer/capture.cpp src/viewer/textures.cpp src/viewer/view_math.cpp)
-    target_include_directories(viewer_test PRIVATE src/viewer)
-    target_link_libraries(viewer_test PRIVATE sr2_video)
     # HD HUD pictures: more different ones in a session than GPU slots
     add_executable(pack2d_test tests/pack2d_test.cpp src/video/pack2d.cpp src/video/image_io.cpp)
     target_link_libraries(pack2d_test PRIVATE ole32 windowscodecs)
@@ -390,7 +356,7 @@ if(LW_TESTS)
     # save/settings.ini and the command-line options it becomes
     add_executable(settings_test tests/settings_test.cpp src/ui/frontend_settings.cpp src/runtime/settings_bridge.cpp)
     set(LW_TEST_TARGETS tilegen_test fnv_test options_test audio_stream_test rom_zip_test jtag_test r3d_state_test
-        menu_music_test achievements_csv_test disk_writer_test viewer_test pack2d_test telemetry_test settings_test)
+        menu_music_test achievements_csv_test disk_writer_test pack2d_test telemetry_test settings_test)
     foreach(t ${LW_TEST_TARGETS})
         target_include_directories(${t} PRIVATE src/video src/common src/runtime src/audio src/ui ${MINIZ_DIR})
         if(MSVC)
@@ -408,7 +374,6 @@ if(LW_TESTS)
     add_test(NAME menu_music COMMAND menu_music_test)
     add_test(NAME achievements_csv COMMAND achievements_csv_test)
     add_test(NAME disk_writer COMMAND disk_writer_test)
-    add_test(NAME viewer COMMAND viewer_test)
     add_test(NAME pack2d COMMAND pack2d_test)
     add_test(NAME telemetry COMMAND telemetry_test)
     add_test(NAME settings COMMAND settings_test)
