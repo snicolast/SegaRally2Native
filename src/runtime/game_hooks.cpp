@@ -141,27 +141,38 @@ uint32_t sr2_card_palette(uint32_t table, uint32_t offset) {
 // (the clock filled for 15 s at the start, ticking, and never ran down).
 // Written here in their place, in the RAM copy of the tables (pointers per
 // mode at 0xE8348; rows per difficulty in the game's numbering: NORMAL,
-// HARD, VERY HARD, VERY EASY, EASY), from FOREST's own championship times
-// (13 s to the first checkpoint, 28 to the second, 32 to the line: two
-// checkpoints a lap) as MOUNTAIN's practice is to its championship: 60 s at
-// the start (80 SPECIAL), the first extension by difficulty, then a little
-// more than the championship's, 12 s from the line to the first checkpoint
+// HARD, VERY HARD, VERY EASY, EASY): the start time, then the extension each
+// checkpoint and lap line gives, the time for the stretch that follows it.
+// FOREST drives between DESERT (NOVICE) and MOUNTAIN (INTERMEDIATE), so its
+// clock gives the time per km halfway between theirs: practice, on NORMAL,
+// DESERT 16.8 s/km and MOUNTAIN 19.3 -> 18 s/km, 230 s for its three 4.25 km
+// laps; SPECIAL (10 laps) DESERT 15.6 and MOUNTAIN 18.4 -> 17 s/km, 719 s.
+// Shared out by the stretches' lengths (checkpoints at track points 45 and
+// 138, forest_checkpoints(): 747, 1544 and 1959 m), and the difficulty moves
+// the first extension as the arcade's own rows do
 static void forest_practice_times() {
     constexpr uint32_t MODES = 0xE8348;   // per mode: ?, courses, words per row, table
-    static const int first[5] = {31, 29, 24, 46, 36};
-    for (int special = 0; special < 2; special++) {
-        uint32_t mode = MODES + 16 * uint32_t(2 + special);   // practice, practice SPECIAL
+    struct Times {
+        int start, to_cp2, to_line, to_cp1;   // s: the start, then after CP1, CP2 and the lap line
+        int first[5];                          // the first CP1's by difficulty (NORMAL, HARD, VERY HARD, VERY EASY, EASY)
+        int start_very_easy;
+    };
+    static const Times practice = {60, 22, 28, 10, {22, 20, 15, 37, 27}, 60};
+    static const Times special = {80, 24, 30, 11, {24, 20, 14, 46, 40}, 90};
+    for (int sp = 0; sp < 2; sp++) {
+        const Times& t = sp ? special : practice;
+        uint32_t mode = MODES + 16 * uint32_t(2 + sp);   // practice, practice SPECIAL
         uint32_t courses = rd32(mode + 4), words = rd32(mode + 8), table = rd32(mode + 12);
-        int laps = special ? 10 : 3;
-        if (words < uint32_t(3 * laps + 1)) continue;
+        int laps = sp ? 10 : 3;
+        if (words < uint32_t(3 * laps + 1)) continue;   // start + 3 a lap - the goal + the end mark
         for (uint32_t diff = 0; diff < 5; diff++) {
-            uint32_t row = table + 4 * words * (diff * courses + FOREST_COURSE);
-            uint32_t at = row;
-            wr32(at, uint32_t((special ? 80 : 60) * 60)), at += 4;
+            uint32_t at = table + 4 * words * (diff * courses + FOREST_COURSE);
+            auto put = [&](int s) { wr32(at, uint32_t(s * 60)), at += 4; };
+            put(diff == 3 ? t.start_very_easy : t.start);
             for (int lap = 0; lap < laps; lap++) {
-                if (lap) wr32(at, 12 * 60), at += 4;   // the line, to the first checkpoint
-                wr32(at, uint32_t((lap ? 30 : first[diff]) * 60)), at += 4;   // to the second
-                if (lap + 1 < laps) wr32(at, 34 * 60), at += 4;               // to the line
+                if (lap) put(t.to_cp1);                     // the lap line
+                put(lap ? t.to_cp2 : t.first[diff]);         // CP1
+                put(t.to_line);                              // CP2 (on the last lap, to the goal)
             }
             wr32(at, ~0u);
         }
