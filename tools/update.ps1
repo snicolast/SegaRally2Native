@@ -154,7 +154,7 @@ if ($current) {
 }
 if ($Check) { Say "Run update.bat to install it." ; exit 0 }
 
-$tmp = Join-Path ([IO.Path]::GetTempPath()) ("swt_update_" + [guid]::NewGuid().ToString("N").Substring(0, 8))
+$tmp = Join-Path ([IO.Path]::GetTempPath()) ("sr2_update_" + [guid]::NewGuid().ToString("N").Substring(0, 8))
 New-Item -ItemType Directory -Path $tmp | Out-Null
 try {
     $zip = Join-Path $tmp "source.zip"

@@ -2,7 +2,7 @@
 // presentation loop (2D composition, scene building, rendering, captures),
 // and the menus. The emulator runs on its
 // own thread in runtime.cpp; runtime.h is what this side uses of it.
-// Also of this side: app_input.cpp (keyboard, mouse, gamepads, aiming),
+// Also of this side: app_input.cpp (keyboard, mouse, gamepads, wheels),
 // app_files.cpp (ROM loading, snapshots, captures) and settings_bridge.cpp
 // (save/settings.ini <-> the command-line options), sharing app_internal.h
 #define WIN32_LEAN_AND_MEAN
@@ -364,7 +364,7 @@ int main(int argc, char** argv) {
         g_frame_limit = 600;
     }
     g_collect_stats = g_frame_limit != INT32_MAX;   // report() prints them when the run ends
-    printf("Sega Rally 2 Native - part 4 (%s)\n", g_opt.headless ? "no window" : "Vulkan window, 3D + 2D");
+    printf("Sega Rally 2 Native (%s)\n", g_opt.headless ? "no window" : "Vulkan window, 3D + 2D");
     {
         std::vector<uint8_t> program, samples, dsb_program, dsb_mpeg;
         if (!load_game_rom(program, samples, dsb_program, dsb_mpeg)) return 1;
@@ -685,7 +685,7 @@ int main(int argc, char** argv) {
     }
     if (g_opt.menu) {
         FrontendSettings& s = frontend.settings;
-        s = ini;   // all of save/settings.ini (the controls, the paths, the update check)...
+        s = ini;   // all of save/settings.ini (the controls, the paths)...
         settings_from_options(s, g_opt);   // ...with the command-line options over it
         g_settings_file = ini;
         g_settings_launch = s;

@@ -1,5 +1,5 @@
 # Python packages the tools need: python -m pip install -r tools/requirements.txt
 # (recomp.py, romtool.py and analyze.py need none of them)
-numpy          # make_backdrop.py, make_text_atlas.py, make_title.py
-Pillow         # the same three, make_2d_replacement.py, texture_sheet.py
+numpy          # make_text_atlas.py
+Pillow         # make_text_atlas.py and the other image tools (make_*.py, car_atlas.py, texture_sheet.py)
 unicorn        # diff_unicorn.py: PowerPC emulation to compare against

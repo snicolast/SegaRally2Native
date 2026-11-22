@@ -23,8 +23,8 @@
 #include "vk_presenter.h"
 
 // Placement of the picture in the window. The 3D view can be wider than the
-// original 4:3 screen (widescreen); the 2D layers and the gun area stay 4:3
-// in the middle of it.
+// original 4:3 screen (widescreen); the 2D layers stay 4:3 in the middle of
+// it (the race HUD's corners can move out: hud_x).
 struct ScreenLayout {
     float view_w;    // width of the 3D view in Model 3 pixels (496 = original 4:3)
     float scale;     // window pixels per Model 3 pixel (up and down; across, times px_aspect)

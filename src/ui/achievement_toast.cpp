@@ -10,7 +10,7 @@
 namespace {
 
 // The menus' colours (ui/frontend.cpp)
-// Star Wars: lightsaber blue / cyan, the name in cool white to cyan
+// Colours kept from Star Wars Trilogy: blue / cyan, the name in cool white to cyan
 constexpr uint32_t GOLD_TOP = 0xF2FCFF, GOLD_BOTTOM = 0x7FE0FF;
 constexpr uint32_t PALE_TOP = 0xDCE6F2, PALE_BOTTOM = 0xAFC2DA, AMBER = 0x3CC8FF;
 constexpr double SHOW_SECONDS = 5, SLIDE_IN = 0.5, SLIDE_OUT = 0.4;

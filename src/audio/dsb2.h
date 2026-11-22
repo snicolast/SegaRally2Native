@@ -1,7 +1,7 @@
-// Digital Sound Board 2 (Star Wars Trilogy's music): a 68000 at 11 MHz that
+// Digital Sound Board 2 (Sega Rally 2's music): a 68000 at 11 MHz that
 // takes the same command bytes the PowerPC sends to the sound board (MIDI
 // port 0xF0080000) and drives an MPEG audio decoder reading MPEG-1 Layer II
-// streams from a 16 MB ROM. Here the 68000 runs its own program (epr-21384,
+// streams from a 16 MB ROM. Here the 68000 runs its own program (epr-20641,
 // Musashi, in its own context next to the sound board's) and the decoder is
 // minimp3; the music comes out at 32 kHz and is resampled to 44.1 kHz.
 //

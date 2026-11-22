@@ -21,7 +21,7 @@ public:
         scsp_[0].midi_in(b);
         if (dsb_.ready()) dsb_.command(b);   // the DSB2 listens to the same port
     }
-    // Star Wars Trilogy's music board (dsb2.h), optional: call after init()
+    // The Digital Sound Board (dsb2.h), optional: call after init()
     bool init_dsb(std::vector<uint8_t> program, std::vector<uint8_t> mpeg) {
         return dsb_.init(std::move(program), std::move(mpeg));
     }

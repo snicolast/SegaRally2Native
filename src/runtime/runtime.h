@@ -21,7 +21,7 @@
 
 // ROMs, loaded by main() from g_data_dir
 extern std::vector<uint8_t> g_crom, g_banked, g_vrom;
-extern std::vector<uint8_t> g_drive_rom;   // force feedback board program (epr-21119), optional
+extern std::vector<uint8_t> g_drive_rom;   // force feedback board program (epr-20512), optional
 
 extern std::string g_data_dir;
 bool load_rom(const std::string& name, std::vector<uint8_t>& out, bool required);

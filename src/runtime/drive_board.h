@@ -1,10 +1,12 @@
-// Force feedback board of the Star Wars Trilogy joystick (Sega 838-13992
-// family): a Z80 at 8 MHz running epr-21119, a Z80 CTC whose channel 1 drives
-// the NMI, an ADC that reads the stick's two pots one bit at a time, and the
-// motor outputs. The main board writes a command byte to input register 0x10
-// and reads the board's reply at input register 0x0C; at boot the game waits
-// for the board to answer its initialisation (reply 0xCB) and stops with
-// FAILED FEEDBACK LEVER INITIALIZE otherwise.
+// Force feedback drive board, here running Sega Rally 2's program
+// (epr-20512). The model was written first for Star Wars Trilogy's joystick
+// board (Sega 838-13992 family), which the rest of this comment describes: a
+// Z80 at 8 MHz, a Z80 CTC whose channel 1 drives the NMI, an ADC that reads
+// the stick's two pots one bit at a time, and the motor outputs. The main
+// board writes a command byte to input register 0x10 and reads the board's
+// reply at input register 0x0C; at boot Star Wars Trilogy waits for the board
+// to answer its initialisation (reply 0xCB) and stops with FAILED FEEDBACK
+// LEVER INITIALIZE otherwise.
 // Port map and timing follow the behaviour of Supermodel's
 // Src/Model3/DriveBoard/JoystickBoard.cpp; the Z80 core is
 // third_party/z80 (MIT).
@@ -20,7 +22,7 @@ extern "C" {
 
 class DriveBoard {
 public:
-    // rom: epr-21119 (64 KB); empty = no board (reads 0xFF, like a detached one)
+    // rom: the board's program (epr-20512); empty = no board (reads 0xFF, like a detached one)
     void init(std::vector<uint8_t> rom);
     void reset();
     void run_frame();                  // one video frame of Z80 time
