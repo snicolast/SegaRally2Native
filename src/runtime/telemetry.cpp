@@ -34,22 +34,15 @@
 #include <cstdio>
 #include <cstring>
 
+#include "game_ram.h"
 #include "inputs.h"
 #include "ppc_rt.h"
 #include "telemetry_ogs.h"
 
 namespace {
 
-// Game RAM
-constexpr uint32_t SEQUENCE = 0x22D618;     // 1 from the credit to GAME OVER
-constexpr uint32_t PHASE = 0x22D624;        // in a game: 1 selects and races
-constexpr uint32_t GAME = 0x22CF14;
-constexpr uint32_t G_LAPS_TOTAL = GAME + 0x3C, G_CAR_STATUS = GAME + 0x6C, G_LAPS = GAME + 0x94;
-constexpr uint32_t G_PROGRESS = GAME + 0xA8, G_RACE_TIME = GAME + 0x16C;
-constexpr uint32_t HUD_POSITION = 0x13AB74, HUD_GEAR = 0x13AB80;
-constexpr uint32_t LAP_FRAMES = 0x1B0EB0;
-constexpr uint32_t RPM = 0x22F364, SPEED = 0x22F3A8;
-constexpr uint32_t PLAYER_CAR = 0x2242B0;
+// Game RAM (game_ram.h)
+using namespace game_ram;
 constexpr int CAR_GO = 1;                   // car status: racing
 constexpr float GAME_HZ = 60.0f;            // the game's own unit of time (its m/frame, its ticks of 1/6000 s)
 constexpr float G = 9.81f;

@@ -2,7 +2,7 @@
 
 #include <algorithm>
 
-#include "../ui/frontend.h"
+#include "../ui/frontend_settings.h"
 
 const float BLOOM_STRENGTH[4] = {0.0f, 0.6f, 1.0f, 1.6f};
 

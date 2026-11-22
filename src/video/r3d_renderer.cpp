@@ -77,15 +77,6 @@ bool shadowmap_backs() {
 // The 3D pass's depth, with a stencil for the cars' patch (blob_)
 constexpr VkFormat DEPTH_STENCIL = VK_FORMAT_D32_SFLOAT_S8_UINT;
 
-VkShaderModule make_module(VkDevice dev, const uint32_t* code, size_t bytes) {
-    VkShaderModuleCreateInfo ci{VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO};
-    ci.codeSize = bytes;
-    ci.pCode = code;
-    VkShaderModule m = VK_NULL_HANDLE;
-    vkCreateShaderModule(dev, &ci, nullptr, &m);
-    return m;
-}
-
 }  // namespace
 
 // Push constants of compose.frag (layout(push_constant) uniform Compose), in
@@ -618,18 +609,18 @@ VkPipeline R3DRenderer::make_pipeline(const PipelineDesc& d) {
 }
 
 bool R3DRenderer::create_pipelines() {
-    VkShaderModule r3d_vs = rt_.ready() ? make_module(dev_, spv_r3d_rt_vert, sizeof(spv_r3d_rt_vert))
-                                        : make_module(dev_, spv_r3d_vert, sizeof(spv_r3d_vert));
+    VkShaderModule r3d_vs = rt_.ready() ? vk_->shader_module(spv_r3d_rt_vert, sizeof(spv_r3d_rt_vert))
+                                        : vk_->shader_module(spv_r3d_vert, sizeof(spv_r3d_vert));
     // With ray queries the 3D pass can also trace the sun shadows
-    VkShaderModule r3d_fs = rt_.ready() ? make_module(dev_, spv_r3d_rt_frag, sizeof(spv_r3d_rt_frag))
-                                        : make_module(dev_, spv_r3d_frag, sizeof(spv_r3d_frag));
-    VkShaderModule c_vs = make_module(dev_, spv_compose_vert, sizeof(spv_compose_vert));
-    VkShaderModule c_fs = make_module(dev_, spv_compose_frag, sizeof(spv_compose_frag));
-    VkShaderModule b_fs = make_module(dev_, spv_bloom_frag, sizeof(spv_bloom_frag));
-    VkShaderModule ao_fs = rt_.ready() ? make_module(dev_, spv_ao_rt_frag, sizeof(spv_ao_rt_frag))
-                                       : make_module(dev_, spv_ao_frag, sizeof(spv_ao_frag));
-    VkShaderModule aoa_fs = make_module(dev_, spv_ao_apply_frag, sizeof(spv_ao_apply_frag));
-    VkShaderModule alpha_fs = make_module(dev_, spv_alpha_taa_frag, sizeof(spv_alpha_taa_frag));
+    VkShaderModule r3d_fs = rt_.ready() ? vk_->shader_module(spv_r3d_rt_frag, sizeof(spv_r3d_rt_frag))
+                                        : vk_->shader_module(spv_r3d_frag, sizeof(spv_r3d_frag));
+    VkShaderModule c_vs = vk_->shader_module(spv_compose_vert, sizeof(spv_compose_vert));
+    VkShaderModule c_fs = vk_->shader_module(spv_compose_frag, sizeof(spv_compose_frag));
+    VkShaderModule b_fs = vk_->shader_module(spv_bloom_frag, sizeof(spv_bloom_frag));
+    VkShaderModule ao_fs = rt_.ready() ? vk_->shader_module(spv_ao_rt_frag, sizeof(spv_ao_rt_frag))
+                                       : vk_->shader_module(spv_ao_frag, sizeof(spv_ao_frag));
+    VkShaderModule aoa_fs = vk_->shader_module(spv_ao_apply_frag, sizeof(spv_ao_apply_frag));
+    VkShaderModule alpha_fs = vk_->shader_module(spv_alpha_taa_frag, sizeof(spv_alpha_taa_frag));
     bool motion = motion_pass_ = dlaa_.ready();
     // The world: 3D geometry into the HDR image, with the motion and glow slots
     PipelineDesc world{.vs = r3d_vs, .fs = r3d_fs, .layout = r3d_layout_, .color = VK_FORMAT_R16G16B16A16_SFLOAT,

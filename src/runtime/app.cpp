@@ -31,6 +31,7 @@
 
 #include "disk_writer.h"
 #include "game_hooks.h"
+#include "game_ram.h"
 #include "gamepad.h"
 #include "inputs.h"
 #include "options.h"
@@ -304,6 +305,29 @@ void console_prompt() {
     CloseHandle(in);
 }
 
+// The picture options of `o` on the renderer: at launch, and again whenever
+// the menu changes a setting (SettingsChanged, once g_opt has the new values)
+static void apply_picture_options(R3DRenderer& renderer, const Options& o) {
+    renderer.set_max_aspect(o.max_aspect);
+    renderer.set_pixel_aspect(o.pixel_aspect);
+    // The 2D layers: xBR smoothing with the HD HUD, the ROM's own pixels without it
+    renderer.set_smooth_2d(!o.pixel_2d && !o.classic_hud);
+    renderer.set_hud_edges(!o.hud_centre);
+    renderer.set_distance_haze(o.haze);
+    renderer.set_bloom(o.bloom);
+    renderer.set_picture(o.saturation, o.gamma);
+    renderer.set_ambient_occlusion(o.ao);
+    renderer.set_sun(o.sun);
+    renderer.set_shadows(o.shadows ? 1.0f : 0.0f);
+    renderer.set_ray_tracing(o.ray_tracing);
+    renderer.set_soft_particles(o.soft);
+    renderer.set_hdr(o.hdr);
+    renderer.set_reflections(o.reflections);
+    renderer.set_global_illumination(o.gi);
+    r3d_set_sr2_dust(o.dust);
+    renderer.set_sharpen(o.sharpen ? 0.5f : 0.0f);
+}
+
 int main(int argc, char** argv) {
     attach_parent_console();
     setvbuf(stdout, nullptr, _IONBF, 0);   // keep logs even if the process dies
@@ -484,24 +508,7 @@ int main(int argc, char** argv) {
     const bool dlss_failed = g_opt.dlaa && !renderer.dlaa_active();
     if (dlss_failed) g_opt.dlaa = false, g_opt.dlss = 0, g_opt.fxaa = true, g_opt.msaa = 1;
     renderer.set_fxaa(g_opt.fxaa);
-    renderer.set_max_aspect(g_opt.max_aspect);
-    renderer.set_pixel_aspect(g_opt.pixel_aspect);
-    // The 2D layers: xBR smoothing with the HD HUD, the ROM's own pixels without it
-    renderer.set_smooth_2d(!g_opt.pixel_2d && !g_opt.classic_hud);
-    renderer.set_hud_edges(!g_opt.hud_centre);
-    renderer.set_distance_haze(g_opt.haze);
-    renderer.set_bloom(g_opt.bloom);
-    renderer.set_picture(g_opt.saturation, g_opt.gamma);
-    renderer.set_ambient_occlusion(g_opt.ao);
-    renderer.set_sun(g_opt.sun);
-    renderer.set_shadows(g_opt.shadows ? 1.0f : 0.0f);
-    renderer.set_ray_tracing(g_opt.ray_tracing);
-    renderer.set_soft_particles(g_opt.soft);
-    renderer.set_hdr(g_opt.hdr);
-    renderer.set_reflections(g_opt.reflections);
-    renderer.set_global_illumination(g_opt.gi);
-    r3d_set_sr2_dust(g_opt.dust);
-    renderer.set_sharpen(g_opt.sharpen ? 0.5f : 0.0f);
+    apply_picture_options(renderer, g_opt);
     if (g_opt.haze > 0) printf("[video] distance haze on (strength %.2f)\n", g_opt.haze);
     if (aa_auto) {   // what the first run got: the menu shows it, and saves it with the first setting changed
         ini.aa = g_opt.dlss ? 2 + g_opt.dlss : g_opt.dlaa ? 1 : g_opt.fxaa ? 7 : 0;
@@ -545,7 +552,7 @@ int main(int argc, char** argv) {
     // The race is on FOREST: the round (0x22CF48) is the course id + 6 x the kind, FOREST's id 1
     // (docs/game_ram.md); R3DSceneBuilder::set_forest
     auto forest_race = [] {
-        uint32_t round = rd32(0x22CF48);
+        uint32_t round = rd32(game_ram::G_ROUND);
         return round < 18 && round % 6 == 1;
     };
     builder.set_texture_pack(texture_pack(), &g_texture_ram);
@@ -1283,24 +1290,24 @@ int main(int argc, char** argv) {
                     Scsp::set_cubic(g_opt.cubic_samples = s.cubic_samples);
                     g_sound.set_rear_boost(g_opt.rear_boost = s.rear_boost);
                     g_audio.set_speakers(AudioStream::Speakers(g_opt.speakers = s.speakers));
-                    renderer.set_distance_haze(s.haze ? haze_strength : 0);
-                    renderer.set_bloom(g_opt.bloom = BLOOM_STRENGTH[s.bloom]);
-                    renderer.set_ambient_occlusion(s.ao ? ao_strength : 0);
-                    renderer.set_sun(g_opt.sun = s.sun);
-                    renderer.set_shadows((g_opt.shadows = s.shadows) ? 1.0f : 0.0f);
-                    renderer.set_ray_tracing(g_opt.ray_tracing = s.ray_tracing);
-                    renderer.set_soft_particles(g_opt.soft = s.soft);
-                    renderer.set_hdr(g_opt.hdr = s.hdr);
-                    renderer.set_reflections(g_opt.reflections = s.reflections);
-                    renderer.set_global_illumination(g_opt.gi = s.gi);
-                    r3d_set_sr2_dust(g_opt.dust = s.dust);
+                    // (haze and AO at the strength they started with: --haze / --ao, else 1)
+                    g_opt.haze = s.haze ? haze_strength : 0;
+                    g_opt.bloom = BLOOM_STRENGTH[s.bloom];
+                    g_opt.ao = s.ao ? ao_strength : 0;
+                    g_opt.sun = s.sun;
+                    g_opt.shadows = s.shadows;
+                    g_opt.ray_tracing = s.ray_tracing;
+                    g_opt.soft = s.soft;
+                    g_opt.hdr = s.hdr;
+                    g_opt.reflections = s.reflections;
+                    g_opt.gi = s.gi;
+                    g_opt.dust = s.dust;
                     g_opt.object_distance = s.object_distance;   // the game thread's next frame (game_hooks.cpp)
-                    renderer.set_sharpen((g_opt.sharpen = s.sharpen) ? 0.5f : 0.0f);
+                    g_opt.sharpen = s.sharpen;
                     if (g_opt.classic_hud != !s.hd_hud) {
                         g_opt.classic_hud = !s.hd_hud;
                         shown = ~0ull;   // compose the 2D layer again even while the game stands still
                     }
-                    renderer.set_smooth_2d(!g_opt.pixel_2d && !g_opt.classic_hud);
                     g_opt.classic_liveries = !s.hd_liveries;   // the scene builders pick it up with their next frame
                     if (!g_opt.arcade) {   // the race set-up: the game thread puts them in the operator settings
                         g_opt.difficulty = s.difficulty;
@@ -1315,15 +1322,14 @@ int main(int argc, char** argv) {
                     g_opt.max_aspect = FrontendSettings::aspect_ratio(s.aspect);
                     g_opt.pixel_aspect = FrontendSettings::pixel_aspect(s.aspect);
                     g_opt.hud_centre = s.aspect == 4 || s.hud_43;
-                    renderer.set_max_aspect(g_opt.max_aspect);
-                    renderer.set_pixel_aspect(g_opt.pixel_aspect);
-                    renderer.set_hud_edges(!g_opt.hud_centre);
                     if (g_opt.interp != s.smooth) {
                         g_opt.interp = s.smooth;
                         renderer.set_interpolation(1.0f);   // the latest game frame as it is
                         renderer.set_back_shift(0.0f);
                     }
-                    renderer.set_picture(s.saturation / 100.0f, s.gamma / 100.0f);
+                    g_opt.saturation = s.saturation / 100.0f;
+                    g_opt.gamma = s.gamma / 100.0f;
+                    apply_picture_options(renderer, g_opt);
                     g_opt.telemetry = s.telemetry;   // (telemetry_frame opens or closes the socket at the next frame)
                     g_opt.telemetry_port = s.telemetry_port;
                     g_opt.telemetry_format = s.telemetry_format;

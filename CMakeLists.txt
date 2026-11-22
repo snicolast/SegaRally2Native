@@ -188,6 +188,43 @@ else()
     set(DLSS_LIB "")
 endif()
 
+# The renderer and what it draws with (src/video): a library of its own, with
+# its own include folders, so it cannot reach into the emulator (src/runtime).
+# DLSS is not in it: the game links the one chosen above (DLSS_SOURCE).
+add_library(sr2_video STATIC
+    src/video/tilegen.cpp
+    src/video/texture_pack.cpp
+    src/video/pack2d.cpp
+    src/video/sky_pack.cpp
+    src/video/text_hd.cpp
+    src/video/image_io.cpp
+    src/video/vk_presenter.cpp
+    src/video/ui_overlay.cpp
+    src/video/r3d_state.cpp
+    src/video/r3d_scene.cpp
+    src/video/r3d_screen.cpp
+    src/video/r3d_dust.cpp
+    src/video/r3d_world.cpp
+    src/video/r3d_renderer.cpp
+    src/video/r3d_raytrace.cpp
+    third_party/volk/volk.c
+)
+add_dependencies(sr2_video shaders)
+target_include_directories(sr2_video
+    PUBLIC src/video third_party/vulkan-headers/include third_party/volk third_party/ngx/include
+    PRIVATE ${SHADER_OUT})
+# volk loads vulkan-1.dll at runtime: the SDK is not needed
+target_compile_definitions(sr2_video PUBLIC VK_NO_PROTOTYPES VK_USE_PLATFORM_WIN32_KHR)
+target_link_libraries(sr2_video PUBLIC winmm ole32 oleaut32 windowscodecs gdi32 dwmapi shell32)
+if(MSVC)
+    target_compile_options(sr2_video PRIVATE $<$<COMPILE_LANGUAGE:CXX>:/bigobj /W4 /wd4146 /fp:strict /utf-8>)
+    target_compile_definitions(sr2_video PRIVATE _CRT_SECURE_NO_WARNINGS)
+elseif(WIN32)
+    # (as the game's own code: a*b+c stays two operations, any memory can be
+    # read as any type, integers wrap around)
+    target_compile_options(sr2_video PRIVATE -ffp-contract=off -fno-strict-aliasing -fwrapv)
+endif()
+
 # WIN32: a windowed program, so no console window opens with the game. main()
 # stays the entry point (/ENTRY below); app.cpp attaches to the console of a
 # terminal it was started from, so the log still shows there
@@ -216,26 +253,12 @@ add_executable(SegaRally2 WIN32
     src/runtime/options.cpp
     src/runtime/rom_zip.cpp
     ${MINIZ_DIR}/miniz.c
-    src/video/tilegen.cpp
-    src/video/texture_pack.cpp
-    src/video/pack2d.cpp
-    src/video/sky_pack.cpp
-    src/video/text_hd.cpp
-    src/video/image_io.cpp
     ${DLSS_SOURCE}
-    src/video/vk_presenter.cpp
-    src/video/ui_overlay.cpp
     src/ui/frontend.cpp
+    src/ui/frontend_settings.cpp
+    src/ui/ui_draw.cpp
     src/ui/menu_music.cpp
     src/ui/splash_video.cpp
-    src/video/r3d_state.cpp
-    src/video/r3d_scene.cpp
-    src/video/r3d_screen.cpp
-    src/video/r3d_dust.cpp
-    src/video/r3d_world.cpp
-    src/video/r3d_renderer.cpp
-    src/video/r3d_raytrace.cpp
-    third_party/volk/volk.c
     ${MUSASHI_DIR}/m68kcpu.c
     ${MUSASHI_DIR}/softfloat/softfloat.c
     src/audio/audio_out.cpp
@@ -253,7 +276,6 @@ add_executable(SegaRally2 WIN32
 # RC1107: invalid usage" (issue #9)
 add_library(SegaRally2_res OBJECT res/app.rc)
 target_sources(SegaRally2 PRIVATE $<TARGET_OBJECTS:SegaRally2_res>)
-add_dependencies(SegaRally2 shaders)
 # hub.toml (NicoLauncher) asks for the game right where it is played from, so
 # there is no second copy of it in the build folder. build.bat copies it.
 option(GAME_IN_SOURCE_DIR "Link SegaRally2.exe into the project's folder instead of the build folder" OFF)
@@ -261,13 +283,8 @@ if(GAME_IN_SOURCE_DIR)
     set_target_properties(SegaRally2 PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR})
 endif()
 target_include_directories(SegaRally2 PRIVATE
-    ${SHADER_OUT}
     src/runtime
-    src/video
     ${GEN_DIR}
-    third_party/vulkan-headers/include
-    third_party/volk
-    third_party/ngx/include
     ${MUSASHI_DIR}
     ${MUSASHI_GEN}
     ${MINIZ_DIR}
@@ -288,9 +305,7 @@ foreach(icon unlocked locked)
 endforeach()
 file(CONFIGURE OUTPUT ${ICONS_DIR}/achievement_icons.h CONTENT "${icons_h}")
 target_include_directories(SegaRally2 PRIVATE ${ICONS_DIR})
-# volk loads vulkan-1.dll at runtime: the SDK is not needed
-target_compile_definitions(SegaRally2 PRIVATE VK_NO_PROTOTYPES VK_USE_PLATFORM_WIN32_KHR)
-target_link_libraries(SegaRally2 PRIVATE SDL3::SDL3-static winmm ole32 oleaut32 windowscodecs mfplat mfuuid gdi32 dwmapi shell32 ws2_32
+target_link_libraries(SegaRally2 PRIVATE sr2_video SDL3::SDL3-static winmm ole32 oleaut32 windowscodecs mfplat mfuuid gdi32 dwmapi shell32 ws2_32
     ${DLSS_LIB})
 
 if(MSVC)
@@ -313,64 +328,11 @@ elseif(WIN32)
     endif()
 endif()
 
-# The capture viewer (src/viewer, docs/VIEWER.md): a snapshot of the game (F9)
-# seen from a free camera, drawn by the game's own scene builder and renderer.
-# A program of its own that links none of the recompiled code, so it builds
-# without the ROM. Not built with the rest: build_viewer.bat, or
-# cmake --build <build folder> --target SegaRally2Viewer.
-# A console program: what it loads and what is selected is also printed
-add_executable(SegaRally2Viewer EXCLUDE_FROM_ALL
-    src/viewer/viewer_main.cpp
-    src/viewer/capture.cpp
-    src/viewer/panel.cpp
-    src/viewer/textures.cpp
-    src/viewer/view_math.cpp
-    src/video/tilegen.cpp
-    src/video/texture_pack.cpp
-    src/video/pack2d.cpp
-    src/video/sky_pack.cpp
-    src/video/text_hd.cpp
-    src/video/image_io.cpp
-    src/video/dlss_stub.cpp
-    src/video/vk_presenter.cpp
-    src/video/ui_overlay.cpp
-    src/video/r3d_state.cpp
-    src/video/r3d_scene.cpp
-    src/video/r3d_screen.cpp
-    src/video/r3d_dust.cpp
-    src/video/r3d_world.cpp
-    src/video/r3d_renderer.cpp
-    src/video/r3d_raytrace.cpp
-    third_party/volk/volk.c
-    $<TARGET_OBJECTS:SegaRally2_res>
-)
-add_dependencies(SegaRally2Viewer shaders)
-if(GAME_IN_SOURCE_DIR)
-    set_target_properties(SegaRally2Viewer PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR})
-endif()
-target_include_directories(SegaRally2Viewer PRIVATE
-    ${SHADER_OUT}
-    src/viewer
-    src/video
-    third_party/vulkan-headers/include
-    third_party/volk
-    third_party/ngx/include
-)
-target_compile_definitions(SegaRally2Viewer PRIVATE VK_NO_PROTOTYPES VK_USE_PLATFORM_WIN32_KHR)
-target_link_libraries(SegaRally2Viewer PRIVATE winmm ole32 oleaut32 windowscodecs gdi32 dwmapi shell32 comdlg32)
-if(MSVC)
-    target_compile_options(SegaRally2Viewer PRIVATE $<$<COMPILE_LANGUAGE:CXX>:/W4 /wd4146 /fp:strict /utf-8>)
-    target_compile_definitions(SegaRally2Viewer PRIVATE _CRT_SECURE_NO_WARNINGS)
-elseif(WIN32)
-    # (the renderer's code as the game builds it)
-    target_compile_options(SegaRally2Viewer PRIVATE -ffp-contract=off -fno-strict-aliasing -fwrapv)
-endif()
-
 # Unit tests (ctest): the 2D composition against golden hashes, the FNV-1a
 # hash of C++ and Python against the same vectors, the command-line table and
-# the audio queue, the ROM layout read from the zip, the capture viewer and the
-# OGS-TS telemetry sender over a fake game RAM.
-# build.bat runs them.
+# the audio queue, the ROM layout read from the zip, the OGS-TS telemetry
+# sender over a fake game RAM and save/settings.ini.
+# build.bat runs them (they are built with the rest).
 option(LW_TESTS "Build the unit tests" ON)
 if(LW_TESTS)
     enable_testing()
@@ -386,19 +348,16 @@ if(LW_TESTS)
     add_executable(achievements_csv_test tests/achievements_csv_test.cpp src/runtime/achievements_csv.cpp src/runtime/disk_writer.cpp)
     target_include_directories(achievements_csv_test PRIVATE ${ICONS_DIR})
     add_executable(disk_writer_test tests/disk_writer_test.cpp src/runtime/disk_writer.cpp)
-    # The capture viewer without its window: its own code and the game's scene builder
-    add_executable(viewer_test tests/viewer_test.cpp src/viewer/capture.cpp src/viewer/textures.cpp src/viewer/view_math.cpp
-        src/video/r3d_state.cpp src/video/r3d_scene.cpp src/video/r3d_screen.cpp src/video/r3d_dust.cpp src/video/r3d_world.cpp
-        src/video/texture_pack.cpp src/video/image_io.cpp)
-    target_include_directories(viewer_test PRIVATE src/viewer)
-    target_link_libraries(viewer_test PRIVATE ole32 windowscodecs)
     # HD HUD pictures: more different ones in a session than GPU slots
     add_executable(pack2d_test tests/pack2d_test.cpp src/video/pack2d.cpp src/video/image_io.cpp)
+    target_link_libraries(pack2d_test PRIVATE ole32 windowscodecs)
     add_executable(telemetry_test tests/telemetry_test.cpp src/runtime/telemetry_ogs.cpp src/runtime/inputs.cpp)
     target_link_libraries(telemetry_test PRIVATE ws2_32)
-    target_link_libraries(pack2d_test PRIVATE ole32 windowscodecs)
-    foreach(t tilegen_test fnv_test options_test audio_stream_test rom_zip_test jtag_test r3d_state_test menu_music_test
-            achievements_csv_test disk_writer_test viewer_test pack2d_test telemetry_test)
+    # save/settings.ini and the command-line options it becomes
+    add_executable(settings_test tests/settings_test.cpp src/ui/frontend_settings.cpp src/runtime/settings_bridge.cpp)
+    set(LW_TEST_TARGETS tilegen_test fnv_test options_test audio_stream_test rom_zip_test jtag_test r3d_state_test
+        menu_music_test achievements_csv_test disk_writer_test pack2d_test telemetry_test settings_test)
+    foreach(t ${LW_TEST_TARGETS})
         target_include_directories(${t} PRIVATE src/video src/common src/runtime src/audio src/ui ${MINIZ_DIR})
         if(MSVC)
             target_compile_options(${t} PRIVATE /W4 /utf-8)
@@ -415,9 +374,9 @@ if(LW_TESTS)
     add_test(NAME menu_music COMMAND menu_music_test)
     add_test(NAME achievements_csv COMMAND achievements_csv_test)
     add_test(NAME disk_writer COMMAND disk_writer_test)
-    add_test(NAME viewer COMMAND viewer_test)
     add_test(NAME pack2d COMMAND pack2d_test)
     add_test(NAME telemetry COMMAND telemetry_test)
+    add_test(NAME settings COMMAND settings_test)
     # 3.10: the version the tools need, so an older Python in PATH is skipped (Star Wars Trilogy issue #51)
     find_package(Python3 3.10 COMPONENTS Interpreter)
     if(Python3_Interpreter_FOUND)

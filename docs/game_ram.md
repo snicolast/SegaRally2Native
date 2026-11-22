@@ -4,6 +4,7 @@ PowerPC RAM addresses (big-endian, 32-bit words unless said otherwise) for the
 game's race state, found for statistics and achievements (src/runtime/stats.cpp).
 "Confirmed" means seen changing in real runs, not just read in the disassembly.
 Addresses of code are the original PowerPC ones (fn_XXXXXXXX in build/gen).
+The addresses the port uses are named in src/runtime/game_ram.h.
 
 How it was found:
 

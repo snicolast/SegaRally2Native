@@ -24,6 +24,7 @@
 
 #include "achievements_csv.h"
 #include "disk_writer.h"
+#include "game_ram.h"
 
 #include <algorithm>
 #include <bit>
@@ -38,16 +39,8 @@
 
 namespace {
 
-// Game RAM
-constexpr uint32_t SEQUENCE = 0x22D618;       // 0 attract, 1 a game, -1 power on
-constexpr uint32_t PHASE = 0x22D624;          // in a game: 1 selects and races, 2-5 the screens after the last
-constexpr uint32_t GAME = 0x22CF14;           // the game structure
-constexpr uint32_t G_MODE = GAME + 0x00, G_ROUND = GAME + 0x34, G_CLOCK = GAME + 0x70, G_LEFT = GAME + 0x74;
-constexpr uint32_t G_GOAL = GAME + 0x7C, G_STAGES = GAME + 0x90, G_LAPS = GAME + 0x94, G_CHECKPOINTS = GAME + 0x98;
-constexpr uint32_t G_RANK = GAME + 0x104, G_TOTAL = GAME + 0x168, G_RACE_TIME = GAME + 0x16C;
-constexpr uint32_t G_LAP_TIMES = GAME + 0x684, G_COMPLETE = GAME + 0x6F0, G_RANKING = GAME + 0x6F4;
-constexpr uint32_t HUD_POSITION = 0x13AB74, CARS = 0x225A18;
-constexpr uint32_t SELECT_CAR = 0x224324, SELECT_GEARS = 0x224334;
+// Game RAM (game_ram.h)
+using namespace game_ram;
 constexpr int MODE_CHAMPIONSHIP = 0, MODE_PRACTICE = 2;
 constexpr int CLOCK_COUNTING = 2;
 constexpr int MAX_LAPS = 8;

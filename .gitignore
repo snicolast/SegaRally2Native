@@ -5,7 +5,6 @@ out/
 __pycache__/
 *.pyc
 SegaRally2.exe
-SegaRally2Viewer.exe
 save/
 /achievements/
 *.dll

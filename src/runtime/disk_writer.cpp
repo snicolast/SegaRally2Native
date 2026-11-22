@@ -36,21 +36,6 @@ Writer& writer() {
     return *w;
 }
 
-bool replace_now(const std::string& path, const std::string& data) {
-    std::string tmp = path + ".tmp";
-    FILE* f = fopen(tmp.c_str(), "wb");
-    if (!f) return false;
-    bool ok = fwrite(data.data(), 1, data.size(), f) == data.size();
-    ok = fclose(f) == 0 && ok;
-#ifdef _WIN32
-    ok = ok && MoveFileExA(tmp.c_str(), path.c_str(), MOVEFILE_REPLACE_EXISTING);
-#else
-    ok = ok && rename(tmp.c_str(), path.c_str()) == 0;
-#endif
-    if (!ok) remove(tmp.c_str());
-    return ok;
-}
-
 bool append_now(const std::string& path, const std::string& data) {
     FILE* f = fopen(path.c_str(), "ab");
     if (!f) return false;
@@ -67,7 +52,7 @@ void run() {
         w.jobs.pop_front();
         w.busy = true;
         lock.unlock();
-        bool ok = job.append ? append_now(job.path, job.data) : replace_now(job.path, job.data);
+        bool ok = job.append ? append_now(job.path, job.data) : replace_file_now(job.path, job.data.data(), job.data.size());
         lock.lock();
         w.busy = false;
         if (!ok && w.failed.insert(job.path).second) printf("[disk] could not write %s\n", job.path.c_str());
@@ -101,6 +86,21 @@ void push(const std::string& path, std::string data, bool append) {
 }
 
 }  // namespace
+
+bool replace_file_now(const std::string& path, const void* data, size_t size) {
+    std::string tmp = path + ".tmp";
+    FILE* f = fopen(tmp.c_str(), "wb");
+    if (!f) return false;
+    bool ok = fwrite(data, 1, size, f) == size;
+    ok = fclose(f) == 0 && ok;
+#ifdef _WIN32
+    ok = ok && MoveFileExA(tmp.c_str(), path.c_str(), MOVEFILE_REPLACE_EXISTING);
+#else
+    ok = ok && rename(tmp.c_str(), path.c_str()) == 0;
+#endif
+    if (!ok) remove(tmp.c_str());
+    return ok;
+}
 
 void disk_replace(const std::string& path, std::string data) { push(path, std::move(data), false); }
 
