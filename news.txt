@@ -11,6 +11,10 @@
 #   # ...          a comment, never shown
 # Newest entry at the top. Keep each one short: about ten lines fit.
 
+[40] 24 November 2026
+- DLAA: performance optimizations.
+- OPTIONS: every setting's row now opens a list of all its values (click the row, or press Enter / A).
+
 [39] 23 November 2026
 - Pad: SELECT CAR moves one car per d-pad press or stick flick, and stick steering no longer has the old curve.
 - NAME ENTRY: one letter per press on the pad, the stick or the arrow keys.
