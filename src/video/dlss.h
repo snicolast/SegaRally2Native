@@ -49,11 +49,11 @@ public:
     void configure(int mode, int preset);
     // false if it never started or stopped working
     bool ready() const { return (params_ != nullptr || bridge_ != nullptr) && !failed_; }
-    // Whether evaluate takes a smaller part of the inputs (draw_width): not
-    // through dlss_bridge.dll, whose table has no place for it
-    bool dynamic_resolution() const { return params_ != nullptr && !failed_; }
-    // Before the first evaluate: the inputs may be drawn smaller from image
-    // to image (draw_width) at DLAA's size too
+    // Whether evaluate takes a smaller part of the inputs (draw_width):
+    // through dlss_bridge.dll too, since its ABI 4
+    bool dynamic_resolution() const { return ready(); }
+    // Before configure: the inputs may be drawn smaller from image to image
+    // (draw_width) at DLAA's size too
     void set_dynamic(bool on) { dynamic_ = on; }
 
     // Records the evaluation. Inputs in SHADER_READ_ONLY layout, output in
