@@ -11,6 +11,13 @@
 #   # ...          a comment, never shown
 # Newest entry at the top. Keep each one short: about ten lines fit.
 
+[39] 23 November 2026
+- Pad: SELECT CAR moves one car per d-pad press or stick flick, and stick steering no longer has the old curve.
+- NAME ENTRY: one letter per press on the pad, the stick or the arrow keys.
+- FROM THE BACK achievement: now start last on the grid and win the championship (before, it could never unlock).
+- Intel GPUs: a possible fix for the crash at start (issue #158). Not tested on Intel hardware yet.
+- HD HUD: the Impreza and Delta rev counters, the Delta's speed, the lap badges, the TOP 3 boxes and the Celica's STACK panel (with HD LIVERIES on) are now sharp too.
+
 [38] 22 November 2026
 - FOREST now has a co-driver: corner signs and calls, like the other stages.
 - FOREST practice: new times between DESERT and MOUNTAIN, starting with 60 s like MOUNTAIN.
