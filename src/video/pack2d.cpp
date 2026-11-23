@@ -143,7 +143,31 @@ uint32_t Pack2D::lit_blocks(const Entry& e, int index, const uint32_t* raw, int 
     return blocks;
 }
 
-uint32_t Pack2D::take_slot(int entry, bool lit) {
+void Pack2D::vote_segments(const Entry& e, int index, const uint32_t* raw, int px, int py, int* votes) {
+    auto off = e.px_off.find(index), lit = e.px_lit.find(index);
+    if (off == e.px_off.end() || lit == e.px_lit.end() || e.seg2d.empty()) return;
+    auto distance = [](uint32_t a, uint32_t b) {
+        int d = 0;
+        for (int shift = 0; shift < 32; shift += 8) d += std::abs(int((a >> shift) & 0xFF) - int((b >> shift) & 0xFF));
+        return d;
+    };
+    const int w = e.cw * 8, x0 = (index % e.cw) * 8, y0 = (index / e.cw) * 8;
+    for (int y = 0; y < 8; y++)
+        for (int x = 0; x < 8; x++) {
+            uint32_t a = off->second[y * 8 + x], b = lit->second[y * 8 + x];
+            int s = e.seg2d[(y0 + y) * w + x0 + x];
+            if (!s) continue;
+            uint32_t p = raw[(py + y) * SCREEN_W + px + x];
+            int da = distance(p, a), db = distance(p, b);
+            if (a == b) {   // the same in both captures (a bar never lit in them): lit when something else is there
+                if (da > 48) votes[s]++;
+                continue;
+            }
+            votes[s] += (db < da) - (da < db);
+        }
+}
+
+uint32_t Pack2D::take_slot(int entry, int kind) {
     // Pictures listed in this apply() or in the frames just before it may still
     // be drawn from their slot (frames in flight): those are never taken
     constexpr uint64_t KEEP_FRAMES = 4;
@@ -161,13 +185,13 @@ uint32_t Pack2D::take_slot(int entry, bool lit) {
     uint32_t slot = first_slot_ + uint32_t(best);
     if (u.entry >= 0) {   // the picture in it goes back to "not loaded"
         Entry& old = entries_[u.entry];
-        (u.lit ? old.lit_slot : old.slot) = 0;
+        (u.kind == 2 ? old.seg_slot : u.kind == 1 ? old.lit_slot : old.slot) = 0;
         if (!reuse_told_)
             printf("[2d] %s: more than %zu different pictures in this session, reusing the slots of the ones "
                    "not shown for longest\n", dir_.c_str(), slots_.size());
         reuse_told_ = true;
     }
-    u = {entry, lit, frame_};
+    u = {entry, kind, frame_};
     return slot;
 }
 
@@ -257,7 +281,7 @@ int Pack2D::apply(uint32_t* target, int stride, const uint32_t* raw, const uint3
                 e.failed = true;
                 continue;
             }
-            e.slot = take_slot(index, false);
+            e.slot = take_slot(index, 0);
             if (!e.slot) continue;   // (the game's own picture this frame, tried again on the next)
             img.slot = e.slot;
             pending_.push_back(std::move(img));
@@ -269,12 +293,59 @@ int Pack2D::apply(uint32_t* target, int stride, const uint32_t* raw, const uint3
                 fprintf(stderr, "[2d] could not read %s/%s.png\n", dir_.c_str(), e.lit_name.c_str());
                 e.lit.clear();
             } else {
-                e.lit_slot = take_slot(index, true);   // (none: the game's cells this frame)
+                e.lit_slot = take_slot(index, 1);   // (none: the game's cells this frame)
                 img.slot = e.lit_slot;
                 if (e.lit_slot) pending_.push_back(std::move(img));
             }
         }
         if (e.lit_slot) mark_shown(e.lit_slot);
+        if (e.lit_slot && !e.seg_slot && (!e.seg_tried || !e.seg2d.empty())) {
+            // the segment map, if there is one (read again when its slot was reused)
+            RgbaImage img;
+            std::string base = e.lit_name.substr(0, e.lit_name.size() - 4);
+            bool first = !e.seg_tried;
+            e.seg_tried = true;
+            if (png_load(dir_ + "/" + base + "_seg.png", img.w, img.h, img.rgba) && img.w > 0 && img.h > 0) {
+                if (first) {
+                    const int w = e.cw * 8, h = e.ch * 8;
+                    e.seg2d.assign(size_t(w) * h, 0);
+                    for (int y = 0; y < h; y++)
+                        for (int x = 0; x < w; x++) {
+                            int sx = std::min(int((x + 0.5) * img.w / w), img.w - 1);
+                            int sy = std::min(int((y + 0.5) * img.h / h), img.h - 1);
+                            e.seg2d[size_t(y) * w + x] = img.rgba[(size_t(sy) * img.w + sx) * 4];
+                        }
+                    // the last segment lit in the lit capture: where its pixels differ from the other one
+                    for (const auto& [cell, lit_px] : e.px_lit) {
+                        auto off_px = e.px_off.find(cell);
+                        if (off_px == e.px_off.end()) continue;
+                        for (int i = 0; i < 64; i++)
+                            if (lit_px[i] != off_px->second[i])
+                                e.seg_lit = std::max<uint32_t>(e.seg_lit, e.seg2d[size_t((cell / e.cw) * 8 + i / 8) * w +
+                                                                                  (cell % e.cw) * 8 + i % 8]);
+                    }
+                }
+                e.seg_slot = take_slot(index, 2);
+                img.slot = e.seg_slot;
+                if (e.seg_slot) pending_.push_back(std::move(img));
+            }
+        }
+        if (e.seg_slot) mark_shown(e.seg_slot);
+        // With a segment map: the last segment that most of its changing pixels
+        // show lit, over all the cells caught between the states (the bar fills
+        // in order, so all before it are lit too)
+        uint32_t level = 0;
+        if (e.seg_slot) {
+            int votes[256] = {};
+            for (int y = 0; y < e.ch; y++)
+                for (int x = 0; x < e.cw; x++) {
+                    uint64_t ref = e.cells[y * e.cw + x], lit = e.lit[y * e.cw + x];
+                    if (lit && !same(oy + y, ox + x, lit) && !(ref && same(oy + y, ox + x, ref)))
+                        vote_segments(e, y * e.cw + x, raw, (ox + x) * 8, (oy + y) * 8, votes);
+                }
+            for (int s = 255; s > 0 && !level; s--)
+                if (votes[s] > 0) level = uint32_t(s);
+        }
         // Unchanged cells give way to the picture; changed ones stay on top
         for (int y = 0; y < e.ch; y++)
             for (int x = 0; x < e.cw; x++) {
@@ -283,10 +354,14 @@ int Pack2D::apply(uint32_t* target, int stride, const uint32_t* raw, const uint3
                 bool on_lit = lit && same(oy + y, ox + x, lit);
                 bool on_ref = ref && same(oy + y, ox + x, ref);
                 uint32_t blocks = 0;   // (0: the whole cell)
+                // the last lit segment (0: no segment map in use): a cell as the lit capture,
+                // up to the last one lit there
+                uint32_t segment = e.seg_slot ? e.seg_lit : 0;
                 if (lit && !on_lit && !on_ref && e.px_off.count(y * e.cw + x)) {
                     // caught between the two states: each block as the closer one, never the game's cell
                     blocks = lit_blocks(e, y * e.cw + x, raw, (ox + x) * 8, (oy + y) * 8);
-                    on_lit = blocks != 0;
+                    segment = level;
+                    on_lit = blocks != 0 || segment != 0;
                     on_ref = true;
                     if (blocks == 0xFFFF) blocks = 0;
                 }
@@ -305,6 +380,8 @@ int Pack2D::apply(uint32_t* target, int stride, const uint32_t* raw, const uint3
                     memset(cell, 0, TextHD::CELL_TEXELS * 4);
                     // this cell shows the lit picture: all of it, or the 2x2-pixel blocks in G and B
                     if (on_lit) cell[1] = 0xFF000000u | e.lit_slot << 16 | blocks;
+                    // and with a segment map: lit up to that segment (map's slot in R, segment in B)
+                    if (on_lit && segment) cell[2] = 0xFF000000u | e.seg_slot << 16 | segment;
                 }
             }
         if (1 + 2 * (listed + 1) >= TextHD::ROW_TEXELS) break;

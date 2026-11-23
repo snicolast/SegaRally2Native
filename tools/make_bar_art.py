@@ -2,8 +2,10 @@
 off and lit, drawn as vectors over the original's own geometry: the bars,
 the band, the numbers and the ticks are measured from the captures
 (out/2d/barras_coche_N_ralenti / _bajo, see make_bar_tachs.py) and redrawn
-16 times larger with smooth edges. Writes textures/art/barras_<car>.png and
-barras_<car>_lit.png (the whole counter's box), which
+16 times larger with smooth edges. Writes textures/art/barras_<car>.png,
+barras_<car>_lit.png and barras_<car>_seg.png (the whole counter's box; _seg:
+each pixel's bar or segment, numbered in the order they light up, in red, so a
+cell half lit is cut along their edges, see src/video/pack2d.h), which
 
   python tools/make_bar_tachs.py split
 
@@ -48,6 +50,17 @@ def finish(img):
     return img.resize((img.width // SS, img.height // SS), Image.LANCZOS)
 
 
+def segment_map(w, h, number):
+    """A w x h picture (picture pixels) whose red is number(x, y) at each
+    pixel's centre, x and y in 2D pixels of the box"""
+    ys, xs = np.mgrid[0:h, 0:w].astype(np.float64)
+    n = number((xs + 0.5) / S, (ys + 0.5) / S).astype(np.uint8)
+    out = np.zeros((h, w, 4), np.uint8)
+    out[..., 0] = n
+    out[..., 3] = 255
+    return Image.fromarray(out, "RGBA")
+
+
 def text(d, xy, s, size, fill, strokes):
     """Text centred on xy (2D pixels, picture origin), with outlines from the
     outside in: [(width in 2D pixels, colour), ...]"""
@@ -58,7 +71,7 @@ def text(d, xy, s, size, fill, strokes):
     d.text((x, y), s, font=f, fill=fill, anchor="mm")
 
 
-# ---- Impreza: 24 yellow bars on a rising arc, in a green outlined band ------
+# ---- Impreza: 25 yellow bars on a rising arc, in a green outlined band ------
 
 def impreza():
     box = (2, 33, 14, 13)
@@ -78,8 +91,13 @@ def impreza():
         ys = np.where(region[:, s:x].any(1))[0]
         colour = tuple(on[oy + (ys.min() + ys.max()) // 2, ox + (s + x - 1) // 2][:3])
         bars.append((s, x, ys.min(), ys.max() + 1, colour))   # x0, x1 (end), top, bottom (end), lit colour
-    top = fit_circle([((b[0] + b[1]) / 2, b[2]) for b in bars])
-    bottom = fit_circle([((b[0] + b[1]) / 2, b[3]) for b in bars])
+    # One more bar after them, never lit in the captures (the top revs): an
+    # empty slot as wide as the last bar, a black pixel after it. Its colour
+    # is not known; the last one's
+    x0, x1, _, _, colour = bars[-1]
+    bars.append((x1 + 1, x1 + 1 + (x1 - x0), None, None, colour))
+    top = fit_circle([((b[0] + b[1]) / 2, b[2]) for b in bars[:-1]])
+    bottom = fit_circle([((b[0] + b[1]) / 2, b[3]) for b in bars[:-1]])
 
     # the arcs bulge upwards: points above the centre
     def ytop(x, grow=0.0):
@@ -128,6 +146,10 @@ def impreza():
             else:
                 d.polygon(quad, fill=(0, 0, 0, 0))   # off: the scene shows through, as in the arcade
         pics[lit] = finish(img)
+    # the bars, numbered from the left: each up to the middle of the black after it
+    ends = [(bars[i][1] + bars[i + 1][0]) / 2 for i in range(len(bars) - 1)]
+    pics["seg"] = segment_map(box[2] * 8 * S, box[3] * 8 * S,
+                              lambda x, y: 1 + sum((x >= e).astype(np.int32) for e in ends))
     return pics
 
 
@@ -186,6 +208,12 @@ def delta():
         for s, (x, y) in numbers:
             text(d, (x - ox, y - oy), s, 8.8, (255, 255, 255, 255), [(1.1, (0, 0, 0, 255))])
         pics[lit] = finish(img)
+    # the segments, numbered from the left end: each between two of the gaps' middles
+    def number(x, y):
+        a = np.degrees(np.arctan2(cy - y, x - cx))
+        return np.clip(np.floor((a_left - a) / step), 0, segments - 1) + 1
+    step = (a_left - a_right) / segments
+    pics["seg"] = segment_map(box[2] * 8 * S, box[3] * 8 * S, number)
     return pics
 
 
@@ -194,4 +222,5 @@ if __name__ == "__main__":
         pics = make()
         pics[False].save(f"textures/art/barras_{car}.png")
         pics[True].save(f"textures/art/barras_{car}_lit.png")
+        pics["seg"].save(f"textures/art/barras_{car}_seg.png", optimize=True)
         print(car, pics[False].size)

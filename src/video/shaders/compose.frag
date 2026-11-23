@@ -215,17 +215,41 @@ vec4 replacement_pictures(vec4 under, vec2 pos, bool below_3d) {
         if (any(lessThan(r, vec2(0.0))) || any(greaterThanEqual(r, vec2(1.0)))) continue;
         vec4 info = texelFetch(text_cells, ivec2(2 + 2 * i, OVERLAY_ROW), 0);
         if ((info.g > 0.5) != below_3d) continue;
+        float cover = 1.0;
         if (info.b * 255.0 > 0.5) {
             // a lit state (pack2d.h): only in the cells marked with its slot
             ivec2 cell = clamp(ivec2(pos / 8.0), ivec2(0), SIZE_2D / 8 - 1);
             vec4 mark = texelFetch(text_cells, ivec2(cell.x * TEXT_CELL_TEXELS + 1, cell.y), 0);
             if (mark.a < 0.5 || abs(mark.r - info.r) > 0.5 / 255.0) continue;
-            // only some of its 2x2-pixel blocks (G, B: bit y * 4 + x; none = the whole cell)
+            // with a segment map (R: its slot, B: the last lit segment): lit where
+            // the map's number is up to that one, smoothed over the window pixel
+            // (four samples of the map, whose numbers cannot be filtered)
+            vec4 seg = texelFetch(text_cells, ivec2(cell.x * TEXT_CELL_TEXELS + 2, cell.y), 0);
+            bool numbered = false;
+            if (seg.a > 0.5) {
+                uint map = uint(seg.r * 255.0 + 0.5), last = uint(seg.b * 255.0 + 0.5);
+                ivec2 size = textureSize(overlays[nonuniformEXT(map)], 0);
+                vec2 quarter = 0.25 / (max(pc.filter2d.y, 1e-3) * (rect.zw - rect.xy));
+                int lit = 0, counted = 0;
+                for (int k = 0; k < 4; k++) {
+                    vec2 at = r + quarter * vec2((k & 1) * 2 - 1, (k & 2) - 1);
+                    ivec2 t = clamp(ivec2(at * vec2(size)), ivec2(0), size - 1);
+                    uint n = uint(texelFetch(overlays[nonuniformEXT(map)], t, 0).r * 255.0 + 0.5);
+                    if (n == 0u) continue;
+                    counted++;
+                    lit += int(n <= last);
+                }
+                numbered = counted > 0;
+                if (numbered) cover = float(lit) / float(counted);
+                if (cover <= 0.0) continue;
+            }
+            // else only some of its 2x2-pixel blocks (G, B: bit y * 4 + x; none = the whole cell)
             uint blocks = uint(mark.g * 255.0 + 0.5) << 8 | uint(mark.b * 255.0 + 0.5);
             ivec2 block = clamp(ivec2((pos - vec2(cell) * 8.0) / 2.0), ivec2(0), ivec2(3));
-            if (blocks != 0u && ((blocks >> uint(block.y * 4 + block.x)) & 1u) == 0u) continue;
+            if (!numbered && blocks != 0u && ((blocks >> uint(block.y * 4 + block.x)) & 1u) == 0u) continue;
         }
         vec4 o = texture(overlays[nonuniformEXT(uint(info.r * 255.0 + 0.5))], r);
+        o.a *= cover;
         under = under * (1.0 - o.a) + vec4(clamp(o.rgb + pc.hud.z, 0.0, 1.0) * o.a, o.a);
     }
     return under;
