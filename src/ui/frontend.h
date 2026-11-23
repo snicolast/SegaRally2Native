@@ -273,15 +273,28 @@ private:
     void setup_choose(int row);
     bool setup_key(int vk);
     void draw_setup();
-    // RESOLUTION's list: Enter or a click opens it over the description panel
+    // A setting's list of values, over the description panel: Enter (A) or a click on
+    // the row away from its arrows opens it. Each entry holds the settings as they
+    // would be with that value, made by stepping the row with activate() from its
+    // first value; picking one applies them. RESOLUTION: the monitor's modes, largest first
+    struct DropEntry {
+        std::wstring label;
+        FrontendSettings s, other;   // settings and other with this value
+    };
     bool drop_open_ = false;
-    int drop_sel_ = 0, drop_top_ = 0;     // the highlighted one, the first shown (resolutions, largest first)
+    Id drop_id_ = OPT_DISPLAY;            // the row the list belongs to
+    std::vector<DropEntry> drop_;
+    Action drop_action_ = Action::SettingsChanged;   // what picking one pushes (as activate does)
+    int drop_sel_ = 0, drop_top_ = 0, drop_in_use_ = -1;   // the highlighted one, the first shown, the value now
     std::vector<RECT> drop_rects_;
     RECT panel_rect_{};                   // the settings page's description panel (draw_options_page)
     // The entry of `resolutions` RESOLUTION stands on: the chosen mode (never
     // the window's measured inside), else the nearest to what is in use
     int resolution_index() const;
-    void open_drop();
+    // The row's setting at the first of its values (the list's order); false: a row
+    // without a list (CONNECTED, the wheel's controls)
+    bool first_value(Id id);
+    bool open_drop(Id id);     // false: not a row with a list (fewer than two values)
     void drop_pick(int i);
     bool drop_key(int vk);
     void draw_drop();
@@ -315,7 +328,8 @@ private:
     bool dirty_ = true;
     std::vector<Action> actions_;
     std::vector<RECT> hit_;   // item rectangles of the last draw
-    struct ValueArea { int left, middle; };   // option rows: value column (left < 0: none)
+    // option rows: from `left` the left arrow, from `value` the value, from `right` the right arrow (left < 0: none)
+    struct ValueArea { int left, value, right; };
     std::vector<ValueArea> values_;
     bool wrap_ = false;
     // Settings sections (OPTION_TABS in frontend.cpp says where each option goes),
