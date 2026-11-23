@@ -1,0 +1,27 @@
+# bar graph rev counter, from out/2d/barras_coche_3_bajo
+rect 2 42 5 4
+f3d8807e5a82d3e9
+08cae40aaacc0e41
+38ef94d35348dad7
+80a29762f8e698c1
+9e2160e4ed841dbc
+4f7197c0d06e41e8
+03999c926d5ab49d
+2e1775e2cbfb175e
+b9b23f3a46fd0825
+b9b23f3a46fd0825
+357d5cfa2769dc2d
+c554597347c56935
+a14cd06c24515790
+b9b23f3a46fd0825
+b9b23f3a46fd0825
+cc65167712d22a0a
+eebac97f7f1d79a5
+b9b23f3a46fd0825
+b9b23f3a46fd0825
+b9b23f3a46fd0825
+px 0 00000000 00000000 ff417b39 ffa4d59c ff000000 ffffff8b fff6f66a ff000000 00000000 00000000 ff417b39 ffa4d59c ff000000 ffffff8b ffffff8b ff000000 ff417b39 ff417b39 ff417b39 ffa4d59c ff000000 ffffff8b ffffff8b ff000000 ff417b39 ffa4d59c ffa4d59c ffa4d59c ff000000 ffffff8b ffffff8b ff000000 ff417b39 ffa4d59c ff000000 ff000000 ff000000 ffffff8b fff6f66a ff000000 ff417b39 ffa4d59c ff000000 ffffff8b ff000000 ffffff8b ffffff8b ff000000 ff417b39 ffa4d59c ff000000 ffffff8b ff000000 ffffff8b ffffff8b ff000000 ff417b39 ffa4d59c ff000000 fff6f66a ff000000 ffffff8b ffffff8b ff000000
+px 1 ffffff8b ffffff8b ff000000 ffffff8b fff6f66a ff000000 ffffff8b fff6f66a ffffff8b fff6f66a ff000000 ffffff8b ffffff8b ff000000 ffffff8b ffffff8b ffffff8b ffffff8b ff000000 ffffff8b ffffff8b ff000000 ff000000 ff000000 ffffff8b ffffff8b ff000000 ffffff8b ffffff8b ff000000 ffa4d59c ffa4d59c ffffff8b fff6f66a ff000000 ffffff8b fff6f66a ff000000 ffa4d59c ffa4d59c ffffff8b ffffff8b ff000000 ffffff8b ffffff8b ff000000 ffa4d59c ff417b39 ffffff8b ffffff8b ff000000 ff000000 ff000000 ff000000 ffa4d59c ff417b39 ffffff8b ffffff8b ff000000 ffa4d59c ffa4d59c ffa4d59c ffa4d59c ff417b39
+px 5 ff417b39 ffa4d59c ff000000 ffffff8b ff000000 fff6f66a ffffff8b ff000000 ff417b39 ffa4d59c ff000000 ffffff8b ff000000 ffffff8b ffffff8b ff000000 ff417b39 ffa4d59c ff000000 ffffff8b ff000000 ffffff8b ffffff8b ff000000 ff417b39 ffa4d59c ff000000 ffffff8b ff000000 fff6f66a ffffff8b ff000000 ff417b39 ffa4d59c ff000000 fff6f66a ff000000 ffffff8b ffffff8b ff000000 ff417b39 ffa4d59c ff000000 ffffff8b ff000000 ffffff8b ffffff8b ff000000 ff417b39 ffa4d59c ff000000 ffffff8b ff000000 ffffff8b ffffff8b ff000000 ff417b39 ffa4d59c ff000000 ffffff8b ff000000 ff000000 ff000000 ff000000
+px 6 fff6f66a ffffff8b ff000000 ffa4d59c ff417b39 ff417b39 ff417b39 ffa4d59c ffffff8b ffffff8b ff000000 ffa4d59c ff417b39 ff417b39 ff417b39 ffa4d59c ff000000 ff000000 ff000000 ffa4d59c ff417b39 ff417b39 ffa4d59c ffa4d59c ffa4d59c ffa4d59c ffa4d59c ffa4d59c ff417b39 ffa4d59c ffa4d59c ff102908 ffa4d59c ff417b39 ff417b39 ff417b39 ff417b39 ffa4d59c ff417b39 ff000000 ffa4d59c ff417b39 00000000 00000000 ff417b39 ffa4d59c ff000000 ff000000 ffa4d59c ff417b39 00000000 00000000 ff417b39 ffa4d59c ffa4d59c ffa4d59c ffa4d59c ff417b39 00000000 00000000 ff417b39 ff417b39 ff417b39 ff417b39
+px 10 ff417b39 ffa4d59c ff000000 fff6f66a ff000000 ffa4d59c ffa4d59c ffa4d59c ff417b39 ffa4d59c ff000000 ffffff8b ff000000 ffa4d59c ff417b39 ff417b39 ff417b39 ffa4d59c ff000000 ffffff8b ff000000 ffa4d59c ff417b39 00000000 ff417b39 ffa4d59c ff000000 ff000000 ff000000 ffa4d59c ff417b39 00000000 ff417b39 ffa4d59c ffa4d59c ffa4d59c ffa4d59c ffa4d59c ff417b39 00000000 ff417b39 ff417b39 ff417b39 ff417b39 ff417b39 ff417b39 ff417b39 ff417b39 ff417b39 ffa4d59c ffa4d59c ffa4d59c ffa4d59c ffa4d59c ffa4d59c ffa4d59c ff417b39 ffa4d59c ff000000 ff000000 ff000000 ff000000 ff000000 ffa4d59c
