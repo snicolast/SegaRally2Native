@@ -93,14 +93,15 @@ private:
         std::unordered_map<int, std::array<uint32_t, 64>> px_off, px_lit;
         // <name>_seg.png (optional, the size of the pictures): the bar graph's
         // segments, numbered in the order they light up (red 1..255, 0 = none).
-        // A cell caught between the states then shows the lit picture up to its
-        // last lit segment, cut along the segments' own edges instead of in
-        // 2x2-pixel blocks (compose.frag). seg2d: the number at the centre of
-        // each original pixel of the box (empty: no such file)
+        // The last lit segment is then voted over all the cells that change, and
+        // every cell with segments shows the lit picture up to it, cut along the
+        // segments' own edges instead of the cells' or 2x2-pixel blocks
+        // (compose.frag). seg2d: the number at the centre of each original
+        // pixel of the box (empty: no such file)
         uint32_t seg_slot = 0;
-        uint32_t seg_lit = 0;   // the last segment lit in the lit state's capture
         bool seg_tried = false;
         std::vector<uint8_t> seg2d;
+        std::vector<uint8_t> seg_first;   // per cell: its lowest segment number (0: none)
     };
     // Who holds each slot of the range, and the last apply() that showed it
     struct SlotUse {

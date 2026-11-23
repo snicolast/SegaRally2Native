@@ -4,8 +4,8 @@ the band, the numbers and the ticks are measured from the captures
 (out/2d/barras_coche_N_ralenti / _bajo, see make_bar_tachs.py) and redrawn
 16 times larger with smooth edges. Writes textures/art/barras_<car>.png,
 barras_<car>_lit.png and barras_<car>_seg.png (the whole counter's box; _seg:
-each pixel's bar or segment, numbered in the order they light up, in red, so a
-cell half lit is cut along their edges, see src/video/pack2d.h), which
+each changing pixel's bar or segment, numbered in the order they light up, in
+red, so the fill is cut along their edges, see src/video/pack2d.h), which
 
   python tools/make_bar_tachs.py split
 
@@ -17,7 +17,7 @@ Needs Pillow and numpy.
 import math
 
 import numpy as np
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw, ImageFilter, ImageFont
 
 S = 16           # picture pixels per 2D pixel
 SS = 2           # supersampling while drawing
@@ -50,11 +50,37 @@ def finish(img):
     return img.resize((img.width // SS, img.height // SS), Image.LANCZOS)
 
 
-def segment_map(w, h, number):
-    """A w x h picture (picture pixels) whose red is number(x, y) at each
-    pixel's centre, x and y in 2D pixels of the box"""
+def pieces(mask):
+    """The 4-connected pieces of a boolean mask: [(ys, xs), ...]"""
+    seen = np.zeros(mask.shape, bool)
+    out = []
+    for y0, x0 in zip(*np.nonzero(mask)):
+        if seen[y0, x0]:
+            continue
+        seen[y0, x0] = True
+        todo, ys, xs = [(y0, x0)], [], []
+        while todo:
+            y, x = todo.pop()
+            ys.append(y)
+            xs.append(x)
+            for yy, xx in ((y + 1, x), (y - 1, x), (y, x + 1), (y, x - 1)):
+                if 0 <= yy < mask.shape[0] and 0 <= xx < mask.shape[1] and mask[yy, xx] and not seen[yy, xx]:
+                    seen[yy, xx] = True
+                    todo.append((yy, xx))
+        out.append((np.array(ys), np.array(xs)))
+    return out
+
+
+def segment_map(pics, number):
+    """A picture the size of pics' whose red is number(x, y) at each pixel's
+    centre (x, y in 2D pixels of the box), where the off and lit pictures
+    differ (and half a 2D pixel around): 0 elsewhere"""
+    w, h = pics[False].size
     ys, xs = np.mgrid[0:h, 0:w].astype(np.float64)
     n = number((xs + 0.5) / S, (ys + 0.5) / S).astype(np.uint8)
+    a, b = (np.asarray(pics[k], dtype=np.int16) for k in (False, True))
+    differ = Image.fromarray(((np.abs(a - b).max(-1) > 6) * 255).astype(np.uint8))
+    n[np.asarray(differ.filter(ImageFilter.MaxFilter(S + 1))) == 0] = 0
     out = np.zeros((h, w, 4), np.uint8)
     out[..., 0] = n
     out[..., 3] = 255
@@ -148,12 +174,11 @@ def impreza():
         pics[lit] = finish(img)
     # the bars, numbered from the left: each up to the middle of the black after it
     ends = [(bars[i][1] + bars[i + 1][0]) / 2 for i in range(len(bars) - 1)]
-    pics["seg"] = segment_map(box[2] * 8 * S, box[3] * 8 * S,
-                              lambda x, y: 1 + sum((x >= e).astype(np.int32) for e in ends))
+    pics["seg"] = segment_map(pics, lambda x, y: 1 + sum((x >= e).astype(np.int32) for e in ends))
     return pics
 
 
-# ---- Delta: a pale band on an arc that fills with dark segments -------------
+# ---- Delta: a pale band on an arc that fills with 24 dark segments -------------
 
 def delta():
     box = (2, 36, 16, 9)
@@ -162,7 +187,13 @@ def delta():
     cx, cy = 96.28 - ox, 384.9 - oy      # the band's centre (fitted on the captures' edges)
     r_out, r_in = 94.4, 84.6
     a_left, a_right = 147.5, 65.0        # degrees, anticlockwise from the right
-    segments = 20
+    # The segments as the game draws them: the dark pieces of the lit capture
+    # (24), each at its mean angle; a segment ends halfway to the next one
+    dark = ((on[..., 0] == 0x18) & (on[..., 1] == 0x18) & (on[..., 2] == 0x10) & (off != on).any(-1))
+    centres = sorted((math.degrees(math.atan2(cy - (ys.mean() + 0.5), xs.mean() + 0.5 - cx))
+                      for ys, xs in pieces(dark[oy:oy + box[3] * 8, ox:ox + box[2] * 8])), reverse=True)
+    bounds = [a_left] + [(a + b) / 2 for a, b in zip(centres, centres[1:])] + [a_right]
+    segments = len(centres)
 
     def pt(r, a):
         return ((cx + r * math.cos(math.radians(a))) * K, (cy - r * math.sin(math.radians(a))) * K)
@@ -185,9 +216,8 @@ def delta():
         d.polygon(ring(r_in - 0.6, r_out + 0.7, a_left + 0.3, a_right - 0.3), fill=(0x33, 0x33, 0x33, 255))
         if lit:
             d.polygon(ring(r_in, r_out, a_left, a_right), fill=(0x52, 0x52, 0x52, 255))
-            step = (a_left - a_right) / segments
             for i in range(segments):
-                a0, a1 = a_left - i * step - 0.28, a_left - (i + 1) * step + 0.28
+                a0, a1 = bounds[i] - 0.28, bounds[i + 1] + 0.28
                 d.polygon(ring(r_in + 0.35, r_out - 0.35, a0, a1, 12), fill=(0x18, 0x18, 0x10, 255))
                 # a faint sheen on the outer half
                 d.polygon(ring(r_out - 3.2, r_out - 0.35, a0, a1, 12), fill=(0x29, 0x29, 0x22, 255))
@@ -211,9 +241,8 @@ def delta():
     # the segments, numbered from the left end: each between two of the gaps' middles
     def number(x, y):
         a = np.degrees(np.arctan2(cy - y, x - cx))
-        return np.clip(np.floor((a_left - a) / step), 0, segments - 1) + 1
-    step = (a_left - a_right) / segments
-    pics["seg"] = segment_map(box[2] * 8 * S, box[3] * 8 * S, number)
+        return 1 + sum((a < b).astype(np.int32) for b in bounds[1:-1])
+    pics["seg"] = segment_map(pics, number)
     return pics
 
 

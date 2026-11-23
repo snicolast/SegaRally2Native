@@ -315,15 +315,13 @@ int Pack2D::apply(uint32_t* target, int stride, const uint32_t* raw, const uint3
                             int sy = std::min(int((y + 0.5) * img.h / h), img.h - 1);
                             e.seg2d[size_t(y) * w + x] = img.rgba[(size_t(sy) * img.w + sx) * 4];
                         }
-                    // the last segment lit in the lit capture: where its pixels differ from the other one
-                    for (const auto& [cell, lit_px] : e.px_lit) {
-                        auto off_px = e.px_off.find(cell);
-                        if (off_px == e.px_off.end()) continue;
-                        for (int i = 0; i < 64; i++)
-                            if (lit_px[i] != off_px->second[i])
-                                e.seg_lit = std::max<uint32_t>(e.seg_lit, e.seg2d[size_t((cell / e.cw) * 8 + i / 8) * w +
-                                                                                  (cell % e.cw) * 8 + i % 8]);
-                    }
+                    // the first segment in each cell (0: none)
+                    e.seg_first.assign(size_t(e.cw) * e.ch, 0);
+                    for (int y = 0; y < h; y++)
+                        for (int x = 0; x < w; x++) {
+                            uint8_t s = e.seg2d[size_t(y) * w + x], &first = e.seg_first[(y / 8) * e.cw + x / 8];
+                            if (s && (!first || s < first)) first = s;
+                        }
                 }
                 e.seg_slot = take_slot(index, 2);
                 img.slot = e.seg_slot;
@@ -332,17 +330,15 @@ int Pack2D::apply(uint32_t* target, int stride, const uint32_t* raw, const uint3
         }
         if (e.seg_slot) mark_shown(e.seg_slot);
         // With a segment map: the last segment that most of its changing pixels
-        // show lit, over all the cells caught between the states (the bar fills
-        // in order, so all before it are lit too)
+        // show lit, over all the cells that change between the states (the bar
+        // fills in order, so all before it are lit too). Every cell with
+        // segments is then drawn from it, not from its own match: the new
+        // segments do not end where the cells do
         uint32_t level = 0;
         if (e.seg_slot) {
             int votes[256] = {};
-            for (int y = 0; y < e.ch; y++)
-                for (int x = 0; x < e.cw; x++) {
-                    uint64_t ref = e.cells[y * e.cw + x], lit = e.lit[y * e.cw + x];
-                    if (lit && !same(oy + y, ox + x, lit) && !(ref && same(oy + y, ox + x, ref)))
-                        vote_segments(e, y * e.cw + x, raw, (ox + x) * 8, (oy + y) * 8, votes);
-                }
+            for (const auto& [index, px] : e.px_off)
+                vote_segments(e, index, raw, (ox + index % e.cw) * 8, (oy + index / e.cw) * 8, votes);
             for (int s = 255; s > 0 && !level; s--)
                 if (votes[s] > 0) level = uint32_t(s);
         }
@@ -353,15 +349,19 @@ int Pack2D::apply(uint32_t* target, int stride, const uint32_t* raw, const uint3
                 uint64_t lit = e.lit_slot ? e.lit[y * e.cw + x] : 0;   // (lit picture not loaded: the game's cells)
                 bool on_lit = lit && same(oy + y, ox + x, lit);
                 bool on_ref = ref && same(oy + y, ox + x, ref);
-                uint32_t blocks = 0;   // (0: the whole cell)
-                // the last lit segment (0: no segment map in use): a cell as the lit capture,
-                // up to the last one lit there
-                uint32_t segment = e.seg_slot ? e.seg_lit : 0;
-                if (lit && !on_lit && !on_ref && e.px_off.count(y * e.cw + x)) {
-                    // caught between the two states: each block as the closer one, never the game's cell
-                    blocks = lit_blocks(e, y * e.cw + x, raw, (ox + x) * 8, (oy + y) * 8);
+                uint32_t blocks = 0;    // (0: the whole cell)
+                uint32_t segment = 0;   // the last lit segment (0: no segment map here)
+                const int index = y * e.cw + x;
+                bool between = lit && !on_lit && !on_ref && e.px_off.count(index);
+                if (e.seg_slot && e.seg_first[index] && (on_lit || on_ref || between)) {
+                    // lit up to `level`: the lit picture where its first segment is lit
                     segment = level;
-                    on_lit = blocks != 0 || segment != 0;
+                    on_lit = e.seg_first[index] <= level;
+                    on_ref = true;
+                } else if (between) {
+                    // caught between the two states: each block as the closer one, never the game's cell
+                    blocks = lit_blocks(e, index, raw, (ox + x) * 8, (oy + y) * 8);
+                    on_lit = blocks != 0;
                     on_ref = true;
                     if (blocks == 0xFFFF) blocks = 0;
                 }
