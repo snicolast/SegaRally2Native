@@ -110,13 +110,19 @@ static void settle_scenery(const std::vector<R3DInstance>& list, const float* ax
 }
 
 // The highest surface of the scenery under each of some points (not what is
-// above them: a roof, a branch): the points in cells of 2 m across
+// above them: a roof, a branch): the points in cells of 2 m across. With
+// `owners` (a model's number for each instance, -1 for none), the surfaces
+// facing up of the models instead (a car's roof, the podium's deck), not
+// those of the point's own model (`owner`), and only those at the point or
+// below it
 struct GroundQuery {
     float u, h, w;           // across, height, across
     float ground = -1e30f;   // (stays so where there is none)
+    int owner = -1;          // (with `owners`: the model the point is on)
+    int src = -1;            // (debugging aid, SR2_ACTORLOG: the instance it is on)
 };
 static void ground_under(const std::vector<R3DInstance>& list, const float* axes, const R3DScene& out, const R3DViewport& v,
-                         std::vector<GroundQuery>& queries) {
+                         std::vector<GroundQuery>& queries, const std::vector<int>* owners = nullptr) {
     const float *ax = axes, *up = axes + 3, *az = axes + 6;
     auto dot = [](const float* a, const float* b) { return a[0] * b[0] + a[1] * b[1] + a[2] * b[2]; };
     const float cell = 2.0f;
@@ -135,11 +141,25 @@ static void ground_under(const std::vector<R3DInstance>& list, const float* axes
         float cu = std::floor(m.u / cell) * cell, cw = std::floor(m.w / cell) * cell;
         qu0 = std::min(qu0, cu), qu1 = std::max(qu1, cu + cell), qw0 = std::min(qw0, cw), qw1 = std::max(qw1, cw + cell);
     }
+    static const bool back_as_is = getenv("SR2_STANDING_AS_IS") != nullptr;   // (the faces to the camera only, as before)
     for (const R3DInstance& in : list) {
-        if (!r3d_same_axes(in.axes, axes)) continue;
-        for (uint32_t i = in.opaque[0]; i + 2 < in.opaque[1]; i += 3) {
-            const R3DVertex* t = &out.vertices[v.opaque_first + i];
-            if (t[0].flags & R3D_ACTOR) continue;   // (a car turned the scenery's way, settle_cars)
+        bool scenery_way = r3d_same_axes(in.axes, axes);
+        if (!owners && !scenery_way) continue;
+        int own = owners ? (*owners)[&in - list.data()] : -1;
+        // The polygons facing the camera, and those facing away: a car's roof
+        // or a podium's deck seen from below (a low camera filming the winners
+        // on their car) is among the back faces, and the drivers on it were
+        // set down onto the road under it
+        for (int pass = 0; pass < 2; pass++)
+        for (uint32_t i = pass ? in.back[0] : in.opaque[0]; i + 2 < (pass ? in.back[1] : in.opaque[1]); i += 3) {
+            if (pass && (back_as_is || v.back_first + i + 2 >= out.backs.size())) break;
+            const R3DVertex* t = pass ? &out.backs[v.back_first + i] : &out.vertices[v.opaque_first + i];
+            bool actor = t[0].flags & R3D_ACTOR;   // (a car turned the scenery's way, settle_cars)
+            if (owners ? scenery_way && !actor : actor) continue;
+            if (owners) {   // (level, a deck, a roof: not a leg, not a wall; either side: a two-sided deck seen from below)
+                float n = std::sqrt(dot(t[0].nrm, t[0].nrm));
+                if (n <= 0 || std::fabs(dot(t[0].nrm, up)) < 0.7f * n) continue;
+            }
             float u[3], h[3], w[3];
             for (int k = 0; k < 3; k++) u[k] = dot(t[k].pos, ax), h[k] = dot(t[k].pos, up), w[k] = dot(t[k].pos, az);
             float u0 = std::min({u[0], u[1], u[2]}), u1 = std::max({u[0], u[1], u[2]});
@@ -152,6 +172,7 @@ static void ground_under(const std::vector<R3DInstance>& list, const float* axes
                     auto it = std::lower_bound(cells.begin(), cells.end(), std::make_pair(key, -1));
                     for (; it != cells.end() && it->first == key; ++it) {
                         GroundQuery& m = queries[it->second];
+                        if (owners && own >= 0 && own == m.owner) continue;
                         // Inside the triangle across (barycentric weights)
                         float d = (w[1] - w[2]) * (u[0] - u[2]) + (u[2] - u[1]) * (w[0] - w[2]);
                         if (std::fabs(d) < 1e-6f) continue;
@@ -159,7 +180,7 @@ static void ground_under(const std::vector<R3DInstance>& list, const float* axes
                         float b = ((w[2] - w[0]) * (m.u - u[2]) + (u[0] - u[2]) * (m.w - w[2])) / d;
                         if (a < 0 || b < 0 || a + b > 1) continue;
                         float g = a * h[0] + b * h[1] + (1 - a - b) * h[2];
-                        if (g <= m.h + 0.3f) m.ground = std::max(m.ground, g);   // (not a roof above it)
+                        if (g <= m.h + (owners ? 0.05f : 0.3f) && g > m.ground) m.ground = g, m.src = int(&in - list.data());   // (not a roof above it)
                     }
                 }
         }
@@ -641,6 +662,9 @@ static void settle_actors(const std::vector<R3DInstance>& list, const float* axe
     const float *ax = axes, *up = axes + 3, *az = axes + 6;
     auto dot = [](const float* a, const float* b) { return a[0] * b[0] + a[1] * b[1] + a[2] * b[2]; };
     const float reach = 40.0f;   // metres from the camera
+    // SR2_STANDING_AS_IS=1: the glow sprites taken as pieces and only the
+    // scenery as ground, as before (to compare)
+    static const bool sprites_as_is = getenv("SR2_STANDING_AS_IS") != nullptr;
     // The models' pieces near the camera, as boxes in (across x, height, across z)
     struct Piece {
         const R3DInstance* in;
@@ -654,6 +678,14 @@ static void settle_actors(const std::vector<R3DInstance>& list, const float* axe
         bool solid = in.opaque[1] > in.opaque[0];
         if (!solid && in.trans[1] <= in.trans[0]) continue;
         if (dot(in.origin, in.origin) > reach * reach) continue;
+        // (nor the glow sprites: the champagne the winners spray on the
+        // podium, a stream of them falling down a driver to the car's roof;
+        // taken with him, the drop lowest that frame was his lowest point, and
+        // he went up and down with the spray)
+        const uint32_t glow_mask = R3D_TEXTURED | R3D_ALPHA_TEST | R3D_LUMINOUS | R3D_TEX_ALPHA | R3D_SPECULAR;
+        const uint32_t glow = glow_mask & ~uint32_t(R3D_SPECULAR);
+        uint32_t first = solid ? v.opaque_first + in.opaque[0] : v.trans_first + in.trans[0];
+        if (!sprites_as_is && first < out.vertices.size() && (out.vertices[first].flags & glow_mask) == glow) continue;
         Piece p{&in, {1e30f, 1e30f, 1e30f}, {-1e30f, -1e30f, -1e30f}, int(pieces.size())};
         auto take = [&](const R3DVertex& x) {
             float c[3] = {dot(x.pos, ax), dot(x.pos, up), dot(x.pos, az)};
@@ -716,9 +748,23 @@ static void settle_actors(const std::vector<R3DInstance>& list, const float* axe
         }
     }
     ground_under(list, axes, out, v, feet);
+    // ... or on another model (not the scenery: a car turned its own way, the
+    // podium): the drivers on their car's roof at the end of a championship,
+    // over the road well below, were "set down" as far as the fading allowed,
+    // by an amount that changed with each step they took, and sank into the
+    // roof by up to 30 cm and came out again (they seemed to jump)
+    if (!sprites_as_is) {
+        std::vector<int> owners(list.size(), -1);
+        for (size_t i = 0; i < pieces.size(); i++) owners[size_t(pieces[i].in - list.data())] = model_of[i];
+        std::vector<GroundQuery> on = feet;
+        for (size_t f = 0; f < on.size(); f++) on[f].ground = -1e30f, on[f].owner = foot_of[f];
+        ground_under(list, axes, out, v, on, &owners);
+        for (size_t f = 0; f < feet.size(); f++)
+            if (on[f].ground > feet[f].ground) feet[f].ground = on[f].ground, feet[f].src = on[f].src;
+    }
     for (size_t f = 0; f < feet.size(); f++) {
         float& g = models[foot_of[f]].ground;
-        if (feet[f].ground > -1e29f) g = g > -1e29f ? std::min(g, feet[f].ground) : feet[f].ground;
+        if (feet[f].ground > -1e29f && (g < -1e29f || feet[f].ground < g)) g = feet[f].ground, models[foot_of[f]].src = feet[f].src;
     }
     static const bool log = getenv("SR2_ACTORLOG") != nullptr;
     for (size_t i = 0; i < pieces.size(); i++) {
@@ -726,7 +772,10 @@ static void settle_actors(const std::vector<R3DInstance>& list, const float* axe
         float gap = m.h - m.ground;
         float down = gap <= 0.3f ? gap : std::max(0.0f, 0.6f - gap);
         if (log && root(int(i)) == int(i))
-            printf("[actor] model at %.1f %.1f %.1f gap %.3f down %.3f\n", m.u, m.h, m.w, gap, down);
+            printf("[actor] frame %llu model at %.2f %.2f %.2f gap %.3f down %.3f piece %06X/%u on %06X/%u %s\n",
+                   (unsigned long long)out.frame, m.u, m.h, m.w, gap, down, pieces[i].in->model, pieces[i].in->polygons,
+                   m.src >= 0 ? list[m.src].model : 0, m.src >= 0 ? list[m.src].polygons : 0,
+                   m.src >= 0 && !r3d_same_axes(list[m.src].axes, axes) ? "model" : "scenery");
         if (down <= 0.002f) continue;
         const R3DInstance& in = *pieces[i].in;
         auto lower = [&](R3DVertex& x) {
