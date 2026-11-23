@@ -1109,6 +1109,9 @@ int main(int argc, char** argv) {
             else if (g_opt.interp && g_max_fps < 0 && !vsync)
                 step = 0;   // UNLIMITED, chosen by the player
             if (g_background_fps && g_opt.menu && GetForegroundWindow() != presenter.hwnd()) step = std::max(step, 1.0 / 30);
+            // (dynamic resolution keeps the graphics card's time within that;
+            // UNLIMITED: none to keep to, always the full size)
+            renderer.set_gpu_budget(float(step * 1000.0));
             static const bool no_limit = getenv("LW_NO_LIMIT") != nullptr;   // debugging aid: without it (to compare)
             double now = qpc_seconds();
             if (!no_limit && step > 0 && due > 0 && due > now) {

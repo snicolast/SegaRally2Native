@@ -75,7 +75,10 @@ bool Dlaa::init(VkInstance instance, VkPhysicalDevice gpu, VkDevice device) {
 
 bool Dlaa::evaluate(VkCommandBuffer cmd, const Image& color, const Image& depth, const Image& motion,
                     const Image& output, uint32_t width, uint32_t height, uint32_t out_width, uint32_t out_height,
-                    float jitter_x, float jitter_y, bool reset, int channel) {
+                    float jitter_x, float jitter_y, bool reset, int channel, uint32_t draw_width,
+                    uint32_t draw_height) {
+    // (no dynamic resolution through the bridge: dynamic_resolution())
+    (void)draw_width, (void)draw_height;
     if (!bridge_ || failed_) return false;
     DlssBridgeImage c = image(color), d = image(depth), m = image(motion), o = image(output);
     // The bridge only refuses once DLSS has stopped working, and it stays so
