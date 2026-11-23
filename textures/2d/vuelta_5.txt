@@ -1,0 +1,8 @@
+# race HUD badge, from out/2d/capture_2510
+rect 2 21 2 3
+56ae99e8e82e2dcd
+d0ea33167befcd04
+18f84b4b8105b501
+b559e6ebfc1198d0
+09f199c2f5e993ce
+40ce58cfdb27c855

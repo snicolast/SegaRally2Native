@@ -42,7 +42,7 @@ public:
     // Capture for tools/make_2d_replacement.py: <path>.png and <path>.cells
     static void save_capture(const uint32_t* front, const std::string& path);
 
-    static constexpr int MAX_ACTIVE = 8;   // pictures on screen at once, per Pack2D
+    static constexpr int MAX_ACTIVE = 16;   // pictures on screen at once, per Pack2D (the race HUD shows up to 12)
     // Finds the replacements on screen (anywhere, at any brightness: cells are
     // compared on `raw`, the 496x384 layers without fade offsets), clears their
     // unchanged cells in `target` (stride pixels per row) and, for the

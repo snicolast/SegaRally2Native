@@ -209,6 +209,10 @@ const int OVERLAY_ROW = 48;          // after the cells: the replacement picture
 vec4 replacement_pictures(vec4 under, vec2 pos, bool below_3d) {
     int pictures = int(texelFetch(text_cells, ivec2(0, OVERLAY_ROW), 0).r * 255.0 + 0.5);
     for (int i = 0; i < pictures; i++) {
+        // its box first: most pixels are outside every picture
+        vec4 rect = round(texelFetch(text_cells, ivec2(1 + 2 * i, OVERLAY_ROW), 0) * 255.0) * 8.0;
+        vec2 r = (pos - rect.xy) / (rect.zw - rect.xy);
+        if (any(lessThan(r, vec2(0.0))) || any(greaterThanEqual(r, vec2(1.0)))) continue;
         vec4 info = texelFetch(text_cells, ivec2(2 + 2 * i, OVERLAY_ROW), 0);
         if ((info.g > 0.5) != below_3d) continue;
         if (info.b * 255.0 > 0.5) {
@@ -221,12 +225,8 @@ vec4 replacement_pictures(vec4 under, vec2 pos, bool below_3d) {
             ivec2 block = clamp(ivec2((pos - vec2(cell) * 8.0) / 2.0), ivec2(0), ivec2(3));
             if (blocks != 0u && ((blocks >> uint(block.y * 4 + block.x)) & 1u) == 0u) continue;
         }
-        vec4 rect = round(texelFetch(text_cells, ivec2(1 + 2 * i, OVERLAY_ROW), 0) * 255.0) * 8.0;
-        vec2 r = (pos - rect.xy) / (rect.zw - rect.xy);
-        if (all(greaterThanEqual(r, vec2(0.0))) && all(lessThan(r, vec2(1.0)))) {
-            vec4 o = texture(overlays[nonuniformEXT(uint(info.r * 255.0 + 0.5))], r);
-            under = under * (1.0 - o.a) + vec4(clamp(o.rgb + pc.hud.z, 0.0, 1.0) * o.a, o.a);
-        }
+        vec4 o = texture(overlays[nonuniformEXT(uint(info.r * 255.0 + 0.5))], r);
+        under = under * (1.0 - o.a) + vec4(clamp(o.rgb + pc.hud.z, 0.0, 1.0) * o.a, o.a);
     }
     return under;
 }
