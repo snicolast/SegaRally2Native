@@ -120,6 +120,10 @@ def digit_2x3(first):
 # 2x3 tiles from 0x2952, six tiles a digit; the minute and second marks
 time_glyphs = [(str(k), digit_2x3(0x2952 + 6 * k)) for k in range(10)]
 time_glyphs += [("’", grid([0x2991], [0x2992])), ("”", grid([0x2993], [0x2994]))]
+# A time not set yet (the laps to come): a dash over two tiles
+dash_glyphs = [("-", grid([0x298F, 0x2990]))]
+# The red dots after DRIVER (no name entered)
+dot_glyphs = [(".", grid([0x275D]))]
 # The speed: the same digits from 0x3014, and "km/h"
 speed_glyphs = [(str(k), digit_2x3(0x3014 + 6 * k)) for k in range(10)]
 units_glyphs = [("km/h", grid([0x300B, 0x3000, 0x3000, 0x3000], row(0x300C, 4), row(0x3010, 4)))]
@@ -140,6 +144,10 @@ SETS = [
     # would be cut at the edges of its tiles)
     {"name": "time", "font": "Exo2-Italic[wght].ttf", "weight": 800, "edge": "outline", "bpp": 8,
      "glyphs": time_glyphs, "same_roles": True, "max_width": 0.84, "outline": 1.2, "inset": 1.5},
+    {"name": "dash", "font": "Exo2-Italic[wght].ttf", "weight": 800, "edge": "outline", "bpp": 8,
+     "glyphs": dash_glyphs, "fit": "box", "outline": 1.0},
+    {"name": "dot", "font": "ArchivoBlack-Regular.ttf", "edge": "outline", "bpp": 8,
+     "glyphs": dot_glyphs, "fit": "box", "outline": 1.0},
     {"name": "speed", "font": "Exo2-Italic[wght].ttf", "weight": 800, "edge": "outline", "bpp": 8,
      "glyphs": speed_glyphs, "same_roles": True, "max_width": 0.84, "outline": 1.2, "inset": 1.5},
     {"name": "units", "font": "Exo2-Italic[wght].ttf", "weight": 800, "edge": "outline", "bpp": 8,
@@ -410,6 +418,12 @@ for d, (snap_n, col) in {"2": (2120, 15), "0": (2120, 17), "1": (2120, 19), "9":
                          "4": (2130, 19), "7": (2134, 17), "3": (2134, 19), "6": (2138, 17), "5": (2143, 17)}.items():
     BLOCKS.append({"set": "lcd", "parts": [(d, 1.0)], "snap": LCD % snap_n, "at": (col, 43), "size": (2, 3)})
 BLOCKS.append({"set": "lcd_units", "parts": [("km/h", 1.0)], "snap": LCD % 2120, "at": (21, 43), "size": (4, 3)})
+# The Delta's LCD: the same pieces in the same tiles (its digits and km/h use
+# the Impreza's name entries), but its own grey pixels: the layout from the
+# Impreza's snapshots, the pixels and the palette from a Delta race
+DELTA = "out/snap_coches/coche_7.bin"
+BLOCKS += [dict(b, pixels=DELTA, targets=[(255, 255, 255), (190, 185, 200), (0, 0, 0)])
+           for b in BLOCKS if b["set"] in ("lcd", "lcd_units")]
 BLOCK_SETS = {
     "lcd": {"seven_segment": True, "edge": "outline", "outline": 0.8, "room": 1.0,
             "targets": [(255, 255, 200), (230, 220, 110), (0, 0, 0)]},
@@ -459,6 +473,8 @@ def render_block(b):
     c0, r0 = b["at"]
     w, h = b["size"]
     grid_ = [[name_entry(c0 + x, r0 + y) for x in range(w)] for y in range(h)]
+    if "pixels" in b:   # the tiles' pixels (and palette) from another snapshot
+        use_snapshot(b["pixels"])
     blank = [[not any(pattern_bytes(e, 8)) for e in r] for r in grid_]
     img = np.vstack([np.hstack([pattern(e, 8) for e in r]) for r in grid_])
     first = next(e for r, br in zip(grid_, blank) for e, bl in zip(r, br) if not bl)
@@ -528,7 +544,7 @@ def render_block(b):
         for tx in range(w):
             hashes.append(0 if blank[ty][tx] else pattern_hash(grid_[ty][tx], 8))
             tiles.append(big[ty * 8 * SCALE:ty * 8 * SCALE + SLOT, tx * 8 * SCALE:tx * 8 * SCALE + SLOT])
-    return w, h, rl, hashes, tiles, img, base
+    return w, h, rl, hashes, tiles, img, base, b.get("pixels", b["snap"])
 
 
 blocks = [render_block(b) for b in BLOCKS]
@@ -548,7 +564,7 @@ with open(os.path.join(OUT, "glyphs.txt"), "w") as f:
         f.write(f"{'B ' if bpp == 8 else ''}{p:04x} {h:016x} {slot} {rl[0]:x} {rl[1]:x} {rl[2]:x}\n")
     # Blocks: G8 width height top bottom edge, then per cell hash:slot (hash 0: empty)
     slot = len(entries)
-    for w, h, rl, hashes, tiles, _, _ in blocks:
+    for w, h, rl, hashes, tiles, _, _, _ in blocks:
         cells = []
         for hh, tile in zip(hashes, tiles):
             sy, sx = divmod(slot, COLS)
@@ -594,7 +610,8 @@ if preview:
             x += tw
         lines += [orig, line]
     # ... and the blocks
-    for bw_, bh_, rl, _, tiles, img, base in blocks:
+    for bw_, bh_, rl, _, tiles, img, base, pixels in blocks:
+        use_snapshot(pixels)
         th, tw = bh_ * 8 * SCALE, bw_ * 8 * SCALE
         orig = np.zeros((th, tw, 3), np.float32) + np.array([30, 34, 70], np.float32)
         line = orig.copy()
