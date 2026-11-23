@@ -185,8 +185,8 @@ bool R3DRenderer::init(VkPresenter& vk, float supersample, int msaa, int aniso, 
         vkGetPhysicalDeviceProperties(vk.gpu(), &gpu);
         bool fp8 = dlss::has_fp8(gpu.deviceName);
         dlss_preset_ = dlss::preset_for(mode, dlss_model, fp8);
+        dlaa_.set_dynamic(getenv("SR2_NO_DYNRES") == nullptr);   // (dynamic_resolution(); before configure: dlss_bridge.dll)
         dlaa_.configure(mode, dlss_preset_);
-        dlaa_.set_dynamic(getenv("SR2_NO_DYNRES") == nullptr);   // (dynamic_resolution())
         printf("[dlaa] mode %d (3D %.0f%% of the size), preset %c (%s, FP8 %s), %u jitter phases\n", mode,
                100.0f / upscale_, char('A' + dlss_preset_ - 1), dlss_model ? "chosen" : "auto", fp8 ? "yes" : "no",
                jitter_phases_);
