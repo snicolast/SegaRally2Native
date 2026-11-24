@@ -263,6 +263,25 @@ private:
     const R3DViewport* rt_world_ = nullptr;   // the world viewport they are traced in
     uint32_t rt_generation_ = 0;       // R3DRayTracer::generation() the descriptors point to
     void record_ray_tracing(const Frame& f);
+    // Light probes on the cars drawn in viewports of their own (CAR; car_probe.frag):
+    // three slices along each of up to CAR_PROBE_CARS cars, one texel each in car_probe_
+    // (r the sun, g the sky), blended from image to image. A car keeps its place among
+    // them while it is there (node), so its stored probes go on being its own
+    static constexpr int CAR_PROBE_CARS = 4, CAR_PROBES = 3;   // (atmosphere.glsl)
+    struct CarSlot {
+        uint32_t node = 0;
+        uint64_t frame = 0;        // the game frame it was last seen in
+        float forward[3] = {};     // its length's direction then (view space): the front stays the front
+        bool used = false;
+    };
+    CarSlot car_slots_[CAR_PROBE_CARS];
+    int car_probe_cars_ = 0;       // cars with probes this image (0: no probe pass)
+    double car_probe_time_ = 0;    // when the previous image's probes were taken (seconds)
+    uint32_t car_probe_images_ = 0;
+    Image car_probe_;
+    VkPipeline car_probe_pass_ = VK_NULL_HANDLE;
+    void car_boxes(float* box, float* count, const float* up);
+    void record_car_probes(const Frame& f);
     // Measurement (SR2_GPUTIME, or LW_GPUTIME): GPU time of each pass of the
     // frame, averaged over 300 frames and printed. Timestamps in this order
     enum GpuMark : uint32_t {
@@ -348,6 +367,9 @@ private:
     VkDescriptorSetLayout r3d_aux_layout_ = VK_NULL_HANDLE;
     VkDescriptorSet r3d_aux_set_ = VK_NULL_HANDLE, r3d_aux_opaque_set_ = VK_NULL_HANDLE,
                     r3d_aux_shadow_set_ = VK_NULL_HANDLE;
+    // (2: the cars' light probes, car_probe_; r3d_aux_probe_set_: the shadow map, the
+    // others stand-ins, for the pass that takes the probes into car_probe_)
+    VkDescriptorSet r3d_aux_probe_set_ = VK_NULL_HANDLE;
     // Composition, set 1: 0 bloom, 1 exposure, 2 diffusion, 3 tight bloom.
     // compose_fx_set_: all four; compose_fx_inner_set_: the bloom and diffusion
     // stand-ins (the sky glow into bloom_a_, the scene into diff_a_);

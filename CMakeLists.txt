@@ -66,8 +66,8 @@ foreach(src ${SHADER_SOURCES})
     list(APPEND SHADER_HEADERS ${out})
 endforeach()
 # Again with the ray traced effects (sun shadows, ambient occlusion), for GPUs
-# with ray queries: r3d_rt.frag.h, ao_rt.frag.h
-foreach(name r3d ao)
+# with ray queries: r3d_rt.frag.h, ao_rt.frag.h, car_probe_rt.frag.h
+foreach(name r3d ao car_probe)
     set(out ${SHADER_OUT}/${name}_rt.frag.h)
     add_custom_command(OUTPUT ${out}
         COMMAND ${CMAKE_COMMAND} -E make_directory ${SHADER_OUT}

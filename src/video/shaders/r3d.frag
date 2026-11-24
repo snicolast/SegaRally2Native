@@ -33,6 +33,7 @@ layout(push_constant) uniform Viewport {
 
 layout(set = 1, binding = 0) uniform sampler2D shadow_map;     // sun shadows (depth seen from the sun)
 layout(set = 1, binding = 1) uniform sampler2D scene_depth;    // the opaque world's depth (soft particles)
+layout(set = 1, binding = 2) uniform sampler2D car_probes;     // the cars' light probes (car_probe.frag)
 
 #define ATMOSPHERE_BINDING 2
 #include "atmosphere.glsl"
@@ -92,6 +93,33 @@ float sun_shadow(vec3 n) {
     vec2 edge = min(uv, 1.0 - uv);
     float fade = smoothstep(0.0, 0.08, min(edge.x, edge.y));
     return mix(1.0, lit, atm.shadow.x * fade);
+}
+
+// Light probes on the cars (not in the original): the sun and the sky at the
+// car this pixel is on (CAR: the cars in viewports of their own, which take
+// none of the world's shadows), from its three slices along it (rear,
+// middle, front: car_probe.frag) blended by where along the car the pixel
+// lies. (1, 1) elsewhere, or with them off
+vec2 car_light() {
+    int cars = int(atm.car_probe.x + 0.5);
+    if (cars == 0 || (flags & CAR) == 0u) return vec2(1.0);
+    // The car whose middle is nearest (each car's own viewport: they are far
+    // apart next to their size)
+    int best = 0;
+    float nearest = 1e30;
+    for (int c = 0; c < CAR_PROBE_CARS; c++) {
+        if (c >= cars) break;
+        vec3 d = view_pos - atm.car_box[c * 3].xyz;
+        if (dot(d, d) < nearest) nearest = dot(d, d), best = c;
+    }
+    vec4 box = atm.car_box[best * 3];
+    float along = dot(view_pos - box.xyz, atm.car_box[best * 3 + 1].xyz) / max(0.6 * box.w, 0.01);
+    float x = clamp(along, -1.0, 1.0) + 1.0;   // 0 the rear slice, 1 the middle, 2 the front
+    int i = min(int(x), 1);
+    vec2 a = texelFetch(car_probes, ivec2(best * CAR_PROBES + i, 0), 0).rg;
+    vec2 b = texelFetch(car_probes, ivec2(best * CAR_PROBES + i + 1, 0), 0).rg;
+    vec2 l = clamp(mix(a, b, x - float(i)), 0.0, 1.0);
+    return vec2(mix(1.0, l.x, atm.car_probe.y), mix(1.0, l.y, atm.car_probe.z));
 }
 
 #ifdef RAY_TRACING
@@ -551,6 +579,8 @@ void main() {
     if (sun_count.x >= 0.0) sun_part = sun_disc(n, sun_count, sun_across);
     vec2 sun_block = 3.0 * sun_part.xy + sun_first().x * dFdxFine(sun_part.xy) + sun_first().y * dFdyFine(sun_part.xy);
 #endif
+    // The car's light probes: the sun and the sky where it is (1, 1 for the rest)
+    vec2 probe = car_light();
     if ((flags & LUMINOUS) == 0u) {
         if (sunlit) {
 #ifdef RAY_TRACING
@@ -559,6 +589,10 @@ void main() {
             s *= sun_shadow(n);
 #endif
         }
+        // (the car in the shade: its sun, and the highlights with it, go;
+        // under a roof or beside a wall, some of its sky too)
+        s *= probe.x;
+        ambient *= probe.y;
         vec3 light = vec3(s * vp.sun.w + ambient);
         // Clear outdoor scenes (SUN): a stronger, warmer sun and a softer,
         // slightly bluer ambient (light from the sky) for more contrast
@@ -624,7 +658,8 @@ void main() {
             if (dot(fn, view_pos) > 0.0) fn = -fn;
             float down = 0.5 - 0.5 * dot(fn, normalize(atm.axes[1].xyz));
             float world_sun = max(vp.sun.w, 0.0) * (atm.sunlight.z > 0.0 ? atm.sunlight.x : 1.0);
-            light += vec3(1.0, 0.92, 0.80) * world_sun * fill * (0.6 + 0.4 * down);
+            // (the ground round a car in the shade is mostly in the shade too: less of it)
+            light += vec3(1.0, 0.92, 0.80) * world_sun * fill * (0.6 + 0.4 * down) * mix(0.35, 1.0, probe.x) * probe.y;
         }
         // The spotlight: a flat lobe, as in the original
         if ((flags & WORLD) != 0u && atm.spot.z > 0.0) light += atm.spot_color.rgb * spotlight().x;
@@ -705,7 +740,7 @@ void main() {
         if (length(vp.sun.xyz) > 0.01) {
             // a sharp glint on the glass, a broad sheen on the satin paint
             float glint = pow(max(dot(r, normalize(vp.sun.xyz)), 0.0), glass ? 900.0 : 60.0);
-            c.rgb += vec3(1.0, 0.97, 0.9) * glint * (glass ? 2.0 : 0.35) * clean * vp.sun.w;
+            c.rgb += vec3(1.0, 0.97, 0.9) * glint * (glass ? 2.0 : 0.35) * clean * vp.sun.w * probe.x;
         }
     }
     // The original clips the light at white; with HDR lighting the highlights

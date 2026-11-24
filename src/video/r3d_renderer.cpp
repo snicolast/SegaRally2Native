@@ -1,6 +1,7 @@
 #include "r3d_renderer.h"
 
 #include <algorithm>
+#include <chrono>
 #include <mutex>
 #include <cmath>
 #include <cstdio>
@@ -9,6 +10,8 @@
 #include "ao.frag.h"
 #include "ao_rt.frag.h"
 #include "ao_apply.frag.h"
+#include "car_probe.frag.h"
+#include "car_probe_rt.frag.h"
 #include "alpha_taa.frag.h"
 #include "bloom.frag.h"
 #include "compose.frag.h"
@@ -57,6 +60,8 @@ struct AtmosphereUniform {
     float mirror[4];
     float rt[4];
     float dust_mv[4];
+    float car_probe[4];
+    float car_box[48];
 };
 
 // The cars, stands and poles are a few units big, so the map covers little
@@ -231,6 +236,10 @@ bool R3DRenderer::init(VkPresenter& vk, float supersample, int msaa, int aniso, 
         return false;
     if (!create_image(blank_color_, 1, 1, VK_FORMAT_R8G8B8A8_UNORM, sampled, VK_IMAGE_ASPECT_COLOR_BIT)) return false;
     if (!create_image(blank_depth_, 1, 1, VK_FORMAT_D32_SFLOAT, sampled, VK_IMAGE_ASPECT_DEPTH_BIT)) return false;
+    if (!create_image(car_probe_, CAR_PROBE_CARS * CAR_PROBES, 1, VK_FORMAT_R16G16B16A16_SFLOAT,
+                      VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT,
+                      VK_IMAGE_ASPECT_COLOR_BIT))
+        return false;
     vk.run_once([&](VkCommandBuffer cmd) {
         transition(cmd, shadow_map_, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_IMAGE_ASPECT_DEPTH_BIT);
         // The stand-ins: no glow, nothing near (reverse Z: 0 is the far end)
@@ -253,6 +262,11 @@ bool R3DRenderer::init(VkPresenter& vk, float supersample, int msaa, int aniso, 
             vkCmdClearColorImage(cmd, img->image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, &zero, 1, &range);
             transition(cmd, *img, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
         }
+        VkClearColorValue open{};   // the cars' probes: all the sun, all the sky, until taken
+        open.float32[0] = open.float32[1] = open.float32[2] = open.float32[3] = 1.0f;
+        transition(cmd, car_probe_, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
+        vkCmdClearColorImage(cmd, car_probe_.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, &open, 1, &range);
+        transition(cmd, car_probe_, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
     });
 
     VkSamplerCreateInfo si{VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO};
@@ -357,7 +371,7 @@ bool R3DRenderer::init(VkPresenter& vk, float supersample, int msaa, int aniso, 
     VkDescriptorSetLayoutBinding fxb[4];
     for (uint32_t i = 0; i < 4; i++)
         fxb[i] = {i, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_FRAGMENT_BIT};
-    li.bindingCount = 2;   // shadow map, world depth
+    li.bindingCount = 3;   // shadow map, world depth, the cars' light probes
     li.pBindings = fxb;
     vkCreateDescriptorSetLayout(dev_, &li, nullptr, &r3d_aux_layout_);
     li.bindingCount = 4;   // bloom, exposure, diffusion, tight bloom
@@ -374,13 +388,13 @@ bool R3DRenderer::init(VkPresenter& vk, float supersample, int msaa, int aniso, 
     vkCreateDescriptorSetLayout(dev_, &li, nullptr, &alpha_set_layout_);
 
     VkDescriptorPoolSize ps[4] = {
-        {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 45 + texture_slots_ + Pack2D::MAX_SLOTS},
+        {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 50 + texture_slots_ + Pack2D::MAX_SLOTS},
         {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 2},
         {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1},
         {VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR, 1},
     };
     VkDescriptorPoolCreateInfo pi{VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO};
-    pi.maxSets = 17;
+    pi.maxSets = 18;
     if (uab) pi.flags = VK_DESCRIPTOR_POOL_CREATE_UPDATE_AFTER_BIND_BIT;
     pi.poolSizeCount = rt_.ready() ? 4 : 2;
     pi.pPoolSizes = ps;
@@ -400,7 +414,7 @@ bool R3DRenderer::init(VkPresenter& vk, float supersample, int msaa, int aniso, 
     ai.pSetLayouts = &alpha_set_layout_;
     vkAllocateDescriptorSets(dev_, &ai, &alpha_set_);
     ai.pSetLayouts = &r3d_aux_layout_;
-    for (VkDescriptorSet* s : {&r3d_aux_set_, &r3d_aux_opaque_set_, &r3d_aux_shadow_set_})
+    for (VkDescriptorSet* s : {&r3d_aux_set_, &r3d_aux_opaque_set_, &r3d_aux_shadow_set_, &r3d_aux_probe_set_})
         vkAllocateDescriptorSets(dev_, &ai, s);
     ai.pSetLayouts = &compose_fx_layout_;
     for (VkDescriptorSet* s : {&compose_fx_set_, &compose_fx_inner_set_, &compose_fx_measure_set_})
@@ -416,9 +430,10 @@ bool R3DRenderer::init(VkPresenter& vk, float supersample, int msaa, int aniso, 
             sw.pImageInfo = &info;
             vkUpdateDescriptorSets(dev_, 1, &sw, 0, nullptr);
         };
-        for (VkDescriptorSet s : {r3d_aux_set_, r3d_aux_opaque_set_, r3d_aux_shadow_set_}) {
+        for (VkDescriptorSet s : {r3d_aux_set_, r3d_aux_opaque_set_, r3d_aux_shadow_set_, r3d_aux_probe_set_}) {
             put(s, 0, nearest_, s == r3d_aux_shadow_set_ ? blank_depth_.view : shadow_map_.view);
             put(s, 1, nearest_, blank_depth_.view);
+            put(s, 2, nearest_, s == r3d_aux_probe_set_ ? blank_color_.view : car_probe_.view);
         }
         for (VkDescriptorSet s : {compose_fx_set_, compose_fx_inner_set_, compose_fx_measure_set_}) {
             put(s, 0, linear_, blank_color_.view);
@@ -675,6 +690,8 @@ bool R3DRenderer::create_pipelines() {
                                        : vk_->shader_module(spv_ao_frag, sizeof(spv_ao_frag));
     VkShaderModule aoa_fs = vk_->shader_module(spv_ao_apply_frag, sizeof(spv_ao_apply_frag));
     VkShaderModule alpha_fs = vk_->shader_module(spv_alpha_taa_frag, sizeof(spv_alpha_taa_frag));
+    VkShaderModule probe_fs = rt_.ready() ? vk_->shader_module(spv_car_probe_rt_frag, sizeof(spv_car_probe_rt_frag))
+                                          : vk_->shader_module(spv_car_probe_frag, sizeof(spv_car_probe_frag));
     bool motion = motion_pass_ = dlaa_.ready();
     // The world: 3D geometry into the HDR image, with the motion and glow slots
     PipelineDesc world{.vs = r3d_vs, .fs = r3d_fs, .layout = r3d_layout_, .color = VK_FORMAT_R16G16B16A16_SFLOAT,
@@ -721,8 +738,11 @@ bool R3DRenderer::create_pipelines() {
     ao_apply_glow_ = make_pipeline({.vs = c_vs, .fs = aoa_fs, .layout = ao_layout_, .color = VK_FORMAT_R8G8B8A8_UNORM,
                                     .samples = samples_, .multiply = true});
     alpha_taa_ = make_pipeline({.vs = c_vs, .fs = alpha_fs, .layout = alpha_layout_, .color = VK_FORMAT_R8_UNORM});
-    for (auto m : {r3d_vs, r3d_fs, c_vs, c_fs, b_fs, ao_fs, aoa_fs, alpha_fs}) vkDestroyShaderModule(dev_, m, nullptr);
-    return opaque_ && translucent_ && blob_ && trans_depth_ && shadow_ && compose_measure_ && compose_ && bloom_ && ao_pass_ && ao_apply_ && ao_apply_glow_ && alpha_taa_;
+    // The cars' light probes: blended over the stored ones by the alpha the shader gives
+    car_probe_pass_ = make_pipeline({.vs = c_vs, .fs = probe_fs, .layout = r3d_layout_,
+                                     .color = VK_FORMAT_R16G16B16A16_SFLOAT, .blend = true});
+    for (auto m : {r3d_vs, r3d_fs, c_vs, c_fs, b_fs, ao_fs, aoa_fs, alpha_fs, probe_fs}) vkDestroyShaderModule(dev_, m, nullptr);
+    return opaque_ && translucent_ && blob_ && trans_depth_ && shadow_ && compose_measure_ && compose_ && bloom_ && ao_pass_ && ao_apply_ && ao_apply_glow_ && alpha_taa_ && car_probe_pass_;
 }
 
 // w, h: the 3D image as drawn; up_w, up_h: as DLSS hands it on (the same but with DLSS upscaling)
@@ -1387,6 +1407,10 @@ void R3DRenderer::update_atmosphere(const ScreenLayout& lay, uint32_t target_w, 
         u.gi[2] = 2.0f * gi_tune().rays;   // the car's rays: four
         u.gi[3] = gi_tune().reach;
     }
+    // The cars' light probes: only where something tells sun from shade (the
+    // traced shadows, or the shadow map)
+    car_probe_cars_ = 0;
+    if (w && (shadow_frame_ || u.rt[0] > 0.0f)) car_boxes(u.car_box, u.car_probe, &u.axes[4]);
     memcpy(atmosphere_uniform_.mapped, &u, sizeof(u));
 }
 
@@ -1565,6 +1589,159 @@ void R3DRenderer::record_shadows(const Frame& f) {
 }
 
 // The game world and HUD into color_ (and glow_, motion_, depth_)
+// Light probes on the cars (not in the original): the cars drawn in viewports
+// of their own (CAR: the player's, the rivals near it) took none of the
+// world's sun shadows, and drove into the shade of the trees as bright as in
+// the open. Each car's box this image, from its solid polygons as they are
+// drawn (between the game frames too): along its length (the longer way
+// across the world's up), across it and up, for car_probe.frag to place its
+// probes on and r3d.frag to read them back. box: CAR_PROBE_CARS x 3 vec4
+// (atmosphere.glsl car_box), probe: car_probe; up: the world's up (view space).
+// SR2_CAR_PROBE="sun,sky": how much of each the cars take (1,0.8; 0 = off);
+// SR2_CAR_PROBE_TAU=S: how long the probes take to settle (0.1 s; 0 = at once)
+void R3DRenderer::car_boxes(float* box, float* probe, const float* up) {
+    static float take[2] = {1.0f, 0.8f};
+    static const bool read = [] {
+        if (const char* e = getenv("SR2_CAR_PROBE")) {
+            take[1] = 0.0f;
+            sscanf(e, "%f,%f", &take[0], &take[1]);
+        }
+        return true;
+    }();
+    (void)read;
+    static const float tau = getenv("SR2_CAR_PROBE_TAU") ? float(atof(getenv("SR2_CAR_PROBE_TAU"))) : 0.1f;
+    probe[0] = 0.0f;
+    if (!scene_ || (take[0] <= 0.0f && take[1] <= 0.0f)) return;
+    float ul = std::sqrt(up[0] * up[0] + up[1] * up[1] + up[2] * up[2]);
+    if (ul < 1e-6f) return;
+    const float U[3] = {up[0] / ul, up[1] / ul, up[2] / ul};
+    auto cross = [](const float* a, const float* b, float* o) {
+        o[0] = a[1] * b[2] - a[2] * b[1];
+        o[1] = a[2] * b[0] - a[0] * b[2];
+        o[2] = a[0] * b[1] - a[1] * b[0];
+    };
+    auto dot = [](const float* a, const float* b) { return a[0] * b[0] + a[1] * b[1] + a[2] * b[2]; };
+    auto normalise = [](float* v) {
+        float l = std::sqrt(v[0] * v[0] + v[1] * v[1] + v[2] * v[2]);
+        if (l > 1e-9f) v[0] /= l, v[1] /= l, v[2] /= l;
+    };
+    // Two directions across the world's up, to find each car's length in
+    float A[3], B[3];
+    const float other[3] = {std::fabs(U[0]) < 0.9f ? 1.0f : 0.0f, std::fabs(U[0]) < 0.9f ? 0.0f : 1.0f, 0.0f};
+    cross(U, other, A);
+    normalise(A);
+    cross(U, A, B);
+    // How far this image's probes move the stored ones: the same share each
+    // second whatever the frame rate
+    double now = std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count();
+    float dt = car_probe_time_ > 0 ? float(std::clamp(now - car_probe_time_, 0.0, 0.25)) : 0.0f;
+    car_probe_time_ = now;
+    float ease = tau > 0.0f ? 1.0f - std::exp(-dt / tau) : 1.0f;
+    for (int i = 0; i < CAR_PROBE_CARS * 12; i++) box[i] = 0.0f;
+    for (int c = 0; c < CAR_PROBE_CARS; c++) box[c * 12] = box[c * 12 + 1] = box[c * 12 + 2] = 1e6f;   // (nowhere)
+    int count = 0;
+    bool taken[CAR_PROBE_CARS] = {};
+    const std::vector<R3DVertex>& vs = scene_->vertices;
+    for (const R3DViewport& v : scene_->viewports) {
+        if (v.world || v.opaque_count < 3 || size_t(v.opaque_first) + v.opaque_count > vs.size()) continue;
+        if (!(vs[v.opaque_first].flags & R3D_CAR)) continue;
+        // Its place: the one it had (seen within the last two game frames), or a free one
+        int slot = -1;
+        for (int c = 0; c < CAR_PROBE_CARS && slot < 0; c++)
+            if (car_slots_[c].used && car_slots_[c].node == v.node && !taken[c] && scene_->frame - car_slots_[c].frame <= 2)
+                slot = c;
+        bool fresh = slot < 0;
+        for (int c = 0; c < CAR_PROBE_CARS && slot < 0; c++)
+            if (!taken[c] && (!car_slots_[c].used || scene_->frame - car_slots_[c].frame > 2)) slot = c;
+        if (slot < 0) continue;   // (more cars than places)
+        taken[slot] = true;
+        // Its corners as drawn this image, their middle and their spread across the world's up
+        auto at = [&](const R3DVertex& x, float* p) {
+            for (int k = 0; k < 3; k++) p[k] = x.prev[k] + (x.pos[k] - x.prev[k]) * interp_;
+        };
+        double mean[3] = {0, 0, 0};
+        for (uint32_t i = v.opaque_first; i < v.opaque_first + v.opaque_count; i++) {
+            float p[3];
+            at(vs[i], p);
+            for (int k = 0; k < 3; k++) mean[k] += p[k];
+        }
+        float m[3];
+        for (int k = 0; k < 3; k++) m[k] = float(mean[k] / double(v.opaque_count));
+        double saa = 0, sab = 0, sbb = 0;
+        for (uint32_t i = v.opaque_first; i < v.opaque_first + v.opaque_count; i++) {
+            float p[3];
+            at(vs[i], p);
+            float d[3] = {p[0] - m[0], p[1] - m[1], p[2] - m[2]};
+            double a = dot(d, A), b = dot(d, B);
+            saa += a * a, sab += a * b, sbb += b * b;
+        }
+        float angle = 0.5f * float(std::atan2(2.0 * sab, saa - sbb));
+        float F[3] = {A[0] * std::cos(angle) + B[0] * std::sin(angle), A[1] * std::cos(angle) + B[1] * std::sin(angle),
+                      A[2] * std::cos(angle) + B[2] * std::sin(angle)};
+        normalise(F);
+        CarSlot& cs = car_slots_[slot];
+        if (!fresh && dot(F, cs.forward) < 0.0f) F[0] = -F[0], F[1] = -F[1], F[2] = -F[2];
+        cs.node = v.node;
+        cs.frame = scene_->frame;
+        cs.used = true;
+        for (int k = 0; k < 3; k++) cs.forward[k] = F[k];
+        float S[3];
+        cross(F, U, S);
+        normalise(S);
+        float lo[3] = {1e30f, 1e30f, 1e30f}, hi[3] = {-1e30f, -1e30f, -1e30f};
+        for (uint32_t i = v.opaque_first; i < v.opaque_first + v.opaque_count; i++) {
+            float p[3];
+            at(vs[i], p);
+            float d[3] = {p[0] - m[0], p[1] - m[1], p[2] - m[2]};
+            float e[3] = {dot(d, F), dot(d, S), dot(d, U)};
+            for (int k = 0; k < 3; k++) lo[k] = std::min(lo[k], e[k]), hi[k] = std::max(hi[k], e[k]);
+        }
+        float mid[3] = {0.5f * (lo[0] + hi[0]), 0.5f * (lo[1] + hi[1]), 0.5f * (lo[2] + hi[2])};
+        float* b = box + slot * 12;
+        for (int k = 0; k < 3; k++) b[k] = m[k] + F[k] * mid[0] + S[k] * mid[1] + U[k] * mid[2];
+        b[3] = 0.5f * (hi[0] - lo[0]);
+        for (int k = 0; k < 3; k++) b[4 + k] = F[k];
+        b[7] = 0.5f * (hi[1] - lo[1]);
+        b[8] = 0.5f * (hi[2] - lo[2]);
+        b[9] = fresh ? 1.0f : ease;   // (a car just come: its probes as they are)
+        count = std::max(count, slot + 1);
+    }
+    car_probe_cars_ = count;
+    probe[0] = float(count);
+    probe[1] = std::max(take[0], 0.0f);
+    probe[2] = std::max(take[1], 0.0f);
+    float turn = float(car_probe_images_++) * 0.618034f;
+    probe[3] = turn - std::floor(turn);
+}
+
+// The cars' light probes, taken after the shadow map (car_probe.frag): one
+// texel for each slice of each car, blended over what was stored there
+void R3DRenderer::record_car_probes(const Frame& f) {
+    if (!car_probe_cars_ || !car_probe_pass_) return;
+    VkCommandBuffer cmd = f.cmd;
+    transition(cmd, car_probe_, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
+    VkRenderingAttachmentInfo at{VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO};
+    at.imageView = car_probe_.view;
+    at.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+    at.loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
+    at.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+    VkRenderingInfo ri{VK_STRUCTURE_TYPE_RENDERING_INFO};
+    ri.renderArea = {{0, 0}, {car_probe_.w, car_probe_.h}};
+    ri.layerCount = 1;
+    ri.colorAttachmentCount = 1;
+    ri.pColorAttachments = &at;
+    vkCmdBeginRendering(cmd, &ri);
+    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, car_probe_pass_);
+    bind_r3d_sets(cmd, r3d_aux_probe_set_);
+    VkViewport pv{0, 0, float(car_probe_.w), float(car_probe_.h), 0, 1};
+    vkCmdSetViewport(cmd, 0, 1, &pv);
+    VkRect2D pr{{0, 0}, {car_probe_.w, car_probe_.h}};
+    vkCmdSetScissor(cmd, 0, 1, &pr);
+    vkCmdDraw(cmd, 3, 1, 0, 0);
+    vkCmdEndRendering(cmd);
+    transition(cmd, car_probe_, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+}
+
 void R3DRenderer::record_world(const Frame& f) {
     VkCommandBuffer cmd = f.cmd;
     const ScreenLayout& lay = f.lay;
@@ -2299,6 +2476,7 @@ void R3DRenderer::record(VkCommandBuffer cmd, VkImageView target, VkExtent2D ext
     record_ray_tracing(f);
     if (gpu_times_) gpu_time_mark(cmd, GPU_RT);
     record_shadows(f);
+    record_car_probes(f);
     if (gpu_times_) gpu_time_mark(cmd, GPU_SHADOWS);
     record_world(f);
     if (gpu_times_ && !gpu_ao_marked_) {   // no occlusion pass this frame: it took no time
@@ -2423,13 +2601,13 @@ void R3DRenderer::gpu_time_mark(VkCommandBuffer cmd, uint32_t index) {
 void R3DRenderer::shutdown() {
     if (!dev_) return;
     vkDeviceWaitIdle(dev_);
-    for (auto p : {opaque_, translucent_, blob_, trans_depth_, shadow_, compose_measure_, compose_, bloom_, compose_glow_, ao_pass_, ao_apply_, ao_apply_glow_, alpha_taa_})
+    for (auto p : {opaque_, translucent_, blob_, trans_depth_, shadow_, compose_measure_, compose_, bloom_, compose_glow_, ao_pass_, ao_apply_, ao_apply_glow_, alpha_taa_, car_probe_pass_})
         if (p) vkDestroyPipeline(dev_, p, nullptr);
     dlaa_.shutdown();
     rt_.shutdown();
     if (gpu_times_) vkDestroyQueryPool(dev_, gpu_times_, nullptr);
     for (Image* img : {&texture_ram_, &back_, &front_, &text_cells_, &sky_coords_, &color_, &color_ms_, &depth_, &motion_, &dlaa_out_, &alpha_out_, &alpha_history_,
-                        &glow_, &glow_ms_, &bloom_a_, &bloom_b_, &bloom_c_, &depth_resolved_, &ao_, &shadow_map_, &exposure_, &diff_a_, &diff_b_, &blank_color_, &blank_depth_})
+                        &glow_, &glow_ms_, &bloom_a_, &bloom_b_, &bloom_c_, &depth_resolved_, &ao_, &shadow_map_, &exposure_, &diff_a_, &diff_b_, &blank_color_, &blank_depth_, &car_probe_})
         destroy_image(*img);
     for (Image& img : replacements_) destroy_image(img);
     for (auto& [slot, img] : overlay_images_) destroy_image(img);
