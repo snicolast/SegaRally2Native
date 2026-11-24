@@ -109,6 +109,8 @@ const std::vector<Entry>& table() {
         real("--gamma", &Options::gamma, "gamma (1 = original; higher is brighter)"),
         off("--no-sun", &Options::sun, "the game's own sunlight, not the stronger, warmer one"),
         off("--no-shadows", &Options::shadows, "no sun shadows"),
+        off("--no-car-probes", &Options::car_probes, "the cars do not darken in the shade (no light probes on them)"),
+        off("--no-car-shadows", &Options::car_shadows, "the sun shadows do not fall on the cars themselves"),
         custom("--rt", "off|shadows|ao", "ray tracing: sun shadows, and ambient occlusion (ao, the default)", false,
                [](Options& o, const char* v) {
                    o.ray_tracing = strcmp(v, "off") == 0 ? 0 : strcmp(v, "shadows") == 0 ? 1 : 2;

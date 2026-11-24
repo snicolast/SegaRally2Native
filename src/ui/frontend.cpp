@@ -138,7 +138,7 @@ const Frontend::OptionTab Frontend::OPTION_TABS[] = {
     {OPT_DISPLAY, DISPLAY_TAB, L"SCREEN"}, {OPT_RESOLUTION, DISPLAY_TAB}, {OPT_ASPECT, DISPLAY_TAB}, {OPT_HUD_AREA, DISPLAY_TAB}, {OPT_SCALE, DISPLAY_TAB}, {OPT_MOTION, DISPLAY_TAB},
     {OPT_VSYNC, DISPLAY_TAB}, {OPT_MAXFPS, DISPLAY_TAB}, {OPT_BGFPS, DISPLAY_TAB}, {OPT_AA, DISPLAY_TAB},
     {OPT_SAT, DISPLAY_TAB, L"PICTURE"}, {OPT_GAMMA, DISPLAY_TAB}, {OPT_SHARPEN, DISPLAY_TAB},
-    {OPT_SUN, LIGHTING_TAB, L"LIGHTING"}, {OPT_SHADOWS, LIGHTING_TAB}, {OPT_HDR, LIGHTING_TAB}, {OPT_AO, LIGHTING_TAB},
+    {OPT_SUN, LIGHTING_TAB, L"LIGHTING"}, {OPT_SHADOWS, LIGHTING_TAB}, {OPT_CAR_PROBES, LIGHTING_TAB}, {OPT_CAR_SHADOWS, LIGHTING_TAB}, {OPT_HDR, LIGHTING_TAB}, {OPT_AO, LIGHTING_TAB},
     {OPT_BLOOM, LIGHTING_TAB}, {OPT_HAZE, LIGHTING_TAB},
     {OPT_RT, LIGHTING_TAB, L"RAY TRACING"}, {OPT_REFLECT, LIGHTING_TAB}, {OPT_GI, LIGHTING_TAB},
     {OPT_OBJECTS, LIGHTING_TAB, L"WORLD"},
@@ -353,6 +353,10 @@ std::vector<Frontend::Item> Frontend::items() const {
                 {OPT_SUN, L"SUN", on_off(settings.sun), L"Stronger, warmer sunlight"},
                 {OPT_SHADOWS, L"SUN SHADOWS", on_off(settings.shadows),
                  L"Cars, trees and scenery cast shadows away from the sun"},
+                {OPT_CAR_PROBES, L"CAR LIGHT PROBES", on_off(settings.car_probes),
+                 L"The cars darken in the shade of trees and stands, and under roofs (with SUN SHADOWS on)"},
+                {OPT_CAR_SHADOWS, L"CAR SHADOWS", on_off(settings.car_shadows),
+                 L"The shadows of trees and scenery fall on the cars themselves (with SUN SHADOWS on)"},
                 {OPT_RT, L"RAY TRACING", !rt_available ? L"N/A" : RT_MODES[settings.ray_tracing],
                  !rt_available ? L"Needs a graphics card with ray tracing (NVIDIA RTX 30, AMD RX 7000 or newer)"
                                : RT_HINTS[settings.ray_tracing],
@@ -642,6 +646,8 @@ void Frontend::activate(const Item& it, int dir) {
         break;
     case OPT_SUN: settings.sun = !settings.sun; push(Action::SettingsChanged); break;
     case OPT_SHADOWS: settings.shadows = !settings.shadows; push(Action::SettingsChanged); break;
+    case OPT_CAR_PROBES: settings.car_probes = !settings.car_probes; push(Action::SettingsChanged); break;
+    case OPT_CAR_SHADOWS: settings.car_shadows = !settings.car_shadows; push(Action::SettingsChanged); break;
     case OPT_RT:
         settings.ray_tracing = (settings.ray_tracing + dir + 3) % 3;
         if (settings.ray_tracing == 2) settings.ao = true;
@@ -1243,6 +1249,8 @@ bool Frontend::first_value(Id id) {
     case OPT_AO: s.ao = true; break;
     case OPT_SUN: s.sun = true; break;
     case OPT_SHADOWS: s.shadows = true; break;
+    case OPT_CAR_PROBES: s.car_probes = true; break;
+    case OPT_CAR_SHADOWS: s.car_shadows = true; break;
     case OPT_RT: s.ray_tracing = 0; break;
     case OPT_HDR: s.hdr = true; break;
     case OPT_REFLECT: s.reflections = true; break;

@@ -28,6 +28,8 @@ struct FrontendSettings {
     bool ao = true;    // ambient occlusion
     bool sun = true;   // a stronger, warmer sunlight in clear outdoor scenes
     bool shadows = true;   // sun shadows
+    bool car_probes = true;    // the cars darken in the shade: light probes on them (with the sun shadows)
+    bool car_shadows = true;   // ... and the world's sun shadows fall on them pixel by pixel
     int ray_tracing = 2;   // traced through the world (GPUs with ray tracing): 0 off, 1 sun shadows, 2 also ambient occlusion
     bool soft = true;      // soft particles
     bool hdr = true;       // HDR lighting

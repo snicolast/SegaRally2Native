@@ -66,6 +66,8 @@ void FrontendSettings::load(const char* path, const char* section) {
         else if (k == "ao") ao = on;
         else if (k == "sun") sun = on;
         else if (k == "shadows") shadows = on;
+        else if (k == "car_light_probes") car_probes = on;
+        else if (k == "car_shadows") car_shadows = on;
         else if (k == "ray_tracing") ray_tracing = v == "shadows" ? 1 : v == "off" || v == "0" ? 0 : 2;
         else if (k == "soft_particles") soft = on;
         else if (k == "hdr") hdr = on;
@@ -126,6 +128,8 @@ std::string FrontendSettings::text(bool section) const {
                  telemetry, FORMATS[std::clamp(telemetry_format, 0, 1)], telemetry_port);
         out += buf;
     }
+    snprintf(buf, sizeof(buf), "car_light_probes = %d\ncar_shadows = %d\n", car_probes, car_shadows);
+    out += buf;
     snprintf(buf, sizeof(buf), "rt_reflections = %d\nglobal_illumination = %s\ndust = %s\ndifficulty = %s\nhd_liveries = %d\ntrigger_rumble = %d\nobject_distance = %d\n", reflections, gi ? "low" : "off", dust ? "enhanced" : "original", DIFFICULTY_KEYS[std::clamp(difficulty, 0, 4)], hd_liveries, trigger_rumble, object_distance);
     out += buf;
     static const char* const ASPECTS[5] = {"auto", "32:9", "21:9", "16:9", "4:3"};
@@ -161,6 +165,7 @@ void FrontendSettings::arcade_base() {
     dust = false;
     object_distance = 100;                // the spectators appear 100 m ahead, as on the cabinet
     sun = shadows = hdr = ao = haze = soft = sharpen = false;
+    car_probes = car_shadows = false;     // the cars lit as the game lights them, shade or not
     bloom = 0;
     saturation = gamma = 100;
     cubic_samples = false;                // SAMPLE QUALITY ORIGINAL: the sound chip's own interpolation

@@ -120,6 +120,9 @@ public:
     // SUN: a stronger, warmer sunlight in clear outdoor scenes (not in the original)
     void set_sun(bool on) { sun_ = on; }
     void set_reflections(bool on) { reflections_ = on; }   // the cars mirror the world (with ray tracing)
+    // CAR LIGHT PROBES, CAR SHADOWS: the cars in viewports of their own darken in the shade
+    // (probes over them), and take the world's sun shadows pixel by pixel
+    void set_car_light(bool probes, bool shadows) { car_probes_on_ = probes, car_shadows_on_ = shadows; }
     void set_global_illumination(int level) { gi_ = level ? 1 : 0; }   // the sun's light bounced once off the world (with ray tracing): 0 off, 1 on
     // The slowest image on the GPU since the last call, pass by pass (out/slow.log)
     std::string worst_gpu_frame();
@@ -275,6 +278,7 @@ private:
         bool used = false;
     };
     CarSlot car_slots_[CAR_PROBE_CARS];
+    bool car_probes_on_ = true, car_shadows_on_ = true;
     int car_probe_cars_ = 0;       // cars with probes this image (0: no probe pass)
     double car_probe_time_ = 0;    // when the previous image's probes were taken (seconds)
     uint32_t car_probe_images_ = 0;

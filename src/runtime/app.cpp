@@ -319,6 +319,7 @@ static void apply_picture_options(R3DRenderer& renderer, const Options& o) {
     renderer.set_ambient_occlusion(o.ao);
     renderer.set_sun(o.sun);
     renderer.set_shadows(o.shadows ? 1.0f : 0.0f);
+    renderer.set_car_light(o.car_probes, o.car_shadows);
     renderer.set_ray_tracing(o.ray_tracing);
     renderer.set_soft_particles(o.soft);
     renderer.set_hdr(o.hdr);
@@ -1299,6 +1300,8 @@ int main(int argc, char** argv) {
                     g_opt.ao = s.ao ? ao_strength : 0;
                     g_opt.sun = s.sun;
                     g_opt.shadows = s.shadows;
+                    g_opt.car_probes = s.car_probes;
+                    g_opt.car_shadows = s.car_shadows;
                     g_opt.ray_tracing = s.ray_tracing;
                     g_opt.soft = s.soft;
                     g_opt.hdr = s.hdr;
