@@ -33,7 +33,16 @@ layout(set = ATMOSPHERE_SET, binding = ATMOSPHERE_BINDING) uniform Atmosphere {
                      // z rays per point, w noise seed (changes every image with DLAA)
     vec4 dust_mv;    // DLAA/DLSS: x 1 = the dust writes its own motion vectors where it is dense (r3d.frag),
                      // fully from opacity z, none below y
+    // Light probes on the cars drawn in viewports of their own (CAR; car_probe.frag, r3d.frag):
+    // x how many cars have them (0 = off), y how much of the probes' sun the cars take,
+    // z how much of their sky, w the probes' rays turned this image (0..1)
+    vec4 car_probe;
+    // Each car's box (CAR_PROBE_CARS of them), three each: [0] its middle (view space), w half its
+    // length; [1] its length's direction (unit), w half its width; [2] x half its height, y how
+    // far this image's probes move the stored ones (1 = taken as they are: a car just come)
+    vec4 car_box[12];
 } atm;
+const int CAR_PROBE_CARS = 4, CAR_PROBES = 3;   // (R3DRenderer::CAR_PROBE_CARS, CAR_PROBES)
 
 // Spotlight lobe across the view (spec 7.1) for a view direction given as
 // slopes (x / -z, y / -z): the original's ellipse 1 - r^2
