@@ -22,6 +22,8 @@ void options_from_settings(Options& o, const FrontendSettings& ini) {
     o.ao = ini.ao ? 1.0f : 0.0f;
     o.sun = ini.sun;
     o.shadows = ini.shadows;
+    o.car_probes = ini.car_probes;
+    o.car_shadows = ini.car_shadows;
     o.ray_tracing = ini.ray_tracing;
     o.soft = ini.soft;
     o.hdr = ini.hdr;
@@ -69,6 +71,8 @@ void settings_from_options(FrontendSettings& s, const Options& o) {
     s.ao = o.ao > 0;
     s.sun = o.sun;
     s.shadows = o.shadows;
+    s.car_probes = o.car_probes;
+    s.car_shadows = o.car_shadows;
     s.ray_tracing = o.ray_tracing;
     s.soft = o.soft;
     s.hdr = o.hdr;

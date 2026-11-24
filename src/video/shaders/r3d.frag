@@ -52,7 +52,8 @@ layout(location = 2) out vec4 out_glow;     // bloom: the bright part of luminou
 // Sun shadows (not in the original): how much of the sun reaches this point
 // of the game world, 0..1, from the shadow map drawn from the sun this frame
 bool sun_shadowed() {
-    return atm.shadow.x > 0.0 && vp.sun.w > 0.0 && (flags & (WORLD | NO_SHADOW)) == WORLD;
+    return atm.shadow.x > 0.0 && vp.sun.w > 0.0 &&
+           ((flags & (WORLD | NO_SHADOW)) == WORLD || ((flags & CAR) != 0u && atm.car_shadow.x > 0.0));
 }
 #ifdef RAY_TRACING
 // Whether they are traced here (traced_shadow) instead
@@ -143,7 +144,9 @@ SunRays sun_rays(vec3 n) {
     SunRays r;
     float nl = length(n);
     vec3 N = nl > 0.0 ? n / nl : vec3(0.0);
-    r.L = normalize(vp.sun.xyz);
+    // (the cars in viewports of their own: towards the world's sun, whose
+    // shadows they take, rather than the one the game lights them with)
+    r.L = normalize((flags & CAR) != 0u ? atm.sun.xyz : vp.sun.xyz);
     // Off the surface by a little more as it gets farther (depth precision),
     // and more on surfaces the sun grazes (boards and walls side-on to it), whose
     // rays otherwise met the surface itself: dark specks
@@ -172,6 +175,9 @@ SunRays sun_rays(vec3 n) {
 // solid, in between through foliage
 float sun_ray(SunRays r, float a, float radius) {
     vec3 dir = normalize(r.L + (r.X * cos(a) + r.Y * sin(a)) * radius);
+    // (a car in a viewport of its own: the scenery only, not its own bodywork
+    // nor the other cars)
+    if ((flags & CAR) != 0u) return rt_light(r.origin, dir, SUN_RANGE, RT_LOW);
     if (!r.apart) return rt_light(r.origin, dir, SUN_RANGE, RT_LOW | RT_ACTOR);
     float light = rt_light(r.origin, dir, SUN_RANGE, RT_LOW);
     return light > 0.0 ? light * rt_light(r.near, dir, min(SUN_RANGE, 60.0), RT_ACTOR) : 0.0;
@@ -581,17 +587,23 @@ void main() {
 #endif
     // The car's light probes: the sun and the sky where it is (1, 1 for the rest)
     vec2 probe = car_light();
+    // The car's sun pixel by pixel (car_shadow), where it is lit at all: the
+    // probes' smooth sun stays for its glint and fill
+    bool car_pixel = (flags & CAR) != 0u && sun_shadowed();
+    float car_sun = probe.x;
     if ((flags & LUMINOUS) == 0u) {
         if (sunlit) {
 #ifdef RAY_TRACING
-            s *= sun_count.x >= 0.0 ? traced_shadow(sun_part, sun_block) : sun_shadow(n);
+            float shade = sun_count.x >= 0.0 ? traced_shadow(sun_part, sun_block) : sun_shadow(n);
 #else
-            s *= sun_shadow(n);
+            float shade = sun_shadow(n);
 #endif
+            s *= shade;
+            if (car_pixel) car_sun = shade;
         }
         // (the car in the shade: its sun, and the highlights with it, go;
         // under a roof or beside a wall, some of its sky too)
-        s *= probe.x;
+        if (!car_pixel) s *= probe.x;
         ambient *= probe.y;
         vec3 light = vec3(s * vp.sun.w + ambient);
         // Clear outdoor scenes (SUN): a stronger, warmer sun and a softer,
@@ -740,7 +752,7 @@ void main() {
         if (length(vp.sun.xyz) > 0.01) {
             // a sharp glint on the glass, a broad sheen on the satin paint
             float glint = pow(max(dot(r, normalize(vp.sun.xyz)), 0.0), glass ? 900.0 : 60.0);
-            c.rgb += vec3(1.0, 0.97, 0.9) * glint * (glass ? 2.0 : 0.35) * clean * vp.sun.w * probe.x;
+            c.rgb += vec3(1.0, 0.97, 0.9) * glint * (glass ? 2.0 : 0.35) * clean * vp.sun.w * car_sun;
         }
     }
     // The original clips the light at white; with HDR lighting the highlights

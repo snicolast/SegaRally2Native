@@ -62,6 +62,7 @@ struct AtmosphereUniform {
     float dust_mv[4];
     float car_probe[4];
     float car_box[48];
+    float car_shadow[4];
 };
 
 // The cars, stands and poles are a few units big, so the map covers little
@@ -1410,7 +1411,10 @@ void R3DRenderer::update_atmosphere(const ScreenLayout& lay, uint32_t target_w, 
     // The cars' light probes: only where something tells sun from shade (the
     // traced shadows, or the shadow map)
     car_probe_cars_ = 0;
-    if (w && (shadow_frame_ || u.rt[0] > 0.0f)) car_boxes(u.car_box, u.car_probe, &u.axes[4]);
+    if (w && car_probes_on_ && (shadow_frame_ || u.rt[0] > 0.0f)) car_boxes(u.car_box, u.car_probe, &u.axes[4]);
+    // ... and their sun shadows pixel by pixel on top (SR2_CAR_SHADOW=0: the probes' alone)
+    static const bool car_shadow = !(getenv("SR2_CAR_SHADOW") && atoi(getenv("SR2_CAR_SHADOW")) == 0);
+    u.car_shadow[0] = w && car_shadow && car_shadows_on_ && (shadow_frame_ || u.rt[0] > 0.0f) ? 1.0f : 0.0f;
     memcpy(atmosphere_uniform_.mapped, &u, sizeof(u));
 }
 

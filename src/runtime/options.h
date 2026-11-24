@@ -68,6 +68,8 @@ struct Options {
     bool sharpen = true;             // --no-sharpen: no sharpening of the 3D image
     bool soft = true;                // --no-soft: hard edges where translucent effects meet geometry
     bool shadows = true;             // --no-shadows: no sun shadows
+    bool car_probes = true;          // --no-car-probes: the cars do not darken in the shade (CAR LIGHT PROBES off)
+    bool car_shadows = true;         // --no-car-shadows: the world's sun shadows do not fall on the cars (CAR SHADOWS off)
     int ray_tracing = 2;             // --rt off|shadows|ao (--no-rt): traced sun shadows (1) and ambient occlusion (2)
     bool sun = true;                 // --no-sun: the game's own sunlight (SUN off)
     // Sound

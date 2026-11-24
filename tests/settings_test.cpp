@@ -43,6 +43,7 @@ static FrontendSettings changed() {
     s.volume = 7, s.music = 3, s.speakers = 2, s.rear_boost = 9, s.cubic_samples = false;
     s.aa = 4, s.dlss_model = 2;
     s.haze = false, s.bloom = 3, s.ao = false, s.sun = false, s.shadows = false, s.ray_tracing = 1;
+    s.car_probes = false, s.car_shadows = false;
     s.soft = false, s.hdr = false, s.reflections = false, s.gi = 0, s.dust = false, s.object_distance = 150;
     s.sharpen = false, s.hd_hud = false, s.hd_liveries = false;
     s.difficulty = 3, s.game_mode = 1, s.default_view = 1, s.speed_kmh = 0;
