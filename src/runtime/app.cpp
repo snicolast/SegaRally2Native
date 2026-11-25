@@ -32,6 +32,7 @@
 #include "disk_writer.h"
 #include "game_hooks.h"
 #include "game_ram.h"
+#include "bindings.h"
 #include "gamepad.h"
 #include "inputs.h"
 #include "options.h"
@@ -672,6 +673,7 @@ int main(int argc, char** argv) {
     Frontend frontend;
     // The menus are being driven with a gamepad: no mouse pointer until the mouse moves
     bool pad_in_menu = false;
+    bool bind_pad_shown = false;   // OPTIONS > CONTROLS shows the gamepads' buttons (else the keyboard's keys)
     UiOverlay ui;
     std::vector<uint32_t> ui_pixels;
     float haze_strength = g_opt.haze > 0 ? g_opt.haze : 1;
@@ -745,6 +747,8 @@ int main(int argc, char** argv) {
             }
             switch (msg) {
             case WM_KEYDOWN:
+                // CONTROLS waiting for a key: not the one that chose the row, still held and repeating
+                if (frontend.bind_keys && (lp & 0x40000000)) return true;
                 pad_in_menu = false;   // the keyboard again: its keys in the key help
                 return frontend.key(int(wp));
             case WM_MOUSEMOVE: {
@@ -1270,7 +1274,10 @@ int main(int argc, char** argv) {
                     break;
                 case Frontend::Action::Quit: presenter.close(); break;
                 case Frontend::Action::WheelRow: wheel_row_input(frontend.wheel_row, frontend.wheel_dir); break;
-                case Frontend::Action::WheelCancel: wheel_listen_cancel(); break;
+                case Frontend::Action::WheelCancel: wheel_listen_cancel(); bind_listen_cancel(); break;
+                case Frontend::Action::BindRow: bind_row_input(frontend.bind_row, bind_pad_shown); break;
+                case Frontend::Action::BindKey: bind_take_key(frontend.bind_vk); break;
+                case Frontend::Action::BindClear: bind_row_clear(frontend.bind_row, bind_pad_shown); break;
                 case Frontend::Action::WheelChoose: wheel_prompt_choose(frontend.wheel_choice); break;
                 case Frontend::Action::WheelClear: wheel_row_clear(frontend.wheel_row); break;
                 case Frontend::Action::Restart:   // RESTART NOW: saved, closed as on QUIT, started again (end of main)
@@ -1511,6 +1518,7 @@ int main(int argc, char** argv) {
         }
         {   // OPTIONS > WHEEL: its rows as wheel.cpp has them now (a control listening, a new setting)
             if (wheel_listening() && !frontend.active()) wheel_listen_cancel();
+            if (bind_listening() && !frontend.active()) bind_listen_cancel();
             std::vector<Frontend::WheelLine> lines;
             auto wide = [](const std::string& t) {   // (Latin-1: the degree sign)
                 std::wstring w;
@@ -1532,7 +1540,8 @@ int main(int argc, char** argv) {
             }
             // The window over the WHEEL tab (a control listening, WHEEL SETUP): redrawn
             // every frame while it is up, for its moving pictures
-            WheelPrompt wp = wheel_prompt();
+            WheelPrompt bp = bind_prompt();   // (CONTROLS waiting for a key or a button: the same window)
+            WheelPrompt wp = bp.on ? bp : wheel_prompt();
             Frontend::WheelPromptView& view = frontend.wheel_prompt;
             if (wp.on || view.on) {
                 Frontend::WheelPromptView v;
@@ -1544,6 +1553,7 @@ int main(int argc, char** argv) {
                 v.progress = wp.progress, v.time_left = wp.time_left, v.done_age = wp.done_age;
                 for (const std::string& l : wp.lines) v.lines.push_back(wide(l));
                 for (const std::string& c : wp.choices) v.choices.push_back(wide(c));
+                v.cancel_button = wide(wp.cancel_button);
                 if (v.title != view.title || v.action != view.action || v.choices != view.choices)
                     frontend.wheel_choice = 0;   // a new step: its first choice
                 view = v;
@@ -1560,7 +1570,35 @@ int main(int argc, char** argv) {
                 if (frontend.showing_wheel()) frontend.invalidate();
             }
         }
+        if (frontend.active()) {   // OPTIONS > CONTROLS: the car's keys, or the gamepads' buttons when a pad
+            // drives the menu (the device listening while it does), with what is held now
+            bool pad = bind_prompt().on ? bind_pad_shown : bind_shows_pad(frontend.pad_prompts);
+            bind_pad_shown = pad;
+            std::vector<Frontend::WheelLine> lines;
+            for (const WheelRow& r : bind_rows(pad)) {
+                std::wstring g(r.group.begin(), r.group.end()), l(r.label.begin(), r.label.end());
+                std::wstring v, h;
+                for (char c : r.value) v += wchar_t((unsigned char)c);   // (Latin-1: a Spanish keyboard's Ñ)
+                for (char c : r.hint) h += wchar_t((unsigned char)c);
+                lines.push_back({g, l, v, h, r.fill, r.meter, r.live});
+            }
+            bool keys = bind_listening() && !bind_listening_pad();
+            bool live_moved = lines.size() != frontend.bind_lines.size();
+            for (size_t i = 0; !live_moved && i < lines.size(); i++) live_moved = lines[i].live != frontend.bind_lines[i].live;
+            if (lines != frontend.bind_lines || keys != frontend.bind_keys) {
+                frontend.set_bind_lines(lines);
+                frontend.bind_keys = keys;
+                frontend.invalidate();
+            } else if (live_moved) {
+                frontend.bind_lines = lines;
+                if (frontend.showing_controls()) frontend.invalidate();
+            }
+        }
         for (PadKey k : g_pads.take_keys()) {   // the menus, as keys (START resumes from the pause menu)
+            if (frontend.bind_keys) {   // CONTROLS waits for a key of the keyboard's: a pad's B / START only cancel
+                if (k == PadKey::Back || k == PadKey::Start) bind_listen_cancel();
+                continue;
+            }
             static const int VK[] = {VK_UP, VK_DOWN, VK_LEFT, VK_RIGHT, VK_RETURN, VK_ESCAPE, 'Q', 'E', 'G'};
             bool resume = frontend.screen() == Frontend::Screen::Pause;
             if (frontend.active()) {

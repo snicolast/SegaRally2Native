@@ -241,6 +241,7 @@ add_executable(SegaRally2 WIN32
     src/runtime/drive_board.cpp
     third_party/z80/z80.c
     src/runtime/inputs.cpp
+    src/runtime/bindings.cpp
     src/runtime/gamepad.cpp
     src/runtime/wheel.cpp
     src/runtime/scsi53c810.cpp

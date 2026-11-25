@@ -1,5 +1,6 @@
 #include "gamepad.h"
 
+#include "bindings.h"
 #include "wheel.h"
 
 #include <algorithm>
@@ -105,6 +106,8 @@ void Gamepads::poll(int rumble, bool focused, bool menu) {
         }
     }
     wheels_poll(focused, menu, keys_);
+    uint64_t held_mask = 0;   // what is held on any pad, for OPTIONS > CONTROLS' rows
+    const bool listening = focused && menu && bind_listening_pad();
     for (int i = 0; i < MAX; i++) {
         Slot& s = slot_[i];
         PadState& st = state_[i];
@@ -126,13 +129,48 @@ void Gamepads::poll(int rumble, bool focused, bool menu) {
         bool rt = SDL_GetGamepadAxis(p, SDL_GAMEPAD_AXIS_RIGHT_TRIGGER) > int(TRIGGER_DOWN * 32767);
         auto down = [&](SDL_GamepadButton b) { return now_down[b]; };
         auto pressed = [&](SDL_GamepadButton b) { return now_down[b] && !s.buttons[b]; };
+        for (int b = 0; b < 32; b++)
+            if (now_down[b]) held_mask |= pad_bit(b);
+        if (lt) held_mask |= pad_bit(PAD_LT);
+        if (rt) held_mask |= pad_bit(PAD_RT);
+        // The car's actions as OPTIONS > CONTROLS sets them (bindings.h): held
+        // (a trigger past a third), and the pedals' travel (a trigger's own, a button all of it)
+        auto input_down = [&](int in) { return in == PAD_LT ? lt : in == PAD_RT ? rt : in >= 0 && in < 32 && now_down[in]; };
+        auto act_down = [&](int a) {
+            const int* in = bind_pad(a);
+            for (int k = 0; k < BIND_SLOTS; k++)
+                if (input_down(in[k])) return true;
+            return false;
+        };
+        auto act_pedal = [&](int a) {
+            const int* in = bind_pad(a);
+            float v = 0;
+            for (int k = 0; k < BIND_SLOTS; k++) {
+                if (in[k] == PAD_LT || in[k] == PAD_RT) {
+                    float t = std::clamp(axis(p, in[k] == PAD_LT ? SDL_GAMEPAD_AXIS_LEFT_TRIGGER : SDL_GAMEPAD_AXIS_RIGHT_TRIGGER), 0.0f, 1.0f);
+                    v = std::max(v, t < 0.04f ? 0.0f : t);
+                } else if (input_down(in[k])) {
+                    v = 1;
+                }
+            }
+            return v;
+        };
 
         if (!focused || menu) {
             st.view = st.handbrake = false;
             st.steer = st.gas = st.brake = 0;
             st.select_dir = 0;
         }
-        if (focused && menu) {
+        if (listening) {   // OPTIONS > CONTROLS waits for a button: the next one pressed (START / BACK: cancel)
+            s.dir = -1;
+            if (pressed(SDL_GAMEPAD_BUTTON_START) || pressed(SDL_GAMEPAD_BUTTON_BACK)) bind_listen_cancel();
+            else {
+                for (int b = 0; b < SDL_GAMEPAD_BUTTON_COUNT && b < 32; b++)
+                    if (pressed(SDL_GamepadButton(b))) bind_take_pad(b);
+                if (lt && !s.left_trigger) bind_take_pad(PAD_LT);
+                if (rt && !s.right_trigger) bind_take_pad(PAD_RT);
+            }
+        } else if (focused && menu) {
             SDL_GamepadButton accept = s.nintendo ? SDL_GAMEPAD_BUTTON_EAST : SDL_GAMEPAD_BUTTON_SOUTH;
             SDL_GamepadButton back = s.nintendo ? SDL_GAMEPAD_BUTTON_SOUTH : SDL_GAMEPAD_BUTTON_EAST;
             if (pressed(accept)) keys_.push_back(PadKey::Accept);
@@ -187,20 +225,18 @@ void Gamepads::poll(int rumble, bool focused, bool menu) {
             else if (m < 0.33f) s.stick_dir = 0;
             int dpad = int(down(SDL_GAMEPAD_BUTTON_DPAD_RIGHT)) - int(down(SDL_GAMEPAD_BUTTON_DPAD_LEFT));
             st.select_dir = dpad != 0 ? dpad : s.stick_dir;
-            auto pedal = [&](SDL_GamepadAxis a, SDL_GamepadButton b) {
-                float v = std::clamp(axis(p, a), 0.0f, 1.0f);
-                return down(b) ? 1.0f : v < 0.04f ? 0.0f : v;
-            };
-            st.gas = pedal(SDL_GAMEPAD_AXIS_RIGHT_TRIGGER, SDL_GAMEPAD_BUTTON_SOUTH);
-            st.brake = pedal(SDL_GAMEPAD_AXIS_LEFT_TRIGGER, SDL_GAMEPAD_BUTTON_EAST);
-            st.shift_up = pressed(SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER);
-            st.shift_down = pressed(SDL_GAMEPAD_BUTTON_LEFT_SHOULDER);
-            st.view = down(SDL_GAMEPAD_BUTTON_NORTH);
-            st.handbrake = down(SDL_GAMEPAD_BUTTON_WEST);
+            st.gas = act_pedal(ACT_GAS);
+            st.brake = act_pedal(ACT_BRAKE);
+            st.shift_up = act_down(ACT_SHIFT_UP) && !s.act_was[ACT_SHIFT_UP];
+            st.shift_down = act_down(ACT_SHIFT_DOWN) && !s.act_was[ACT_SHIFT_DOWN];
+            st.view = act_down(ACT_VIEW);
+            st.handbrake = act_down(ACT_HANDBRAKE);
         }
+        for (int a = 0; a < ACT_COUNT; a++) s.act_was[a] = act_down(a);
         std::copy(std::begin(now_down), std::end(now_down), std::begin(s.buttons));
         s.left_trigger = lt, s.right_trigger = rt;
     }
+    bind_pad_held(held_mask);
 }
 
 std::vector<PadKey> Gamepads::take_keys() {

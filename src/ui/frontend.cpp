@@ -146,13 +146,14 @@ const Frontend::OptionTab Frontend::OPTION_TABS[] = {
     {OPT_VOLUME, AUDIO_TAB, L"VOLUME"}, {OPT_MUSIC, AUDIO_TAB}, {OPT_MENU_MUSIC, AUDIO_TAB},
     {OPT_SPEAKERS, AUDIO_TAB, L"SOUND"}, {OPT_REAR, AUDIO_TAB}, {OPT_SAMPLES, AUDIO_TAB},
     {OPT_CONNECTED, CONTROLS_TAB, L"DEVICES"},
+    {OPT_BIND, CONTROLS_TAB, L"KEYS"},   // (its heading: bind_lines' group, KEYBOARD KEYS or GAMEPAD BUTTONS)
     {OPT_VIBRATION, CONTROLS_TAB, L"GAMEPAD"}, {OPT_TRIGGERS, CONTROLS_TAB},
     {OPT_WHEEL, WHEEL_TAB, L"CONTROLS"},   // (its headings: each wheel_lines row's group)
 };   // (DIFFICULTY: in PLAY > ARCADE CLASSIC's race set-up)
 
 // Under each section's name in the column at the left
 static const wchar_t* const TAB_ABOUT[] = {L"PC edition or the arcade as it was", L"Screen, smoothing, picture",
-                                           L"Lighting, ray tracing, arcade art", L"Volume, speakers, sound", L"Devices, gamepad",
+                                           L"Lighting, ray tracing, arcade art", L"Volume, speakers, sound", L"Devices, keys and buttons, vibration",
                                            L"Controls, force feedback, rotation"};
 
 const wchar_t* Frontend::group_of(Id id) {
@@ -406,6 +407,8 @@ std::vector<Frontend::Item> Frontend::items() const {
                 {OPT_TRIGGERS, L"TRIGGER RUMBLE", settings.trigger_rumble ? std::to_wstring(settings.trigger_rumble) + L"%" : std::wstring(L"OFF"),
                  L"Xbox One / Series pads: the brake trigger trembles as you slow down, the accelerator as the wheels spin, "
                  L"both over bumps (a share of VIBRATION)"}};
+        for (size_t i = 0; i < bind_lines.size(); i++)   // OPTIONS > CONTROLS' keys, from bindings.h
+            all.push_back({OPT_BIND, bind_lines[i].label, bind_lines[i].value, bind_lines[i].hint, true, int(i)});
         for (size_t i = 0; i < wheel_lines.size(); i++)   // OPTIONS > WHEEL, from wheel.h
             all.push_back({OPT_WHEEL, wheel_lines[i].label, wheel_lines[i].value, wheel_lines[i].hint, true, int(i)});
         std::vector<Item> list = {{TABS, L"", L"", pad_prompts ? L"LB / RB change the section"
@@ -667,6 +670,7 @@ void Frontend::activate(const Item& it, int dir) {
     case OPT_MOTION: settings.smooth = !settings.smooth; push(Action::SettingsChanged); break;
     case OPT_CONNECTED: break;   // shows what is plugged in, nothing to change
     case OPT_WHEEL: wheel_row = it.index; wheel_dir = dir; push(Action::WheelRow); break;
+    case OPT_BIND: bind_row = it.index; push(Action::BindRow); break;
     case OPT_VIBRATION: settings.vibration = (settings.vibration + dir + 4) % 4; push(Action::SettingsChanged); break;
     case OPT_TRIGGERS:   // 0..100 % in steps of 10; a click past the top starts again from OFF
         settings.trigger_rumble = dir > 0 && settings.trigger_rumble >= 100 && wrap_
@@ -742,6 +746,14 @@ bool Frontend::key(int vk) {
         }
         return true;
     }
+    if (screen_ == Screen::Options && wheel_prompt.on && bind_keys) {   // CONTROLS waits for a key: any but Esc
+        if (vk == VK_ESCAPE) back();
+        else {
+            bind_vk = vk;
+            push(Action::BindKey);
+        }
+        return true;
+    }
     if (screen_ == Screen::Options && wheel_prompt.on) {   // the WHEEL tab's window: its choices, Esc stops it
         int nc = int(wheel_prompt.choices.size());
         switch (vk) {
@@ -764,6 +776,11 @@ bool Frontend::key(int vk) {
     if (screen_ == Screen::Options && (vk == VK_DELETE || vk == 'G') && selected_ < n && list[selected_].id == OPT_WHEEL) {
         wheel_row = list[selected_].index;   // a wheel control: not set any more (Delete, the pad's Y)
         push(Action::WheelClear);
+        return true;
+    }
+    if (screen_ == Screen::Options && (vk == VK_DELETE || vk == 'G') && selected_ < n && list[selected_].id == OPT_BIND) {
+        bind_row = list[selected_].index;   // a key or button of the car's: none any more
+        push(Action::BindClear);
         return true;
     }
     if (screen_ == Screen::Records) switch (vk) {   // sections and rows as on the settings page; nothing to change
@@ -910,7 +927,13 @@ void Frontend::wheel(int x, int y, int delta) {
     bool on_value = hovered_ >= 0 && hovered_ < int(values_.size()) && values_[hovered_].left >= 0 &&
                     x >= values_[hovered_].left;
     bool scrolls = (screen_ == Screen::Options || screen_ == Screen::Records) && options_scroll_;
-    if (hovered_ >= 0 && hovered_ < int(list.size()) && list[hovered_].id >= OPT_QUALITY && (on_value || !scrolls)) {
+    // CONTROLS' keys (but DEVICE): the wheel would start listening for a key; it moves the choice instead
+    bool key_row = hovered_ >= 0 && hovered_ < int(list.size()) && list[hovered_].id == OPT_BIND && list[hovered_].index > 0;
+    if (key_row && !scrolls) {
+        select(std::clamp(selected_ + (delta > 0 ? -1 : 1), 1, int(list.size()) - 2));
+        return;
+    }
+    if (!key_row && hovered_ >= 0 && hovered_ < int(list.size()) && list[hovered_].id >= OPT_QUALITY && (on_value || !scrolls)) {
         int keep = hovered_;   // over a value: change it
         hovered_ = -1;   // no wrap-around from the wheel
         activate(list[keep], delta > 0 ? +1 : -1);
@@ -2277,6 +2300,36 @@ const std::wstring& Frontend::wheel_group(int i) const {
 
 float Frontend::wheel_fill(int i) const { return i >= 0 && i < int(wheel_lines.size()) ? wheel_lines[size_t(i)].fill : -1.0f; }
 
+void Frontend::set_bind_lines(const std::vector<WheelLine>& lines) {
+    // The keyboard's rows and the gamepads' are not as many (the keyboard steers
+    // with two of them): the row chosen stays chosen, by its name, when they change
+    bool keep = showing_controls() && lines.size() != bind_lines.size();
+    std::wstring label;
+    Id id = TABS;
+    if (keep) {
+        std::vector<Item> list = items();
+        if (selected_ >= 0 && selected_ < int(list.size())) label = list[size_t(selected_)].label, id = list[size_t(selected_)].id;
+    }
+    bind_lines = lines;
+    dirty_ = true;
+    if (!keep || id == TABS || id == BACK) return;
+    std::vector<Item> list = items();
+    int first_bind = -1;
+    for (int i = 0; i < int(list.size()); i++) {
+        if (list[size_t(i)].id == id && list[size_t(i)].label == label) {
+            selected_ = i;
+            return;
+        }
+        if (first_bind < 0 && list[size_t(i)].id == OPT_BIND) first_bind = i;
+    }
+    if (id == OPT_BIND && first_bind >= 0) selected_ = first_bind;   // (STEER LEFT / RIGHT: the gamepad's first)
+}
+
+const Frontend::WheelLine* Frontend::line_of(const Item& it) const {
+    const std::vector<WheelLine>* v = it.id == OPT_WHEEL ? &wheel_lines : it.id == OPT_BIND ? &bind_lines : nullptr;
+    return v && it.index >= 0 && it.index < int(v->size()) ? &(*v)[size_t(it.index)] : nullptr;
+}
+
 // ---- Smooth shapes for the WHEEL tab, a pixel at a time over their box ----
 
 namespace {
@@ -2617,7 +2670,7 @@ void Frontend::draw_wheel_prompt() {
     const int fy = y1 - foot_h + U(26);
     fill(x0 + pad, fy - U(18), x1 - pad, fy - U(18) + std::max(1, U(1)), PAGE_LINE, 1);
     int kx = x0 + pad, kh = U(32);
-    prompt(kx, fy + U(7), kh, L"B", L"ESC", setup ? L"STOP SETUP" : L"CANCEL");
+    prompt(kx, fy + U(7), kh, p.cancel_button.empty() ? L"B" : p.cancel_button.c_str(), L"ESC", setup ? L"STOP SETUP" : L"CANCEL");
     if (!p.choices.empty()) prompt(kx, fy + U(7), kh, L"A", L"ENTER", L"CHOOSE");
     prompt_choices_.assign(p.choices.size(), RECT{});
     int cx = x1 - pad;
@@ -2717,9 +2770,9 @@ void Frontend::draw_options_page(const std::vector<Item>& list, bool over_game) 
     for (int k = 0; k < n_opts; k++) {
         const wchar_t* g = rec ? RECORD_GROUPS[std::clamp(list[1 + k].index, 0, 3)] : group_of(list[1 + k].id);
         if (rec && k > 0 && list[k].index == list[1 + k].index) g = nullptr;   // (records: a heading where the group changes)
-        if (!rec && list[1 + k].id == OPT_WHEEL) {   // the WHEEL tab: a heading where wheel_lines' group changes
-            const std::wstring& wg = wheel_group(list[1 + k].index);
-            g = k > 0 && list[k].id == OPT_WHEEL && wheel_group(list[k].index) == wg ? nullptr : wg.c_str();
+        if (const WheelLine* l = rec ? nullptr : line_of(list[1 + k])) {   // the WHEEL tab, CONTROLS' keys: a heading where the lines' group changes
+            const WheelLine* before = k > 0 ? line_of(list[k]) : nullptr;
+            g = before && list[k].id == list[1 + k].id && before->group == l->group ? nullptr : l->group.c_str();
         }
         if (g) current = group[k] = g;
         group_name[k] = current;
@@ -2780,9 +2833,9 @@ void Frontend::draw_options_page(const std::vector<Item>& list, bool over_game) 
         int ty = y + (row_h - text_h) / 2, cy = y + row_h / 2;
         uint32_t lc = it.enabled ? PAGE_TEXT : PAGE_FAINT;
         int lw = text(ROW, label_px, it.label, rows_x0, ty, 0, {lc, lc, 0, 0, 1, U(2)});
-        if (it.id == OPT_WHEEL && it.index >= 0 && it.index < int(wheel_lines.size()) && wheel_lines[size_t(it.index)].meter) {
+        if (const WheelLine* ml = line_of(it); ml && ml->meter) {
             // what the control reads now: the steering from the middle, a pedal, a button's light
-            const WheelLine& wl = wheel_lines[size_t(it.index)];
+            const WheelLine& wl = *ml;
             int mx0 = rows_x0 + std::max(lw + U(18), U(200)), mw = U(70), mh = U(8);
             if (wl.meter == 3) {
                 bool on = wl.live > 0.5f;
@@ -2899,11 +2952,12 @@ void Frontend::draw_options_page(const std::vector<Item>& list, bool over_game) 
         : rec ? std::vector<Key>{{nullptr, L"UP / DOWN", L"SELECT"}, {nullptr, L"Q / E", L"SECTION"}, {nullptr, L"ESC", L"BACK"}}
               : std::vector<Key>{{nullptr, L"UP / DOWN", L"SELECT"}, {nullptr, L"LEFT / RIGHT", L"CHANGE"},
                                  {nullptr, L"Q / E", L"SECTION"}, {nullptr, L"ESC", L"BACK"}};
-    if (!rec && tab_ == WHEEL_TAB) keys.insert(keys.end() - 1, Key{L"Y", L"DEL", L"CLEAR"});
+    if (!rec && (tab_ == WHEEL_TAB || (selected_ >= 0 && selected_ < n && list[selected_].id == OPT_BIND)))
+        keys.insert(keys.end() - 1, Key{L"Y", L"DEL", L"CLEAR"});
     else if (!rec) keys.insert(keys.begin() + (pad_prompts ? 1 : 2), Key{L"A", L"ENTER", L"LIST"});   // (the wheel's controls: none)
     int kh = U(34), kx = mx;
     for (const Key& k : keys) prompt(kx, h - U(38) - kh / 2, kh, k.pad, k.key, k.what);
-    if (!rec && tab_ == WHEEL_TAB && wheel_prompt.on) draw_wheel_prompt();
+    if (!rec && (tab_ == WHEEL_TAB || tab_ == CONTROLS_TAB) && wheel_prompt.on) draw_wheel_prompt();
     else prompt_choices_.clear();
 }
 

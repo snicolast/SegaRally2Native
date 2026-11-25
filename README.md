@@ -76,6 +76,10 @@ Your ROM, settings and textures are kept; files you edited are backed up to `out
 | Coin + start | 5, then 1 | BACK, then START |
 | Pause | Esc | START |
 
+**OPTIONS > CONTROLS** changes the car's keys and buttons (the keyboard's or the gamepad's, whichever
+you are using in the menu): choose an action and press the key or button. The menus, the pause and
+coin / start keep theirs.
+
 F11 or Alt+Enter toggles fullscreen. Everything else is in **Options**. In the selection screens
 "confirm with the pedal" means the accelerator. The gamepad rumbles with the wheel's force feedback.
 
