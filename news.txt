@@ -11,6 +11,10 @@
 #   # ...          a comment, never shown
 # Newest entry at the top. Keep each one short: about ten lines fit.
 
+[41] 25 November 2026
+- Cars: they now darken in the shade of trees and scenery, and sun shadows fall across the bodywork (GRAPHICS > LIGHTING: CAR LIGHT PROBES / CAR SHADOWS, off in ARCADE ORIGINAL).
+- CONTROLS: choose your own keys and gamepad buttons for the car (OPTIONS > CONTROLS > CAR CONTROLS).
+
 [40] 24 November 2026
 - DLAA: performance optimizations.
 - OPTIONS: every setting's row now opens a list of all its values (click the row, or press Enter / A).
