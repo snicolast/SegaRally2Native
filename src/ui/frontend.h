@@ -29,7 +29,7 @@ public:
     enum class Action { None, StartArcade, Resume, Quit, ToggleFullscreen, SettingsChanged,
                         QuitToMenu, StartDebug, DisplayChanged, Restart,
                         WheelRow, WheelCancel, WheelChoose, WheelClear,
-                        BindRow, BindKey, BindClear };   // BindRow / BindClear: CONTROLS' key row bind_row; BindKey: bind_vk pressed while it listens   // WheelRow: WHEEL tab row wheel_row, with wheel_dir   // Restart: RESTART NOW   // DisplayChanged: MODE / RESOLUTION to the window
+                        BindRow, BindKey, BindClear, CancelPlay };   // BindRow / BindClear: CONTROLS' key row bind_row; BindKey: bind_vk pressed while it listens   // WheelRow: WHEEL tab row wheel_row, with wheel_dir   // Restart: RESTART NOW   // DisplayChanged: MODE / RESOLUTION to the window
 
     bool init(const std::string& font_dir);
     void shutdown();
@@ -116,7 +116,10 @@ public:
     int wheel_row = -1, wheel_dir = 0;
     bool pad_prompts = false;   // a gamepad drives the menu: its buttons in the key help and hints, not the keyboard's
 
-    bool starting = false;    // PLAY pressed: the game still gets to its mission select (a notice instead of the hint)
+    // PLAY (or DEBUG's race) pressed while the game still gets to SELECT GAME:
+    // LOADING in PLAY's place, nothing to choose; Esc (the pad's B or BACK,
+    // the right button) gives it up (Action::CancelPlay, app.cpp)
+    bool starting = false;
 
     // DEBUG (testing): a practice race of any course with any car. StartDebug
     // reads debug_choice = course | car << 4 | transmission << 8 (runtime.cpp, debug_jump_frame)
