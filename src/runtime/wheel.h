@@ -83,6 +83,7 @@ struct WheelPrompt {
     float done_age = -1;       // seconds since (-1: nothing taken)
     std::vector<std::string> lines;     // the devices found, or what the setup set
     std::vector<std::string> choices;   // along the bottom
+    std::string cancel_button;          // the pad's button that cancels, as res/pad names it ("": B)
 };
 WheelPrompt wheel_prompt();
 void wheel_prompt_choose(int choice);

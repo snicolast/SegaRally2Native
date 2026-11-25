@@ -8,6 +8,7 @@
 #include <cstdlib>
 
 #include "app_internal.h"
+#include "bindings.h"
 #include "game_hooks.h"
 #include "inputs.h"
 #include "pad_rumble.h"
@@ -73,19 +74,26 @@ struct NameEntrySteer {
     }
 };
 
-// The car on the keyboard: arrows steer (the wheel turns over ~0.3 s and
-// comes back by itself), Up / Down are the accelerator and the brake, A / Z
-// shift up / down, V is VIEW CHANGE and Space the hand brake. The pads and
-// wheels add theirs after this (poll_gamepads)
+// The car on the keyboard, with the keys OPTIONS > CONTROLS gives it
+// (bindings.h; by default the arrows steer, Up / Down are the accelerator and
+// the brake, A / Z shift up / down, V is VIEW CHANGE and Space the hand
+// brake). The steering turns the wheel over ~0.3 s and it comes back by
+// itself. The pads and wheels add theirs after this (poll_gamepads)
 template <class Down>
-static void poll_car_keys(Inputs& in, Down down) {
+static void poll_car_keys(Inputs& in, Down key_down) {
+    auto down = [&](int act) {   // any of the action's keys held
+        const int* k = bind_keys(act);
+        for (int s = 0; s < BIND_SLOTS; s++)
+            if (k[s] > 0 && key_down(k[s])) return true;
+        return false;
+    };
     static double last = qpc_seconds();
     static float steer = 0;
     static bool up_was = false, down_was = false;
     double now = qpc_seconds();
     float dt = std::clamp(float(now - last), 0.0f, 0.05f);
     last = now;
-    int dir = down(VK_RIGHT) - down(VK_LEFT);
+    int dir = int(down(ACT_STEER_RIGHT)) - int(down(ACT_STEER_LEFT));
     if (int car = g_car_select; car >= 0) {   // SELECT CAR: a car a press
         static CarSelectSteer select;
         in.steer = select(car, dir, now);
@@ -100,14 +108,14 @@ static void poll_car_keys(Inputs& in, Down down) {
         steer += std::clamp(target - steer, -rate * dt, rate * dt);
         in.steer = adc(128.0f + 127.0f * steer);
     }
-    in.accel = down(VK_UP) ? 0xFF : 0;
-    in.brake = down(VK_DOWN) ? 0xFF : 0;
-    bool up = down('A'), dn = down('Z');
+    in.accel = down(ACT_GAS) ? 0xFF : 0;
+    in.brake = down(ACT_BRAKE) ? 0xFF : 0;
+    bool up = down(ACT_SHIFT_UP), dn = down(ACT_SHIFT_DOWN);
     if (up && !up_was) in.gear = std::min(int(in.gear) + 1, 4);
     if (dn && !down_was) in.gear = std::max(int(in.gear) - 1, 1);
     up_was = up, down_was = dn;
-    in.view = down('V');
-    in.handbrake = down(VK_SPACE);
+    in.view = down(ACT_VIEW);
+    in.handbrake = down(ACT_HANDBRAKE);
 }
 
 // Keyboard (only while the window is active): 5 = coin, 1 = start (6 / 2 the

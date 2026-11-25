@@ -32,7 +32,7 @@ gen/*.cpp + src/ (memory, Real3D, SCSP, inputs, menus) ──CMake/MSVC──▶
 | 2D layer | Tilegen at `0xF1000000` | `tilegen.cpp`, with HD replacements (`pack2d`, `text_hd`) |
 | Sound | 68000 + 2x SCSP, plus a Digital Sound Board (68000 + MPEG) | `src/audio`: SCSP, DSB2 (second Musashi context + MPEG Layer II decoder) |
 | Force feedback | Drive board with its own Z80 (`epr-20512`) | `drive_board.cpp` runs the board's program and its force goes to wheels (SDL haptic); pad rumble is worked out from the car in RAM (`pad_rumble.cpp`) |
-| Controls | Steering wheel, pedals, gear shift | Keyboard, gamepads and wheels through SDL3 (`gamepad.cpp`, `wheel.cpp`) |
+| Controls | Steering wheel, pedals, gear shift | Keyboard, gamepads and wheels through SDL3 (`gamepad.cpp`, `wheel.cpp`), keys and buttons chosen in OPTIONS > CONTROLS (`bindings.cpp`) |
 
 ## Where things are
 

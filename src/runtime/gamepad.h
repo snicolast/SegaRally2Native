@@ -4,10 +4,11 @@
 // vibrates with the wheel's force feedback; in the menus it sends PadKeys.
 // app_input.cpp decides which pad drives.
 //
-// Buttons (positions, so the same on every pad):
+// Buttons (positions, so the same on every pad), the car's by default
+// (OPTIONS > CONTROLS changes them, bindings.h):
 //   steering  left stick             accelerator / brake  RT / LT, or A / B
 //   shifter   RB up, LB down         VIEW CHANGE  Y       hand brake  X
-//   BACK      coin (Share, View, -)  START  start after a coin, else pause
+//   BACK      coin (Share, View, -)  START  start after a coin, else pause (these two always)
 //   menus     d-pad or left stick, A to accept and B to go back (on Nintendo
 //             pads the A and B they print), LB / RB change the settings tab
 #pragma once
@@ -71,7 +72,8 @@ private:
         bool nintendo = false;   // A on the right: accept and back swap
         bool trigger_motors = false;   // SDL can drive motors in its triggers
         bool buttons[32] = {}, left_trigger = false, right_trigger = false;
-        bool menu_held[32] = {};   // held when the menu closed: nothing in the game until let go (gamepad.cpp)
+        bool menu_held[32] = {};
+        bool act_was[16] = {};     // the car's actions held at the last poll (bindings.h's BindAct): shifting on a press   // held when the menu closed: nothing in the game until let go (gamepad.cpp)
         // Menu direction held, for the key repeat
         int dir = -1;
         double next_repeat = 0;

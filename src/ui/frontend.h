@@ -28,7 +28,8 @@ public:
     enum class Screen { None, Splash, Main, Options, Pause, Records, Debug, Play };
     enum class Action { None, StartArcade, Resume, Quit, ToggleFullscreen, SettingsChanged,
                         QuitToMenu, StartDebug, DisplayChanged, Restart,
-                        WheelRow, WheelCancel, WheelChoose, WheelClear };   // WheelRow: WHEEL tab row wheel_row, with wheel_dir   // Restart: RESTART NOW   // DisplayChanged: MODE / RESOLUTION to the window
+                        WheelRow, WheelCancel, WheelChoose, WheelClear,
+                        BindRow, BindKey, BindClear };   // BindRow / BindClear: CONTROLS' key row bind_row; BindKey: bind_vk pressed while it listens   // WheelRow: WHEEL tab row wheel_row, with wheel_dir   // Restart: RESTART NOW   // DisplayChanged: MODE / RESOLUTION to the window
 
     bool init(const std::string& font_dir);
     void shutdown();
@@ -92,6 +93,7 @@ public:
         int gear = 0, step = 0, steps = 0;
         float progress = 0, time_left = -1, done_age = -1;
         std::vector<std::wstring> lines, choices;
+        std::wstring cancel_button;   // the pad's button that cancels (res/pad), "" = B
     } wheel_prompt;
     int wheel_choice = 0;
     std::vector<WheelLine> wheel_lines;
@@ -101,6 +103,15 @@ public:
         int gear = -1;                                        // H shifter: -1 none, 0 neutral
     } wheel_live;
     bool showing_wheel() const { return screen_ == Screen::Options && tab_ == WHEEL_TAB; }
+    // CONTROLS: the car's keys or buttons (app.cpp fills them from bindings.h's
+    // bind_rows, the keyboard's or the gamepads' as whichever drives the menu),
+    // drawn as the WHEEL tab's rows. Choosing one gives BindRow with bind_row; while
+    // the keyboard listens (bind_keys) every key but Esc gives BindKey with bind_vk
+    std::vector<WheelLine> bind_lines;
+    void set_bind_lines(const std::vector<WheelLine>& lines);   // the other device's: the same row stays chosen
+    bool bind_keys = false;
+    int bind_row = -1, bind_vk = 0;
+    bool showing_controls() const { return screen_ == Screen::Options && tab_ == CONTROLS_TAB; }
     bool wheel_listening = false;
     int wheel_row = -1, wheel_dir = 0;
     bool pad_prompts = false;   // a gamepad drives the menu: its buttons in the key help and hints, not the keyboard's
@@ -142,6 +153,7 @@ private:
         OPT_SAT, OPT_GAMMA, OPT_MOTION, OPT_VIBRATION, OPT_RT, OPT_MENU_MUSIC, OPT_REFLECT, OPT_GI, OPT_DUST, OPT_OBJECTS, OPT_TELEMETRY, OPT_TELEMETRY_FORMAT,
         OPT_CONNECTED, OPT_TRIGGERS, OPT_RESOLUTION, OPT_SCALE, OPT_VSYNC, OPT_MAXFPS, OPT_BGFPS,
         OPT_EXPERIENCE, OPT_ASPECT, OPT_ARCADE_ASPECT, OPT_HUD_AREA,
+        OPT_BIND,    // CONTROLS: one row per bind_lines entry (Item::index)
         OPT_WHEEL,   // CONTROLS > WHEEL: one row per wheel_lines entry (Item::index)   // OPT_ARCADE_ASPECT: ARCADE ORIGINAL's, under EXPERIENCE
     };
     struct Item {
@@ -374,6 +386,7 @@ private:
     void draw_wheel_icon(float cx, float cy, float r, float deg, float dim);
     const std::wstring& wheel_group(int i) const;   // WHEEL tab: wheel_lines[i]'s heading, fill
     float wheel_fill(int i) const;
+    const WheelLine* line_of(const Item& it) const;   // a WHEEL or CONTROLS key row's line (else null)
     int draw_wheel_live(int x, int inner, int y_bottom);   // its panel's drawing; returns its top
     void draw_options_page(const std::vector<Item>& list, bool over_game);
     RECT more_up_{}, more_down_{};   // clickable "more" arrows of a scrolled tab
