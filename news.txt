@@ -11,6 +11,9 @@
 #   # ...          a comment, never shown
 # Newest entry at the top. Keep each one short: about ten lines fit.
 
+[42] 26 November 2026
+- PLAY now shows a LOADING screen while the game gets ready. Esc, or B / BACK on the pad, goes back to the main menu while it loads, and the next PLAY then starts at once.
+
 [41] 25 November 2026
 - Cars: they now darken in the shade of trees and scenery, and sun shadows fall across the bodywork (GRAPHICS > LIGHTING: CAR LIGHT PROBES / CAR SHADOWS, off in ARCADE ORIGINAL).
 - CONTROLS: choose your own keys and gamepad buttons for the car (OPTIONS > CONTROLS > CAR CONTROLS).
