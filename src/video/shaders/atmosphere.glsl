@@ -42,7 +42,9 @@ layout(set = ATMOSPHERE_SET, binding = ATMOSPHERE_BINDING) uniform Atmosphere {
     // far this image's probes move the stored ones (1 = taken as they are: a car just come)
     vec4 car_box[12];
     // x 1: the same cars take the world's sun shadows pixel by pixel too, from the
-    // scenery only (r3d.frag), the probes' sun then left to their glint and fill
+    // scenery only (r3d.frag), the probes' sun then left to their glint and fill;
+    // y how much of the fill a car in the shade keeps, z how much of its paint's sheen,
+    // w the share of its sun it takes back as sky light there
     vec4 car_shadow;
 } atm;
 const int CAR_PROBE_CARS = 4, CAR_PROBES = 3;   // (R3DRenderer::CAR_PROBE_CARS, CAR_PROBES)

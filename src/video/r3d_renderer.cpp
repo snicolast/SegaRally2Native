@@ -1415,6 +1415,21 @@ void R3DRenderer::update_atmosphere(const ScreenLayout& lay, uint32_t target_w, 
     // ... and their sun shadows pixel by pixel on top (SR2_CAR_SHADOW=0: the probes' alone)
     static const bool car_shadow = !(getenv("SR2_CAR_SHADOW") && atoi(getenv("SR2_CAR_SHADOW")) == 0);
     u.car_shadow[0] = w && car_shadow && car_shadows_on_ && (shadow_frame_ || u.rt[0] > 0.0f) ? 1.0f : 0.0f;
+    // The car in the shade (r3d.frag): how much of the fill it keeps, of the
+    // sheen on its paint (that mirrors the sky as much as the sun: without it
+    // the shaded car looked matt), and the light of the open sky the sun's
+    // loss leaves (a share of the sun as ambient: with the game's own ambient
+    // alone, 0.26 on FOREST, a white car in the shade came out a muddy grey,
+    // darker than the road beside it). SR2_CAR_SHADE="fill,sheen,sky" (0.6,0.2,0.15)
+    static float shade_keep[3] = {0.6f, 0.2f, 0.15f};
+    static const bool shade_read = [] {
+        if (const char* e = getenv("SR2_CAR_SHADE")) sscanf(e, "%f,%f,%f", &shade_keep[0], &shade_keep[1], &shade_keep[2]);
+        return true;
+    }();
+    (void)shade_read;
+    u.car_shadow[1] = std::clamp(shade_keep[0], 0.0f, 1.0f);
+    u.car_shadow[2] = std::clamp(shade_keep[1], 0.0f, 1.0f);
+    u.car_shadow[3] = std::clamp(shade_keep[2], 0.0f, 1.0f);
     memcpy(atmosphere_uniform_.mapped, &u, sizeof(u));
 }
 
@@ -1601,10 +1616,10 @@ void R3DRenderer::record_shadows(const Frame& f) {
 // across the world's up), across it and up, for car_probe.frag to place its
 // probes on and r3d.frag to read them back. box: CAR_PROBE_CARS x 3 vec4
 // (atmosphere.glsl car_box), probe: car_probe; up: the world's up (view space).
-// SR2_CAR_PROBE="sun,sky": how much of each the cars take (1,0.8; 0 = off);
+// SR2_CAR_PROBE="sun,sky": how much of each the cars take (1,0.35; 0 = off);
 // SR2_CAR_PROBE_TAU=S: how long the probes take to settle (0.1 s; 0 = at once)
 void R3DRenderer::car_boxes(float* box, float* probe, const float* up) {
-    static float take[2] = {1.0f, 0.8f};
+    static float take[2] = {1.0f, 0.35f};   // the sky only partly: a rock or wall to one side hides little of it
     static const bool read = [] {
         if (const char* e = getenv("SR2_CAR_PROBE")) {
             take[1] = 0.0f;
