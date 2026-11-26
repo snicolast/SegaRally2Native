@@ -11,6 +11,9 @@
 #   # ...          a comment, never shown
 # Newest entry at the top. Keep each one short: about ten lines fit.
 
+[43] 26 November 2026
+- Menus: PlayStation button icons for DualShock / DualSense pads, which should be picked automatically (OPTIONS > CONTROLS > BUTTON PROMPTS: AUTO / XBOX / PLAYSTATION).
+
 [42] 26 November 2026
 - PLAY now shows a LOADING screen while the game gets ready. Esc, or B / BACK on the pad, goes back to the main menu while it loads, and the next PLAY then starts at once.
 
