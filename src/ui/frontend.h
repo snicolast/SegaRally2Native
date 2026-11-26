@@ -115,6 +115,7 @@ public:
     bool wheel_listening = false;
     int wheel_row = -1, wheel_dir = 0;
     bool pad_prompts = false;   // a gamepad drives the menu: its buttons in the key help and hints, not the keyboard's
+    bool pad_playstation = false;   // ...drawn as a PlayStation pad's (res/pad/ps), else an Xbox pad's (BUTTON PROMPTS, app.cpp)
 
     // PLAY (or DEBUG's race) pressed while the game still gets to SELECT GAME:
     // LOADING in PLAY's place, nothing to choose; Esc (the pad's B or BACK,
@@ -154,7 +155,7 @@ private:
         OPT_QUALITY,   // (no row: the first of the option ids, the ones >= it are options)
         OPT_DISPLAY, OPT_VOLUME, OPT_MUSIC, OPT_SPEAKERS, OPT_REAR, OPT_SAMPLES, OPT_AA, OPT_HAZE, OPT_BLOOM, OPT_AO, OPT_SUN, OPT_SHADOWS, OPT_CAR_PROBES, OPT_CAR_SHADOWS, OPT_HDR, OPT_SHARPEN, OPT_HUD, OPT_LIVERIES,
         OPT_SAT, OPT_GAMMA, OPT_MOTION, OPT_VIBRATION, OPT_RT, OPT_MENU_MUSIC, OPT_REFLECT, OPT_GI, OPT_DUST, OPT_OBJECTS, OPT_TELEMETRY, OPT_TELEMETRY_FORMAT,
-        OPT_CONNECTED, OPT_TRIGGERS, OPT_RESOLUTION, OPT_SCALE, OPT_VSYNC, OPT_MAXFPS, OPT_BGFPS,
+        OPT_CONNECTED, OPT_TRIGGERS, OPT_PROMPTS, OPT_RESOLUTION, OPT_SCALE, OPT_VSYNC, OPT_MAXFPS, OPT_BGFPS,
         OPT_EXPERIENCE, OPT_ASPECT, OPT_ARCADE_ASPECT, OPT_HUD_AREA,
         OPT_BIND,    // CONTROLS: one row per bind_lines entry (Item::index)
         OPT_WHEEL,   // CONTROLS > WHEEL: one row per wheel_lines entry (Item::index)   // OPT_ARCADE_ASPECT: ARCADE ORIGINAL's, under EXPERIENCE
@@ -225,8 +226,9 @@ private:
     // (clockwise), alpha; tint: from tint_v down (0..1 of it), its colours towards rgb
     void sprite_turned(const Pictures& p, float cx, float cy, float w, float h, float pu, float pv, float deg,
                        float alpha, uint32_t tint = 0, float tint_v = 2.0f, float tint_amount = 0.0f);
-    // The gamepad's buttons in the key help (res/pad/<button>.png, CC0); w = 0:
-    // none, a drawn disc or pill instead
+    // The gamepad's buttons in the key help (res/pad/<button>.png, CC0; named
+    // as on an Xbox pad, A, LB, MENU..., res/pad/ps/ the same button as on a
+    // PlayStation pad when pad_playstation); w = 0: none, a drawn disc or pill instead
     std::map<std::wstring, Picture> pad_icons_;
     const Picture& pad_icon(const std::wstring& button);
     // One entry of the key help at (x, y), h high: the gamepad's button when

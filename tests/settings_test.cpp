@@ -49,6 +49,7 @@ static FrontendSettings changed() {
     s.difficulty = 3, s.game_mode = 1, s.default_view = 1, s.speed_kmh = 0;
     s.aspect = 2, s.hud_43 = true, s.free_play = false, s.experience = 1;
     s.smooth = false, s.saturation = 120, s.gamma = 130, s.vibration = 1, s.trigger_rumble = 40;
+    s.button_prompts = 2;
     s.splash = false, s.menu_music = false;
     s.telemetry = true, s.telemetry_port = 5555, s.telemetry_format = 1;
     return s;
@@ -68,6 +69,7 @@ int main() {
         CHECK(b.display_mode == 2 && b.res_w == 2560 && b.res_h == 1440 && b.max_fps == 144 && b.vsync == 2);
         CHECK(b.aa == 4 && b.dlss_model == 2 && b.bloom == 3 && b.ray_tracing == 1 && b.object_distance == 150);
         CHECK(b.difficulty == 3 && b.aspect == 2 && b.hud_43 && b.gamma == 130 && b.telemetry_port == 5555);
+        CHECK(b.button_prompts == 2);
     }
     {   // the [arcade] section: its own values; the keys of the whole game only at the top
         FrontendSettings top = changed(), arcade;
@@ -84,6 +86,7 @@ int main() {
         FrontendSettings s = changed();
         s.arcade_base();
         CHECK(s.display_mode == 2 && s.res_w == 2560 && s.max_fps == 144 && s.speakers == 2 && s.vibration == 1);
+        CHECK(s.button_prompts == 2);
         CHECK(s.volume == 5 && s.music == 5 && s.aa == 2 && s.aspect == 4 && !s.cubic_samples && s.free_play);
     }
     {   // older keys and values

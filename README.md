@@ -80,6 +80,10 @@ Your ROM, settings and textures are kept; files you edited are backed up to `out
 you are using in the menu): choose an action and press the key or button. The menus, the pause and
 coin / start keep theirs.
 
+The menus show PlayStation buttons (✕ ○ □ △, L1 / R1) for a DualShock 4 or DualSense, Xbox ones for
+other pads. Through Steam Input or DS4Windows a PlayStation pad may look like an Xbox one: set
+**OPTIONS > CONTROLS > BUTTON PROMPTS** to PLAYSTATION.
+
 F11 or Alt+Enter toggles fullscreen. Everything else is in **Options**. In the selection screens
 "confirm with the pedal" means the accelerator. The gamepad rumbles with the wheel's force feedback.
 
@@ -137,7 +141,8 @@ Entirely optional: it supports the work on this project, not the game, which bel
 
 The code in this repository is under the [MIT License, with additional terms](LICENSE). The libraries and fonts in
 `third_party/` keep their own licenses. The gamepad button pictures in `res/pad/` are
-[Controller Input Icons](https://opengameart.org/content/controller-input-icons) by ElDuderino (CC0).
+[Controller Input Icons](https://opengameart.org/content/controller-input-icons) by ElDuderino (CC0); the
+PlayStation-style ones in `res/pad/ps/` were drawn for this port from their shapes (`res/pad/ps/src/make.py`).
 The game itself (ROM, code, data, music and voices) is not included and stays the property of its
 owners: you need your own copy of `srally2.zip`.
 

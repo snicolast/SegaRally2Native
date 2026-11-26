@@ -67,6 +67,9 @@ struct FrontendSettings {
     int gamma = 100;        // gamma x 100 (100 = original, higher = brighter)
     int vibration = 2;      // gamepad vibration: 0 off, 1 low, 2 medium, 3 high
     int trigger_rumble = 100;   // the triggers' own motors (Xbox One / Series pads), % of VIBRATION's strength, steps of 10
+    // The gamepad's buttons in the menus: 0 AUTO (PlayStation's for a DualShock or
+    // a DualSense, else Xbox's), 1 XBOX, 2 PLAYSTATION
+    int button_prompts = 0;
     bool splash = true;     // the logo video at launch (splash_screens = 0: straight to the menu)
     bool menu_music = true; // the game's Main Title in the menus
     // settings.ini only: UDP telemetry for SimHub and motion rigs (runtime/telemetry.h),

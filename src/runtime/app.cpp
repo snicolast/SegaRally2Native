@@ -1485,6 +1485,15 @@ int main(int argc, char** argv) {
                 frontend.pad_prompts = pad_in_menu || menu_pad;
                 frontend.invalidate();
             }
+            {   // ...as a PlayStation pad's or an Xbox pad's (OPTIONS > CONTROLS > BUTTON PROMPTS; AUTO: the menu's pad)
+                const int style = frontend.settings.button_prompts;
+                const bool ps = style == 2 || (style == 0 && g_pads.menu_pad_playstation());
+                if (frontend.pad_playstation != ps) {
+                    frontend.pad_playstation = ps;
+                    bind_set_playstation(ps);   // CONTROLS' rows and hints (bindings.cpp), read again below
+                    frontend.invalidate();
+                }
+            }
             if (frontend.active()) {
                 RECT rc;
                 GetClientRect(presenter.hwnd(), &rc);

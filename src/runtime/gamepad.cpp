@@ -71,6 +71,8 @@ void Gamepads::open(uint32_t id) {
     s.pad = p;
     s.id = id;
     s.nintendo = SDL_GetGamepadButtonLabel(p, SDL_GAMEPAD_BUTTON_SOUTH) == SDL_GAMEPAD_BUTTON_LABEL_B;
+    s.playstation = SDL_GetGamepadButtonLabel(p, SDL_GAMEPAD_BUTTON_SOUTH) == SDL_GAMEPAD_BUTTON_LABEL_CROSS;
+    if (menu_pad_ < 0) menu_pad_ = i;
     PadState& st = state_[i];
     st = PadState{};
     st.connected = true;
@@ -78,7 +80,8 @@ void Gamepads::open(uint32_t id) {
     st.name = name ? name : "Gamepad";
     s.trigger_motors = SDL_GetBooleanProperty(SDL_GetGamepadProperties(p), SDL_PROP_GAMEPAD_CAP_TRIGGER_RUMBLE_BOOLEAN, false);
     changed_ = true;
-    printf("[gamepad] %d: %s%s\n", i + 1, st.name.c_str(), s.trigger_motors ? " (trigger rumble)" : "");
+    printf("[gamepad] %d: %s%s%s\n", i + 1, st.name.c_str(), s.trigger_motors ? " (trigger rumble)" : "",
+           s.playstation ? " (PlayStation buttons)" : "");
 }
 
 void Gamepads::close(uint32_t id) {
@@ -87,6 +90,11 @@ void Gamepads::close(uint32_t id) {
     SDL_CloseGamepad(slot_[i].pad);
     slot_[i] = Slot{};
     state_[i].connected = false;
+    if (menu_pad_ == i) {   // the menu's pad gone: another one plugged in, if any
+        menu_pad_ = -1;
+        for (int k = 0; k < MAX && menu_pad_ < 0; k++)
+            if (slot_[k].pad) menu_pad_ = k;
+    }
     changed_ = true;
     printf("[gamepad] %d disconnected\n", i + 1);
 }
@@ -161,8 +169,12 @@ void Gamepads::poll(int rumble, bool focused, bool menu) {
             st.steer = st.gas = st.brake = 0;
             st.select_dir = 0;
         }
+        const size_t keys_before = keys_.size();
         if (listening) {   // OPTIONS > CONTROLS waits for a button: the next one pressed (START / BACK: cancel)
             s.dir = -1;
+            for (int b = 0; b < SDL_GAMEPAD_BUTTON_COUNT && b < 32; b++)
+                if (pressed(SDL_GamepadButton(b))) menu_pad_ = i;
+            if ((lt && !s.left_trigger) || (rt && !s.right_trigger)) menu_pad_ = i;
             if (pressed(SDL_GAMEPAD_BUTTON_START) || pressed(SDL_GAMEPAD_BUTTON_BACK)) bind_listen_cancel();
             else {
                 for (int b = 0; b < SDL_GAMEPAD_BUTTON_COUNT && b < 32; b++)
@@ -232,11 +244,16 @@ void Gamepads::poll(int rumble, bool focused, bool menu) {
             st.view = act_down(ACT_VIEW);
             st.handbrake = act_down(ACT_HANDBRAKE);
         }
+        if (keys_.size() != keys_before) menu_pad_ = i;   // it drives the menu: its buttons in the key help
         for (int a = 0; a < ACT_COUNT; a++) s.act_was[a] = act_down(a);
         std::copy(std::begin(now_down), std::end(now_down), std::begin(s.buttons));
         s.left_trigger = lt, s.right_trigger = rt;
     }
     bind_pad_held(held_mask);
+}
+
+bool Gamepads::menu_pad_playstation() const {
+    return menu_pad_ >= 0 && menu_pad_ < MAX && slot_[menu_pad_].pad && slot_[menu_pad_].playstation;
 }
 
 std::vector<PadKey> Gamepads::take_keys() {
