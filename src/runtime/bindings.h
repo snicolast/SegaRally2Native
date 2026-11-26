@@ -44,3 +44,7 @@ void bind_listen_cancel();                // Esc, START, BACK, or the time out
 void bind_take_key(int vk);               // a key pressed while the keyboard listens
 void bind_take_pad(int input);            // a button or a trigger while the gamepads listen
 WheelPrompt bind_prompt();                // the window (also a moment after one is taken)
+// The gamepad's buttons named as on a PlayStation pad (CROSS, CIRCLE, L1, R2...)
+// in the rows, the hints and the window, else as on an Xbox pad (OPTIONS >
+// CONTROLS > BUTTON PROMPTS, app.cpp). controls.ini keeps SDL's names either way
+void bind_set_playstation(bool on);

@@ -147,7 +147,7 @@ const Frontend::OptionTab Frontend::OPTION_TABS[] = {
     {OPT_SPEAKERS, AUDIO_TAB, L"SOUND"}, {OPT_REAR, AUDIO_TAB}, {OPT_SAMPLES, AUDIO_TAB},
     {OPT_CONNECTED, CONTROLS_TAB, L"DEVICES"},
     {OPT_BIND, CONTROLS_TAB, L"KEYS"},   // (its heading: bind_lines' group, KEYBOARD KEYS or GAMEPAD BUTTONS)
-    {OPT_VIBRATION, CONTROLS_TAB, L"GAMEPAD"}, {OPT_TRIGGERS, CONTROLS_TAB},
+    {OPT_VIBRATION, CONTROLS_TAB, L"GAMEPAD"}, {OPT_TRIGGERS, CONTROLS_TAB}, {OPT_PROMPTS, CONTROLS_TAB},
     {OPT_WHEEL, WHEEL_TAB, L"CONTROLS"},   // (its headings: each wheel_lines row's group)
 };   // (DIFFICULTY: in PLAY > ARCADE CLASSIC's race set-up)
 
@@ -201,6 +201,7 @@ std::vector<Frontend::Item> Frontend::items() const {
     static const wchar_t* const AA[8] = {L"MSAA 4X", L"DLAA", L"OFF", L"DLSS QUALITY", L"DLSS BALANCED",
                                          L"DLSS PERFORMANCE", L"DLSS ULTRA PERFORMANCE", L"FXAA"};
     static const wchar_t* const BLOOM_LEVELS[4] = {L"OFF", L"LOW", L"MEDIUM", L"HIGH"};
+    static const wchar_t* const PROMPT_STYLES[3] = {L"AUTO", L"XBOX", L"PLAYSTATION"};
     static const wchar_t* const SPEAKERS[3] = {L"STEREO", L"SURROUND 4.0", L"HEADPHONES"};
     static const wchar_t* const SPEAKER_HINTS[3] = {
         L"Front and rear sound mixed on two speakers",
@@ -406,12 +407,15 @@ std::vector<Frontend::Item> Frontend::items() const {
                  L"The gamepad rumbles with the steering wheel's force feedback: bumps, slides and crashes"},
                 {OPT_TRIGGERS, L"TRIGGER RUMBLE", settings.trigger_rumble ? std::to_wstring(settings.trigger_rumble) + L"%" : std::wstring(L"OFF"),
                  L"Xbox One / Series pads: the brake trigger trembles as you slow down, the accelerator as the wheels spin, "
-                 L"both over bumps (a share of VIBRATION)"}};
+                 L"both over bumps (a share of VIBRATION)"},
+                {OPT_PROMPTS, L"BUTTON PROMPTS", PROMPT_STYLES[std::clamp(settings.button_prompts, 0, 2)],
+                 L"The gamepad's buttons in the menus. AUTO: a DualShock or DualSense shows its own, other pads the Xbox ones. "
+                 L"Through Steam Input or DS4Windows a PlayStation pad looks like an Xbox one: choose PLAYSTATION"}};
         for (size_t i = 0; i < bind_lines.size(); i++)   // OPTIONS > CONTROLS' keys, from bindings.h
             all.push_back({OPT_BIND, bind_lines[i].label, bind_lines[i].value, bind_lines[i].hint, true, int(i)});
         for (size_t i = 0; i < wheel_lines.size(); i++)   // OPTIONS > WHEEL, from wheel.h
             all.push_back({OPT_WHEEL, wheel_lines[i].label, wheel_lines[i].value, wheel_lines[i].hint, true, int(i)});
-        std::vector<Item> list = {{TABS, L"", L"", pad_prompts ? L"LB / RB change the section"
+        std::vector<Item> list = {{TABS, L"", L"", pad_prompts ? pad_playstation ? L"L1 / R1 change the section" : L"LB / RB change the section"
                                                                : L"Q / E or Tab change the section, or click one"}};
         for (const OptionTab& o : OPTION_TABS)   // the tab's options in their order, then any not listed
             for (const Item& it : all) {
@@ -672,6 +676,7 @@ void Frontend::activate(const Item& it, int dir) {
     case OPT_WHEEL: wheel_row = it.index; wheel_dir = dir; push(Action::WheelRow); break;
     case OPT_BIND: bind_row = it.index; push(Action::BindRow); break;
     case OPT_VIBRATION: settings.vibration = (settings.vibration + dir + 4) % 4; push(Action::SettingsChanged); break;
+    case OPT_PROMPTS: settings.button_prompts = (settings.button_prompts + dir + 3) % 3; push(Action::SettingsChanged); break;
     case OPT_TRIGGERS:   // 0..100 % in steps of 10; a click past the top starts again from OFF
         settings.trigger_rumble = dir > 0 && settings.trigger_rumble >= 100 && wrap_
                                       ? 0 : std::clamp(settings.trigger_rumble + 10 * dir, 0, 100);
@@ -1290,6 +1295,7 @@ bool Frontend::first_value(Id id) {
     case OPT_LIVERIES: s.hd_liveries = true; break;
     case OPT_VIBRATION: s.vibration = 0; break;
     case OPT_TRIGGERS: s.trigger_rumble = 0; break;
+    case OPT_PROMPTS: s.button_prompts = 0; break;
     default: return false;
     }
     return true;
@@ -1701,13 +1707,26 @@ void Frontend::sprite_turned(const Pictures& pics, float cx, float cy, float w, 
         }
 }
 
+// An Xbox pad's button (as the menus name them) as a PlayStation pad's: its
+// picture in res/pad/ps, and the name drawn without one
+static const wchar_t* playstation_name(const std::wstring& button) {
+    static const wchar_t* const XBOX_PS[][2] = {{L"A", L"CROSS"},  {L"B", L"CIRCLE"},  {L"X", L"SQUARE"},  {L"Y", L"TRIANGLE"},
+                                                {L"LB", L"L1"},    {L"RB", L"R1"},     {L"LT", L"L2"},     {L"RT", L"R2"},
+                                                {L"LS", L"L3"},    {L"RS", L"R3"},     {L"MENU", L"OPTIONS"}, {L"VIEW", L"SHARE"}};
+    for (const auto& m : XBOX_PS)
+        if (button == m[0]) return m[1];
+    return nullptr;
+}
+
 const Frontend::Picture& Frontend::pad_icon(const std::wstring& button) {
-    auto it = pad_icons_.find(button);
+    const wchar_t* ps = pad_playstation ? playstation_name(button) : nullptr;
+    std::wstring name = ps ? std::wstring(L"ps/") + ps : button;
+    auto it = pad_icons_.find(name);
     if (it != pad_icons_.end()) return it->second;
-    std::wstring name = button;
-    for (wchar_t& c : name) c = towlower(c);
-    Picture& p = pad_icons_[button];
-    load_image(L"res/pad/" + name + L".png", p.px, p.w, p.h);
+    Picture& p = pad_icons_[name];
+    std::wstring file = name;
+    for (wchar_t& c : file) c = towlower(c);
+    load_image(L"res/pad/" + file + L".png", p.px, p.w, p.h);
     return p;
 }
 
@@ -1725,6 +1744,7 @@ void Frontend::prompt(int& x, int y, int h, const wchar_t* pad_button, const wch
     } else if (pad_prompts && pad_button) {   // no picture: a coloured disc or a grey pill with its name
         std::wstring b = pad_button;
         uint32_t c = b == L"A" ? PAD_A : b == L"B" ? PAD_B : b == L"Y" ? PAD_Y : b == L"X" ? PAD_X : KEYCAP;
+        if (const wchar_t* ps = pad_playstation ? playstation_name(b) : nullptr) b = ps, c = KEYCAP;
         int bw = std::max(h, measure(MONO, U(17), b) + U(20));
         pill(x, y, x + bw, y + h, c, 1);
         text(MONO, U(17), b, x + bw / 2, y + h / 2 - U(9), 1, {0x111111, 0x111111});
@@ -1744,7 +1764,10 @@ int Frontend::prompt_width(int h, const wchar_t* pad_button, const wchar_t* key,
     int wd = 0;
     const Picture* icon = pad_prompts && pad_button ? &pad_icon(pad_button) : nullptr;
     if (icon && icon->w > 0) wd = h * icon->w / icon->h + U(10);
-    else if (icon) wd = std::max(h, measure(MONO, U(17), pad_button) + U(20)) + U(10);
+    else if (icon) {
+        const wchar_t* ps = pad_playstation ? playstation_name(pad_button) : nullptr;
+        wd = std::max(h, measure(MONO, U(17), ps ? ps : pad_button) + U(20)) + U(10);
+    }
     else if (key) wd = std::max(h, measure(MONO, U(17), key) + U(22)) + U(10);
     if (what && *what) wd += measure(ITEM, U(21), what) + U(40);
     return wd;

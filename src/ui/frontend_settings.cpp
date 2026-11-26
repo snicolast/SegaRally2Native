@@ -88,6 +88,7 @@ void FrontendSettings::load(const char* path, const char* section) {
         else if (k == "gamma") gamma = std::clamp(int(atof(value) * 100 + 0.5), 50, 150);
         else if (k == "vibration") vibration = v == "low" ? 1 : v == "medium" ? 2 : v == "high" ? 3 : 0;
         else if (k == "trigger_rumble") trigger_rumble = std::clamp(atoi(value) / 10 * 10, 0, 100);
+        else if (k == "button_prompts") button_prompts = v == "xbox" ? 1 : v == "playstation" ? 2 : 0;
         else if (k == "splash_screens") splash = on;
         else if (k == "menu_music") menu_music = on;
         else if (k == "telemetry") telemetry = on;
@@ -129,6 +130,9 @@ std::string FrontendSettings::text(bool section) const {
         out += buf;
     }
     snprintf(buf, sizeof(buf), "car_light_probes = %d\ncar_shadows = %d\n", car_probes, car_shadows);
+    out += buf;
+    static const char* const PROMPTS[3] = {"auto", "xbox", "playstation"};
+    snprintf(buf, sizeof(buf), "button_prompts = %s\n", PROMPTS[std::clamp(button_prompts, 0, 2)]);
     out += buf;
     snprintf(buf, sizeof(buf), "rt_reflections = %d\nglobal_illumination = %s\ndust = %s\ndifficulty = %s\nhd_liveries = %d\ntrigger_rumble = %d\nobject_distance = %d\n", reflections, gi ? "low" : "off", dust ? "enhanced" : "original", DIFFICULTY_KEYS[std::clamp(difficulty, 0, 4)], hd_liveries, trigger_rumble, object_distance);
     out += buf;

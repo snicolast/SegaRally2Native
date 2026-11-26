@@ -58,6 +58,7 @@ struct Layout {
 Layout g_lay;
 bool g_loaded = false;
 uint64_t g_pad_held = 0;
+bool g_playstation = false;   // the buttons' names as on a PlayStation pad (bind_set_playstation)
 bool g_device_toggle = false;   // DEVICE chosen: bind_shows_pad shows the other one
 
 // ---- Names: controls.ini's, and the rows' ----
@@ -115,8 +116,25 @@ std::string key_label(int vk) {
     return n.rfind("0x", 0) == 0 ? "KEY " + n : n;
 }
 
-// The gamepad's: as on an Xbox pad (the buttons are positions, the same on every pad)
-std::string pad_label(int b) {
+// The gamepad's: as on an Xbox pad, or as on a PlayStation pad (the buttons
+// are positions, the same on every pad)
+std::string pad_label(int b, bool playstation) {
+    if (playstation) {
+        switch (b) {
+        case PAD_LT: return "L2";
+        case PAD_RT: return "R2";
+        case SDL_GAMEPAD_BUTTON_SOUTH: return "CROSS";
+        case SDL_GAMEPAD_BUTTON_EAST: return "CIRCLE";
+        case SDL_GAMEPAD_BUTTON_WEST: return "SQUARE";
+        case SDL_GAMEPAD_BUTTON_NORTH: return "TRIANGLE";
+        case SDL_GAMEPAD_BUTTON_LEFT_SHOULDER: return "L1";
+        case SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER: return "R1";
+        case SDL_GAMEPAD_BUTTON_LEFT_STICK: return "L3";
+        case SDL_GAMEPAD_BUTTON_RIGHT_STICK: return "R3";
+        case SDL_GAMEPAD_BUTTON_MISC1: return "MIC";   // (a DualSense's; a DualShock 4 has none)
+        default: break;   // the d-pad, the paddles, the touchpad: as below
+        }
+    }
     switch (b) {
     case PAD_LT: return "LT";
     case PAD_RT: return "RT";
@@ -141,6 +159,7 @@ std::string pad_label(int b) {
     default: return "BUTTON " + std::to_string(b);
     }
 }
+std::string pad_label(int b) { return pad_label(b, g_playstation); }
 
 // controls.ini's: SDL's names (a, rightshoulder, lefttrigger...)
 std::string pad_ini_name(int b) {
@@ -156,10 +175,12 @@ int pad_from_ini(const std::string& s) {
     if (a == SDL_GAMEPAD_AXIS_RIGHT_TRIGGER) return PAD_RT;
     SDL_GamepadButton b = SDL_GetGamepadButtonFromString(s.c_str());
     if (b != SDL_GAMEPAD_BUTTON_INVALID) return int(b);
-    for (int i = 0; i < SDL_GAMEPAD_BUTTON_COUNT; i++)   // (the rows' names too: RB, LT...)
-        if (_stricmp(pad_label(i).c_str(), s.c_str()) == 0) return i;
-    if (_stricmp(s.c_str(), "LT") == 0) return PAD_LT;
-    if (_stricmp(s.c_str(), "RT") == 0) return PAD_RT;
+    for (int ps = 0; ps < 2; ps++) {   // (the rows' names too: RB, LT... or R1, L2...)
+        for (int i = 0; i < SDL_GAMEPAD_BUTTON_COUNT; i++)
+            if (_stricmp(pad_label(i, ps != 0).c_str(), s.c_str()) == 0) return i;
+        if (_stricmp(s.c_str(), pad_label(PAD_LT, ps != 0).c_str()) == 0) return PAD_LT;
+        if (_stricmp(s.c_str(), pad_label(PAD_RT, ps != 0).c_str()) == 0) return PAD_RT;
+    }
     return -1;
 }
 
@@ -386,7 +407,7 @@ std::vector<WheelRow> bind_rows(bool pad) {
         bool any = in[0] >= 0 || in[1] >= 0;
         r.value = any ? names(in, pad, " / ", true) : "NONE";
         r.hint = std::string(any ? "" : "Not set. ") + "Choose it and press the " + (pad ? "button or trigger" : "key") +
-                 " you want for it" + (any ? pad ? "; Y clears it" : "; Delete clears it" : "") +
+                 " you want for it" + (any ? pad ? "; " + pad_label(SDL_GAMEPAD_BUTTON_NORTH) + " clears it" : "; Delete clears it" : "") +
                  ". One taken from another action leaves it there; if that one is left with nothing they swap";
         if (pad && (a == ACT_GAS || a == ACT_BRAKE))
             r.hint += ". A trigger gives the pedal's travel, a button all of it";
@@ -398,10 +419,13 @@ std::vector<WheelRow> bind_rows(bool pad) {
     reset.group = group;
     reset.label = "RESET TO DEFAULTS";
     reset.value = is_default(pad) ? "DEFAULT" : "CHANGED";
-    reset.hint = pad ? "Choose it to put back the original buttons: RT / A accelerate, LT / B brake, RB / LB shift, "
-                       "X the hand brake, Y VIEW CHANGE"
-                     : "Choose it to put back the original keys: the arrows steer, accelerate and brake, A / Z shift, "
-                       "Space the hand brake, V VIEW CHANGE";
+    reset.hint = pad ? "Choose it to put back the original buttons: " + pad_label(PAD_RT) + " / " +
+                           pad_label(SDL_GAMEPAD_BUTTON_SOUTH) + " accelerate, " + pad_label(PAD_LT) + " / " +
+                           pad_label(SDL_GAMEPAD_BUTTON_EAST) + " brake, " + pad_label(SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER) + " / " +
+                           pad_label(SDL_GAMEPAD_BUTTON_LEFT_SHOULDER) + " shift, " + pad_label(SDL_GAMEPAD_BUTTON_WEST) +
+                           " the hand brake, " + pad_label(SDL_GAMEPAD_BUTTON_NORTH) + " VIEW CHANGE"
+                     : std::string("Choose it to put back the original keys: the arrows steer, accelerate and brake, A / Z shift, "
+                                   "Space the hand brake, V VIEW CHANGE");
     rows.push_back(reset);
     return rows;
 }
@@ -443,6 +467,7 @@ bool bind_listening() {
 }
 bool bind_listening_pad() { return bind_listening() && g_l.pad; }
 void bind_listen_cancel() { g_l = Listen{}; }
+void bind_set_playstation(bool on) { g_playstation = on; }
 void bind_take_key(int vk) {
     if (g_l.on && !g_l.pad) take(vk);
 }
@@ -466,7 +491,8 @@ WheelPrompt bind_prompt() {
     const int* in = pad ? lay().pad[g_l.act] : lay().key[g_l.act];
     std::string now = in[0] >= 0 || in[1] >= 0 ? names(in, pad, " / ", true) : "NONE";
     p.hint = "Now: " + now + ".  " +
-             (pad ? std::string("Any button or trigger. START or BACK cancels: they stay the pause and the coin")
+             (pad ? std::string(g_playstation ? "Any button or trigger. OPTIONS or SHARE cancels: they stay the pause and the coin"
+                                              : "Any button or trigger. START or BACK cancels: they stay the pause and the coin")
                   : std::string("Esc cancels. Esc, 1, 2, 5, 6, F2, F3, F9, F11 and F12 stay the game's"));
     p.moving = !g_l.reject.empty() ? g_l.reject : pad ? "WAITING FOR A BUTTON..." : "WAITING FOR A KEY...";
     p.cancel_button = pad ? "MENU" : "";

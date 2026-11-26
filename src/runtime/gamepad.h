@@ -59,6 +59,12 @@ public:
     const PadState& pad(int i) const { return state_[i]; }
     bool changed() { bool c = changed_; changed_ = false; return c; }   // a pad came or went
     std::vector<PadKey> take_keys();
+    // The last pad a button or the stick was used on in the menus (the first
+    // one plugged in until then) prints PlayStation's symbols (cross, circle...):
+    // a DualShock or a DualSense as SDL sees it. Through Steam Input or
+    // DS4Windows it is an Xbox pad to the game: false (OPTIONS > CONTROLS >
+    // BUTTON PROMPTS PLAYSTATION then)
+    bool menu_pad_playstation() const;
     // Vibration, 0..1 per motor, scaled by the settings' strength
     void rumble(int i, float low, float high, int ms);
     // The motors in the triggers (Xbox One / Series pads), 0..1 each, scaled
@@ -70,6 +76,7 @@ private:
         SDL_Gamepad* pad = nullptr;
         uint32_t id = 0;
         bool nintendo = false;   // A on the right: accept and back swap
+        bool playstation = false;   // cross, circle, square, triangle on its buttons
         bool trigger_motors = false;   // SDL can drive motors in its triggers
         bool buttons[32] = {}, left_trigger = false, right_trigger = false;
         bool menu_held[32] = {};
@@ -88,4 +95,5 @@ private:
     PadState state_[MAX];
     std::vector<PadKey> keys_;
     int rumble_ = 2;
+    int menu_pad_ = -1;   // menu_pad_playstation()'s pad (a slot, -1: none yet)
 };
