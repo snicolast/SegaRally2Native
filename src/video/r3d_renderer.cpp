@@ -1601,10 +1601,10 @@ void R3DRenderer::record_shadows(const Frame& f) {
 // across the world's up), across it and up, for car_probe.frag to place its
 // probes on and r3d.frag to read them back. box: CAR_PROBE_CARS x 3 vec4
 // (atmosphere.glsl car_box), probe: car_probe; up: the world's up (view space).
-// SR2_CAR_PROBE="sun,sky": how much of each the cars take (1,0.8; 0 = off);
+// SR2_CAR_PROBE="sun,sky": how much of each the cars take (1,0.35; 0 = off);
 // SR2_CAR_PROBE_TAU=S: how long the probes take to settle (0.1 s; 0 = at once)
 void R3DRenderer::car_boxes(float* box, float* probe, const float* up) {
-    static float take[2] = {1.0f, 0.8f};
+    static float take[2] = {1.0f, 0.35f};   // the sky only partly: a rock or wall to one side hides little of it
     static const bool read = [] {
         if (const char* e = getenv("SR2_CAR_PROBE")) {
             take[1] = 0.0f;
