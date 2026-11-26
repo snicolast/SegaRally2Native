@@ -1415,6 +1415,21 @@ void R3DRenderer::update_atmosphere(const ScreenLayout& lay, uint32_t target_w, 
     // ... and their sun shadows pixel by pixel on top (SR2_CAR_SHADOW=0: the probes' alone)
     static const bool car_shadow = !(getenv("SR2_CAR_SHADOW") && atoi(getenv("SR2_CAR_SHADOW")) == 0);
     u.car_shadow[0] = w && car_shadow && car_shadows_on_ && (shadow_frame_ || u.rt[0] > 0.0f) ? 1.0f : 0.0f;
+    // The car in the shade (r3d.frag): how much of the fill it keeps, of the
+    // sheen on its paint (that mirrors the sky as much as the sun: without it
+    // the shaded car looked matt), and the light of the open sky the sun's
+    // loss leaves (a share of the sun as ambient: with the game's own ambient
+    // alone, 0.26 on FOREST, a white car in the shade came out a muddy grey,
+    // darker than the road beside it). SR2_CAR_SHADE="fill,sheen,sky" (0.6,0.2,0.15)
+    static float shade_keep[3] = {0.6f, 0.2f, 0.15f};
+    static const bool shade_read = [] {
+        if (const char* e = getenv("SR2_CAR_SHADE")) sscanf(e, "%f,%f,%f", &shade_keep[0], &shade_keep[1], &shade_keep[2]);
+        return true;
+    }();
+    (void)shade_read;
+    u.car_shadow[1] = std::clamp(shade_keep[0], 0.0f, 1.0f);
+    u.car_shadow[2] = std::clamp(shade_keep[1], 0.0f, 1.0f);
+    u.car_shadow[3] = std::clamp(shade_keep[2], 0.0f, 1.0f);
     memcpy(atmosphere_uniform_.mapped, &u, sizeof(u));
 }
 

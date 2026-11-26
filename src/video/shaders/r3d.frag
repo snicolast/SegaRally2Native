@@ -605,6 +605,9 @@ void main() {
         // under a roof or beside a wall, some of its sky too)
         if (!car_pixel) s *= probe.x;
         ambient *= probe.y;
+        // (and there the open sky lights it more than the game's ambient alone
+        // does: a share of the sun it lost, car_shadow.w, less under a roof)
+        if ((flags & CAR) != 0u) ambient += atm.car_shadow.w * max(vp.sun.w, 0.0) * (1.0 - car_sun) * probe.y;
         vec3 light = vec3(s * vp.sun.w + ambient);
         // Clear outdoor scenes (SUN): a stronger, warmer sun and a softer,
         // slightly bluer ambient (light from the sky) for more contrast
@@ -670,8 +673,9 @@ void main() {
             if (dot(fn, view_pos) > 0.0) fn = -fn;
             float down = 0.5 - 0.5 * dot(fn, normalize(atm.axes[1].xyz));
             float world_sun = max(vp.sun.w, 0.0) * (atm.sunlight.z > 0.0 ? atm.sunlight.x : 1.0);
-            // (the ground round a car in the shade is mostly in the shade too: less of it)
-            light += vec3(1.0, 0.92, 0.80) * world_sun * fill * (0.6 + 0.4 * down) * mix(0.35, 1.0, probe.x) * probe.y;
+            // (the ground round a car in the shade is mostly in the shade too: less
+            // of it, car_shadow.y; at 0.35 the car came out darker than that ground)
+            light += vec3(1.0, 0.92, 0.80) * world_sun * fill * (0.6 + 0.4 * down) * mix(atm.car_shadow.y, 1.0, probe.x) * probe.y;
         }
         // The spotlight: a flat lobe, as in the original
         if ((flags & WORLD) != 0u && atm.spot.z > 0.0) light += atm.spot_color.rgb * spotlight().x;
@@ -752,7 +756,9 @@ void main() {
         if (length(vp.sun.xyz) > 0.01) {
             // a sharp glint on the glass, a broad sheen on the satin paint
             float glint = pow(max(dot(r, normalize(vp.sun.xyz)), 0.0), glass ? 900.0 : 60.0);
-            c.rgb += vec3(1.0, 0.97, 0.9) * glint * (glass ? 2.0 : 0.35) * clean * vp.sun.w * car_sun;
+            // (in the shade the glass's goes; some of the paint's broad sheen stays, car_shadow.z)
+            float sheen_sun = glass ? car_sun : mix(atm.car_shadow.z, 1.0, car_sun);
+            c.rgb += vec3(1.0, 0.97, 0.9) * glint * (glass ? 2.0 : 0.35) * clean * vp.sun.w * sheen_sun;
         }
     }
     // The original clips the light at white; with HDR lighting the highlights
