@@ -11,6 +11,9 @@
 #   # ...          a comment, never shown
 # Newest entry at the top. Keep each one short: about ten lines fit.
 
+[44] 26 November 2026
+- Cars: improved lighting.
+
 [43] 26 November 2026
 - Menus: PlayStation button icons for DualShock / DualSense pads, which should be picked automatically (OPTIONS > CONTROLS > BUTTON PROMPTS: AUTO / XBOX / PLAYSTATION).
 
