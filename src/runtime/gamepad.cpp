@@ -168,6 +168,7 @@ void Gamepads::poll(int rumble, bool focused, bool menu) {
             st.view = st.handbrake = false;
             st.steer = st.gas = st.brake = 0;
             st.select_dir = 0;
+            s.button_steer = 0;
         }
         const size_t keys_before = keys_.size();
         if (listening) {   // OPTIONS > CONTROLS waits for a button: the next one pressed (START / BACK: cancel)
@@ -231,11 +232,24 @@ void Gamepads::poll(int rumble, bool focused, bool menu) {
                 t = m < STEER_DEAD ? 0.0f : std::min((m - STEER_DEAD) / (0.98f - STEER_DEAD), 1.0f);
             }
             st.steer = sx < 0 ? -t : t;
-            // Left / right for SELECT CAR: the d-pad, or the stick past half
-            // way (let go once back under a third, so it does not flicker)
+            // The steering's buttons (OPTIONS > CONTROLS; the d-pad by
+            // default): the wheel turns over ~0.3 s and comes back by itself,
+            // as with the keyboard's arrows (app_input.cpp). The stick or
+            // these, whichever turns it more
+            int bdir = int(act_down(ACT_STEER_RIGHT)) - int(act_down(ACT_STEER_LEFT));
+            float dt = std::clamp(float(now - s.steer_at), 0.0f, 0.05f);
+            s.steer_at = now;
+            float target = float(bdir);
+            float rate = bdir == 0 || (target > 0) != (s.button_steer > 0) ? 6.0f : 3.5f;   // back to the centre faster
+            s.button_steer += std::clamp(target - s.button_steer, -rate * dt, rate * dt);
+            if (std::fabs(s.button_steer) > std::fabs(st.steer)) st.steer = s.button_steer;
+            // Left / right for SELECT CAR: the steering's buttons, the d-pad,
+            // or the stick past half way (let go once back under a third, so
+            // it does not flicker)
             if (m >= 0.5f) s.stick_dir = sx < 0 ? -1 : 1;
             else if (m < 0.33f) s.stick_dir = 0;
             int dpad = int(down(SDL_GAMEPAD_BUTTON_DPAD_RIGHT)) - int(down(SDL_GAMEPAD_BUTTON_DPAD_LEFT));
+            if (bdir != 0) dpad = bdir;
             st.select_dir = dpad != 0 ? dpad : s.stick_dir;
             st.gas = act_pedal(ACT_GAS);
             st.brake = act_pedal(ACT_BRAKE);
