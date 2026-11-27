@@ -22,10 +22,10 @@ struct ActInfo {
     const char* key;     // in controls.ini
     const char* label;   // the row
     const char* glyph;   // the window's picture: GAS / BRAKE the pedal, HAND the hand brake, else on a button
-    bool on_pad;         // a gamepad steers with its stick: no rows for the steering
+    bool on_pad;         // a row on the gamepad too (all of them: the stick steers as well, whatever is set)
 };
 const ActInfo ACT[ACT_COUNT] = {
-    {"steer_left", "STEER LEFT", "<", false},  {"steer_right", "STEER RIGHT", ">", false},
+    {"steer_left", "STEER LEFT", "<", true},   {"steer_right", "STEER RIGHT", ">", true},
     {"accelerator", "ACCELERATOR", "GAS", true}, {"brake", "BRAKE", "BRAKE", true},
     {"shift_up", "SHIFT UP", "+", true},       {"shift_down", "SHIFT DOWN", "-", true},
     {"hand_brake", "HAND BRAKE", "HAND", true}, {"view", "VIEW CHANGE", "VIEW", true}};
@@ -33,7 +33,7 @@ const ActInfo ACT[ACT_COUNT] = {
 const int KEY_DEFAULT[ACT_COUNT][BIND_SLOTS] = {{VK_LEFT, -1}, {VK_RIGHT, -1}, {VK_UP, -1},    {VK_DOWN, -1},
                                                 {'A', -1},     {'Z', -1},      {VK_SPACE, -1}, {'V', -1}};
 const int PAD_DEFAULT[ACT_COUNT][BIND_SLOTS] = {
-    {-1, -1}, {-1, -1}, {PAD_RT, SDL_GAMEPAD_BUTTON_SOUTH}, {PAD_LT, SDL_GAMEPAD_BUTTON_EAST},
+    {SDL_GAMEPAD_BUTTON_DPAD_LEFT, -1}, {SDL_GAMEPAD_BUTTON_DPAD_RIGHT, -1}, {PAD_RT, SDL_GAMEPAD_BUTTON_SOUTH}, {PAD_LT, SDL_GAMEPAD_BUTTON_EAST},
     {SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER, -1}, {SDL_GAMEPAD_BUTTON_LEFT_SHOULDER, -1},
     {SDL_GAMEPAD_BUTTON_WEST, -1}, {SDL_GAMEPAD_BUTTON_NORTH, -1}};
 
@@ -256,7 +256,7 @@ void save() {
             "; Kept for the game whatever is here: the menus' keys, Esc (pause), 5 / 1 (coin,\n"
             "; start; 6 / 2 the second player's), F2 / F3 (test, service), F9, F11 and F12;\n"
             "; on a gamepad BACK (coin), START (pause) and the guide button. The gamepads\n"
-            "; steer with the left stick. Steering wheels: OPTIONS > WHEEL (wheel.ini).\n"
+            "; steer with the left stick too. Steering wheels: OPTIONS > WHEEL (wheel.ini).\n"
             "\n[keyboard]\n");
     for (int a = 0; a < ACT_COUNT; a++) fprintf(f, "%s = %s\n", ACT[a].key, names(g_lay.key[a], false, ", ", false).c_str());
     fprintf(f, "\n; gamepad names: a b x y leftshoulder rightshoulder lefttrigger righttrigger\n"
@@ -279,7 +279,7 @@ double now_s() {
     return duration<double>(steady_clock::now().time_since_epoch()).count();
 }
 
-// The rows' actions: the keyboard's all, the gamepad's without the steering
+// The rows' actions (on_pad: the gamepad's)
 std::vector<int> acts(bool pad) {
     std::vector<int> v;
     for (int a = 0; a < ACT_COUNT; a++)
@@ -419,7 +419,8 @@ std::vector<WheelRow> bind_rows(bool pad) {
     reset.group = group;
     reset.label = "RESET TO DEFAULTS";
     reset.value = is_default(pad) ? "DEFAULT" : "CHANGED";
-    reset.hint = pad ? "Choose it to put back the original buttons: " + pad_label(PAD_RT) + " / " +
+    reset.hint = pad ? "Choose it to put back the original buttons: " + pad_label(SDL_GAMEPAD_BUTTON_DPAD_LEFT) + " / " +
+                           pad_label(SDL_GAMEPAD_BUTTON_DPAD_RIGHT) + " steer, " + pad_label(PAD_RT) + " / " +
                            pad_label(SDL_GAMEPAD_BUTTON_SOUTH) + " accelerate, " + pad_label(PAD_LT) + " / " +
                            pad_label(SDL_GAMEPAD_BUTTON_EAST) + " brake, " + pad_label(SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER) + " / " +
                            pad_label(SDL_GAMEPAD_BUTTON_LEFT_SHOULDER) + " shift, " + pad_label(SDL_GAMEPAD_BUTTON_WEST) +

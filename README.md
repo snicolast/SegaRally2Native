@@ -68,7 +68,7 @@ Your ROM, settings and textures are kept; files you edited are backed up to `out
 
 | | Keyboard | Gamepad |
 |---|---|---|
-| Steer | Left / Right | Left stick |
+| Steer | Left / Right | Left stick or D-pad |
 | Accelerator / brake | Up / Down | RT / LT (or A / B) |
 | Shift up / down | A / Z | RB / LB |
 | VIEW CHANGE | V | Y |

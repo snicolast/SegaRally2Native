@@ -11,6 +11,9 @@
 #   # ...          a comment, never shown
 # Newest entry at the top. Keep each one short: about ten lines fit.
 
+[45] 27 November 2026
+- Gamepad: steer with the D-pad too (OPTIONS > CONTROLS to change it).
+
 [44] 26 November 2026
 - Cars: improved lighting.
 
