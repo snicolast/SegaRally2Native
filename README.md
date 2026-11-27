@@ -28,7 +28,7 @@
 - **Sharp and smooth**: NVIDIA DLAA and DLSS, or MSAA, and 120 / 144 Hz and above.
 - **Arcade sound**, with surround and headphone modes.
 - **Keyboard, gamepad or wheel** (wheel experimental).
-- **Achievements and statistics**: 14 achievements, your best laps and times per course, in RECORDS. The achievements are also written to `achievements/achievements.csv` for [PlayniteAchievements](https://github.com/justin-delano/PlayniteAchievements) (Editor, Spreadsheet Import).
+- **Achievements and records**: 14 achievements and your best laps per course, in RECORDS.
 
 <table>
   <tr>
@@ -39,30 +39,34 @@
 
 ## ⚠️ ROM not included
 
-You need your own **`srally2.zip`** (Sega Model 3 Step 2.0, files like `epr-20632.17`, with
-`epr-20512.bin`, the force feedback board). Nothing from it is in this repository, and other
-versions will not work. `build.bat` says which chips are missing.
+- Your own **`srally2.zip`** (Model 3 Step 2.0: `epr-20632.17`... plus `epr-20512.bin`, the force feedback board).
+- Other versions will not work. The build says which chips are missing.
 
 ## Install
 
-You need Windows 10/11 (64-bit) and a GPU with a Vulkan 1.3 driver (most from 2016 on). Ray
-tracing needs an NVIDIA RTX 30 or an AMD RX 7000 or newer (not an integrated GPU); DLAA and
-DLSS, an NVIDIA RTX. On other cards those options switch themselves off, and the game builds
-the same on any GPU.
+<p align="center">
+  <a href="https://github.com/snicolast/NicoLauncher-Hub"><img src="docs/img/nicolauncher.png" alt="NicoLauncher" width="480"></a>
+</p>
+
+You need Windows 10/11 (64-bit) and a GPU with a Vulkan 1.3 driver (most from 2016 on).
+
+- Ray tracing: NVIDIA RTX 30 / AMD RX 7000 or newer (no integrated GPUs).
+- DLAA / DLSS: NVIDIA RTX.
+- On other cards those options switch off; the rest is the same.
 
 Install it with **[NicoLauncher](https://github.com/snicolast/NicoLauncher-Hub)**, a free app that
 downloads, builds, updates and starts the game for you. No Visual Studio, nothing to set up by hand.
 
-1. Download **[NicoLauncher-setup.exe](https://github.com/snicolast/NicoLauncher-Hub/releases/latest)** and run it.
+1. Download NicoLauncher, either one:
+   - **[NicoLauncher-setup.exe](https://github.com/snicolast/NicoLauncher-Hub/releases/latest/download/NicoLauncher-setup.exe)**, the installer: run it.
+   - **[NicoLauncher-portable.zip](https://github.com/snicolast/NicoLauncher-Hub/releases/latest/download/NicoLauncher-portable.zip)**, everything in one folder: unzip it anywhere and run `NicoLauncher.exe`
+     ([portable mode](https://github.com/snicolast/NicoLauncher-Hub/blob/main/docs/portable.md)).
 2. In the launcher, open **Sega Rally 2**, press **Install** and choose your `srally2.zip` when it asks.
 3. Press **Play**.
 
 ### Update
 
-With NicoLauncher: it tells you when there is something new. Press **Update**.
-
-Without it: run `update.bat`. It downloads the changed files from GitHub (no git needed) and rebuilds.
-Your ROM, settings and textures are kept; files you edited are backed up to `out\update_backup\`.
+NicoLauncher tells you when there is something new. Press **Update**.
 
 ## Controls
 
@@ -76,27 +80,17 @@ Your ROM, settings and textures are kept; files you edited are backed up to `out
 | Coin + start | 5, then 1 | BACK, then START |
 | Pause | Esc | START |
 
-**OPTIONS > CONTROLS** changes the car's keys and buttons (the keyboard's or the gamepad's, whichever
-you are using in the menu): choose an action and press the key or button. The menus, the pause and
-coin / start keep theirs.
+- **OPTIONS > CONTROLS**: remap the car's keys / buttons.
+- PlayStation pads show ✕ ○ □ △. Through Steam Input or DS4Windows: **CONTROLS > BUTTON PROMPTS: PLAYSTATION**.
+- F11 or Alt+Enter: fullscreen. "Confirm with the pedal" = accelerator.
+- **OPTIONS > EXPERIENCE**: **PC EDITION** (new menus and graphics) or **ARCADE ORIGINAL** (the cabinet as it was).
 
-The menus show PlayStation buttons (✕ ○ □ △, L1 / R1) for a DualShock 4 or DualSense, Xbox ones for
-other pads. Through Steam Input or DS4Windows a PlayStation pad may look like an Xbox one: set
-**OPTIONS > CONTROLS > BUTTON PROMPTS** to PLAYSTATION.
+### Steering wheels (experimental)
 
-F11 or Alt+Enter toggles fullscreen. Everything else is in **Options**. In the selection screens
-"confirm with the pedal" means the accelerator. The gamepad rumbles with the wheel's force feedback.
-
-**OPTIONS > EXPERIENCE** picks **PC EDITION** (the menus, records and the new graphics) or **ARCADE
-ORIGINAL**: the cabinet as it was, from the SEGA logo and the attract, with free play or coins and
-its own settings. Its pause menu goes back to PC EDITION.
-
-**Steering wheels (experimental)** are read through SDL, DirectInput included, with force feedback.
-Players report it working on Logitech, Thrustmaster, Fanatec, Moza and Simucube bases; I have no wheel,
-so I can't test them myself. **OPTIONS > WHEEL** has a step-by-step WHEEL SETUP and sets each control by moving it (pedals, shifter or hand
-brake on their own USB device too), plus force feedback, rotation and dead zone; the wheel and pedals
-are drawn live there. Everything is saved in `save\wheel.ini`, and `set SR2_WHEEL_LOG=1` prints every
-axis and button you move. If yours gives trouble, please open an issue with that log.
+- Read through SDL (DirectInput too), with force feedback.
+- Reported working: Logitech, Thrustmaster, Fanatec, Moza, Simucube. I have no wheel, so I can't test them.
+- **OPTIONS > WHEEL > WHEEL SETUP**: set each control by moving it, plus force feedback, rotation and dead zone.
+- Trouble? `set SR2_WHEEL_LOG=1` and open an issue with the log.
 
 <table>
   <tr>
@@ -117,16 +111,16 @@ Running slow? In OPTIONS, try these in order:
 
 Untested on real hardware. Feedback welcome in the issues.
 
-- **Telemetry** (OPTIONS > EXPERIENCE > EXPERIMENTAL): sends speed, RPM, gear and G-forces for SimHub or a motion rig.
-  UDP `127.0.0.1:20777`, DiRT Rally format (default).
-  Or [OGS-TS](https://github.com/Open-Game-Standards/OGS-Telemetry-Standard) (TELEMETRY FORMAT), multicast `239.255.17.17:40123`. Thanks to Brian Gilbert.
+- **Telemetry** (OPTIONS > EXPERIENCE > EXPERIMENTAL): speed, RPM, gear and G-forces for SimHub or a motion rig.
+  - DiRT Rally format (default): UDP `127.0.0.1:20777`.
+  - [OGS-TS](https://github.com/Open-Game-Standards/OGS-Telemetry-Standard): multicast `239.255.17.17:40123`. Thanks to Brian Gilbert.
 
 ## More
 
-- `SegaRally2.exe --help` lists the command-line options (`--aspect 21:9`, `--hud-centre`...).
-- Textures of your own: `--dump-textures` writes the game's to `out\textures\`; a redrawn one
-  in `textures\` with the same name replaces it.
-- [How it works](docs/ARCHITECTURE.md): the PowerPC to C++ recompiler and the hardware.
+- `SegaRally2.exe --help`: command-line options.
+- Own textures: `--dump-textures` writes them to `out\textures\`; same name in `textures\` replaces it.
+- Achievements for [PlayniteAchievements](https://github.com/justin-delano/PlayniteAchievements): `achievements/achievements.csv` (Editor, Spreadsheet Import).
+- [How it works](docs/ARCHITECTURE.md): the PowerPC to C++ recompiler.
 - Other recompiled arcade games: [The Lost World](https://github.com/snicolast/LostWorldNative)
   and [Star Wars Trilogy](https://github.com/snicolast/StarWarsTrilogyNative).
 
@@ -147,7 +141,7 @@ The game itself (ROM, code, data, music and voices) is not included and stays th
 owners: you need your own copy of `srally2.zip`.
 
 DLAA and DLSS use the [NVIDIA DLSS SDK](https://github.com/NVIDIA/DLSS), under NVIDIA's own license.
-NVIDIA's `nvngx_dlss.dll` is always downloaded from NVIDIA. The `dlss_bridge.dll` that NicoLauncher installs get
+NVIDIA's `nvngx_dlss.dll` is always downloaded from NVIDIA. The `dlss_bridge.dll` that NicoLauncher installs
 is built from `tools/dlss_bridge` and kept, with NVIDIA's license and notice, in
 [NicoLauncher-Hub](https://github.com/snicolast/NicoLauncher-Hub/tree/main/dlss). NVIDIA, DLSS and RTX are
 trademarks of NVIDIA Corporation.
