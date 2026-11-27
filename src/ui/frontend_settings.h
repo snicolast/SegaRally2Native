@@ -94,7 +94,8 @@ struct FrontendSettings {
     // speakers and the controls, which stay the player's
     void arcade_base();
     // ASPECT as numbers: the widest picture (window width over height) and the
-    // shape of a pixel (4:3: the cabinet's 496 x 384 on a 4:3 monitor)
+    // shape of a pixel: in every ASPECT the cabinet's (496 x 384 on a 4:3 monitor,
+    // 1.032 wider than tall), so cars and HUD keep their proportions in widescreen too
     static float aspect_ratio(int aspect);
-    static float pixel_aspect(int aspect) { return aspect == 4 ? (4.0f / 3.0f) / (496.0f / 384.0f) : 1.0f; }
+    static float pixel_aspect(int /*aspect*/) { return (4.0f / 3.0f) / (496.0f / 384.0f); }
 };

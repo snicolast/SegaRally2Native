@@ -39,8 +39,8 @@ struct Options {
     int dlss_model = 0;              // --dlss-model: 0 auto, 1 K, 2 M, 3 L
     int aniso = 8;                   // --aniso: anisotropic taps (0 = no mipmaps, original look)
     float max_aspect = 16.0f / 9.0f; // --aspect: widest 3D view (4:3 = original)
-    float pixel_aspect = 1.0f;       // the picture's pixels this much wider than tall (ASPECT 4:3: 1.032,
-                                     // the cabinet's 496x384 on a 4:3 monitor)
+    float pixel_aspect = 1.0f;       // the picture's pixels this much wider than tall (every ASPECT: 1.032,
+                                     // the cabinet's 496x384 on a 4:3 monitor; --aspect: 1, square)
     bool pixel_2d = false;           // --pixel2d: 2D layers without xBR upscaling
     bool hud_centre = false;         // --hud-centre: keep the HUD in the 4:3 area (otherwise its corners go out, up to a 16:9 view's edges)
     bool telemetry = false;          // UDP telemetry for SimHub / motion rigs (settings.ini telemetry = 1; telemetry.h)
