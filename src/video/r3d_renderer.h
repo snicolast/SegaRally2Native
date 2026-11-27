@@ -28,7 +28,7 @@
 struct ScreenLayout {
     float view_w;    // width of the 3D view in Model 3 pixels (496 = original 4:3)
     float scale;     // window pixels per Model 3 pixel (up and down; across, times px_aspect)
-    float px_aspect; // how much wider than tall a Model 3 pixel is shown (1, or 1.032: the cabinet's 4:3)
+    float px_aspect; // how much wider than tall a Model 3 pixel is shown (1.032: the cabinet's 4:3; 1 with --aspect)
     float ox, oy;    // window position of the 3D view
     float game_x0;   // Model 3 x of the 4:3 area inside the 3D view
     float hud_x;     // how far the race HUD's corners move out of the 4:3 area: to the
