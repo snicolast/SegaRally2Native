@@ -11,6 +11,9 @@
 #   # ...          a comment, never shown
 # Newest entry at the top. Keep each one short: about ten lines fit.
 
+[46] 28 November 2026
+- Widescreen: cars and scenery now keep the arcade cabinet's proportions (about 3% wider than before).
+
 [45] 27 November 2026
 - Gamepad: steer with the D-pad too (OPTIONS > CONTROLS to change it).
 
